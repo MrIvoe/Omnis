@@ -106,12 +106,34 @@ class PluginInstaller {
     }
     await targetDir.create(recursive: true);
 
+    final targetRoot = p.canonicalize(targetDir.path);
     for (final file in files) {
       if (file.isFile) {
         // Remove the top-level prefix from the stored path.
         final rel = _stripTopLevel(file.name, topLevel);
         if (rel.isEmpty) continue;
-        final out = File(p.join(targetDir.path, rel));
+
+        // --- Zip-slip guard -------------------------------------------------
+        // Plugins are downloaded from arbitrary, untrusted GitHub URLs, so a
+        // malicious archive entry (e.g. "../../../etc/whatever" or an
+        // absolute path) must never be allowed to write outside targetDir.
+        final candidate = p.join(targetDir.path, rel);
+        final candidateNormalized = p.normalize(candidate);
+        final candidateDir = p.normalize(p.dirname(candidateNormalized));
+        // Reject absolute-looking entries and anything that normalizes
+        // outside of targetRoot.
+        if (p.isAbsolute(rel) ||
+            rel.split(RegExp(r'[\\/]')).contains('..') ||
+            !(candidateDir == targetRoot ||
+                candidateDir.startsWith('$targetRoot${p.separator}'))) {
+          throw PluginInstallException(
+            'Rejected unsafe archive entry: "${file.name}" '
+            '(path traversal attempt).',
+          );
+        }
+        // ---------------------------------------------------------------
+
+        final out = File(candidateNormalized);
         await out.create(recursive: true);
         await out.writeAsBytes(file.content as List<int>);
       }
@@ -134,8 +156,18 @@ class PluginInstaller {
       throw PluginInstallException('Invalid omnis_plugin.yaml manifest.');
     }
 
-    // Validate entrypoint exists
-    final entry = File(p.join(targetDir.path, manifest.entrypoint));
+    // Validate entrypoint exists and cannot escape the plugin directory.
+    // manifest.entrypoint comes from omnis_plugin.yaml, which is part of
+    // the same untrusted download, so it gets the same traversal check.
+    final entrypointRel = manifest.entrypoint;
+    if (p.isAbsolute(entrypointRel) ||
+        entrypointRel.split(RegExp(r'[\\/]')).contains('..')) {
+      throw PluginInstallException(
+        'Plugin manifest entrypoint is not allowed to reference paths '
+        'outside the plugin directory.',
+      );
+    }
+    final entry = File(p.join(targetDir.path, entrypointRel));
     if (!await entry.exists()) {
       throw PluginInstallException(
         'Plugin entrypoint ${manifest.entrypoint} does not exist.',

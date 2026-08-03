@@ -292,10 +292,16 @@ class AudioEngine {
       await _player.stop();
       return;
     }
-    if (!_gaplessEnabled || _crossfadeDuration > Duration.zero) {
-      await _setOverlapSource();
-      return;
-    }
+
+    // NOTE on crossfade: just_audio's single AudioPlayer instance cannot
+    // overlap the tail of one source with the head of the next — that
+    // requires two AudioPlayer instances handed off with a volume ramp,
+    // which is a separate feature (dual-player crossfade engine), not yet
+    // built. Previously this code silently reduced the queue to a single
+    // track and never advanced past it when crossfade was on. Until the
+    // real dual-player engine exists, we deliberately fall back to correct
+    // gapless ConcatenatingAudioSource playback — the queue always advances
+    // correctly, it just doesn't overlap tracks yet.
     final children = <AudioSource>[];
     for (final track in _queue) {
       final url = _urlFor(track);
@@ -311,34 +317,12 @@ class AudioEngine {
     }
     await _player.setAudioSource(ConcatenatingAudioSource(children: children));
     _listenForCompletion();
-  }
 
-  /// Sets an overlapping gapless source (with crossfade when requested).
-  Future<void> _setOverlapSource() async {
-    final children = <AudioSource>[];
-    for (final track in _queue) {
-      final url = _urlFor(track);
-      if (url == null) continue;
-      children.add(AudioSource.uri(Uri.parse(url), tag: track));
-    }
-    if (children.isEmpty) return;
     if (_crossfadeDuration > Duration.zero) {
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(_urlFor(_queue.first)!),
-          tag: _queue.first,
-        ),
+      debugPrint(
+        'Omnis: crossfade duration is set but the dual-player crossfade '
+        'engine is not implemented yet — falling back to gapless playback.',
       );
-      // Attach crossfade via the plug-in API.
-      await _player.setClip(
-        start: Duration.zero,
-        end: _player.duration ?? Duration(milliseconds: _queue.first.duration),
-      );
-      _listenForCompletion();
-    } else {
-      await _player
-          .setAudioSource(ConcatenatingAudioSource(children: children));
-      _listenForCompletion();
     }
   }
 
