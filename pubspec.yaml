@@ -1,0 +1,37 @@
+name: omnis
+description: A micro-kernel music engine with a hot-swappable plugin ecosystem.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # --- Core playback ---
+  just_audio: ^0.9.36
+  audio_service: ^0.18.11
+  # --- DI / state ---
+  get_it: ^7.2.0
+  # --- Plugin installer ---
+  http: ^1.2.0
+  archive: ^3.6.0
+  yaml: ^3.1.2
+  path_provider: ^2.1.0
+  path: ^1.9.0
+  file_picker: ^8.3.7
+  permission_handler: ^11.3.1
+  on_audio_query: ^2.9.0
+  shared_preferences: ^2.2.3
+  # --- Plugin runtime (dart_eval provides a full Dart interpreter so
+  #     downloaded plugins can execute at runtime) ---
+  dart_eval: ^0.8.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
