@@ -4,12 +4,14 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_webview_window
+  geolocator_windows
   permission_handler_windows
   url_launcher_windows
   window_to_front
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  smtc_windows
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

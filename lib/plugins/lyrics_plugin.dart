@@ -363,6 +363,12 @@ class LyricEditDialog extends StatefulWidget {
 
 class _LyricEditDialogState extends State<LyricEditDialog> {
   late final TextEditingController _controller;
+  late bool _writeToFile;
+  bool _saving = false;
+  String? _error;
+
+  bool get _hasLocalFile =>
+      widget.track.localPath != null && widget.track.localPath!.isNotEmpty;
 
   @override
   void initState() {
@@ -370,6 +376,10 @@ class _LyricEditDialogState extends State<LyricEditDialog> {
     _controller = TextEditingController(
       text: widget.plugin.lyricFor(widget.track) ?? '',
     );
+    // Defaults to this plugin's general "write to file tags" setting, but
+    // stays editable per-save — someone might want this one track's
+    // lyrics kept in-app only, or vice versa.
+    _writeToFile = widget.plugin.writeToMetadataEnabled && _hasLocalFile;
   }
 
   @override
@@ -378,33 +388,103 @@ class _LyricEditDialogState extends State<LyricEditDialog> {
     super.dispose();
   }
 
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    widget.plugin.setLyric(widget.track.id, _controller.text);
+
+    if (_writeToFile && _hasLocalFile && _controller.text.trim().isNotEmpty) {
+      final writer = widget.plugin.context?.services.get<IFileTagWriter>();
+      if (writer == null) {
+        // The Tag Editor plugin is what actually implements
+        // IFileTagWriter — if it's disabled, writing into the file isn't
+        // possible, but the in-app copy above still saved successfully.
+        if (mounted) {
+          setState(() {
+            _saving = false;
+            _error = 'Saved in Omnis, but couldn\'t write to the file — '
+                'the Tag Editor plugin is disabled.';
+          });
+        }
+        return;
+      }
+      final wrote = await writer.writeLyrics(widget.track.localPath!, _controller.text);
+      if (!mounted) return;
+      if (!wrote) {
+        setState(() {
+          _saving = false;
+          _error = 'Saved in Omnis, but writing to the file failed — it '
+              'may be read-only or the app may need storage permission.';
+        });
+        return;
+      }
+    }
+
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Lyrics — ${widget.track.title}'),
       content: SizedBox(
         width: 360,
-        child: TextField(
-          controller: _controller,
-          maxLines: 10,
-          minLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Paste or type the lyrics for this track…',
-            border: OutlineInputBorder(),
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              maxLines: 10,
+              minLines: 4,
+              decoration: const InputDecoration(
+                hintText: 'Paste or type the lyrics for this track…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_hasLocalFile)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Also write into the file\'s own tags'),
+                subtitle: const Text(
+                    'So other players can read these lyrics too, not just Omnis'),
+                value: _writeToFile,
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() => _writeToFile = value ?? false),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'This track has no local file, so lyrics are only saved '
+                  'in Omnis.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () {
-            widget.plugin.setLyric(widget.track.id, _controller.text);
-            Navigator.of(context).pop(true);
-          },
-          child: const Text('Save'),
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Save'),
         ),
       ],
     );

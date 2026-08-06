@@ -297,12 +297,17 @@ class _YoutubeImportSettingsState extends State<_YoutubeImportSettings> {
     setState(() => _connecting = true);
     await widget.plugin.setClientId(_clientIdController.text);
     await widget.plugin.setClientSecret(_clientSecretController.text);
+    // The OAuth browser round-trip inside connect() is exactly the kind
+    // of long-running await this page can easily get disposed out from
+    // under — navigating away mid-flow must not crash on return.
     final ok = await widget.plugin.connect();
-    if (mounted) setState(() => _connecting = false);
+    if (!mounted) return;
+    setState(() => _connecting = false);
     if (ok) await _loadPlaylists();
   }
 
   Future<void> _loadPlaylists() async {
+    if (!mounted) return;
     setState(() => _loadingPlaylists = true);
     final playlists = await widget.plugin.fetchMyPlaylists();
     if (mounted) {

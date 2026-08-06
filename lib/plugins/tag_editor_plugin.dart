@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:id3_codec/id3_codec.dart';
 import 'package:id3_codec/id3_constant.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Custom `TXXX` key names used for every tag field id3_codec can't write
 /// as its own native ID3v2 frame (see [TagEditorPlugin]'s class doc for
@@ -297,6 +300,26 @@ class TagEditorPlugin extends MusicPlugin implements IFileTagWriter {
     return TagFrame(id: id, label: frameV2p3Map[id] ?? id, value: content.toString());
   }
 
+  /// Whether this plugin can currently write to an arbitrary file path on
+  /// Android. Scoped storage (Android 10+) blocks a raw file write to a
+  /// path the app didn't create itself unless "All files access"
+  /// (`MANAGE_EXTERNAL_STORAGE`) is granted — checks the already-granted
+  /// case cheaply first, only routing to the system Settings screen (via
+  /// [OmnisPermissions.requestStorageWrite]) if it isn't. This is the
+  /// concrete, most likely reason a tag/lyrics write can silently fail on
+  /// a real device with no in-app explanation.
+  Future<bool> _hasWritePermission() async {
+    try {
+      final status = await Permission.manageExternalStorage.status;
+      if (status.isGranted) return true;
+    } catch (_) {
+      // Permission doesn't exist on this Android version (pre-scoped
+      // storage) — plain filesystem writes already work there.
+      return true;
+    }
+    return OmnisPermissions.requestStorageWrite();
+  }
+
   /// Write tags to a local file. Only the fields you pass are touched —
   /// everything else already in the file (including frames this plugin
   /// can't write natively) is left exactly as-is, verified by
@@ -332,6 +355,9 @@ class TagEditorPlugin extends MusicPlugin implements IFileTagWriter {
     Map<String, String>? extraFields,
   }) async {
     try {
+      if (!kIsWeb && Platform.isAndroid && !await _hasWritePermission()) {
+        return false;
+      }
       final file = File(filePath);
       final original = await _readGrowableBytes(file);
       final seeded = _ensureId3v2Header(original);

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart' show RepeatMode;
 import 'package:omnis/core/base_track.dart';
+import 'package:smtc_windows/smtc_windows.dart' hide RepeatMode;
 
 /// A single adjustable band on the platform's native equalizer.
 ///
@@ -110,6 +111,12 @@ class AudioEngine {
   int _currentIndex = -1;
   BaseTrack? _currentTrack;
   Completer<void>? _initCompleter;
+
+  /// Windows' notification-center/lock-screen/hardware-media-key
+  /// integration (System Media Transport Controls) — the platform
+  /// audio_service doesn't support. `null` everywhere else, or on
+  /// Windows if SMTC failed to initialize (see [initialize]).
+  _OmnisWindowsMediaHandler? _windowsMediaHandler;
 
   /// Guards against reacting to index events emitted while we are swapping
   /// the audio source out from under the player.
@@ -335,25 +342,38 @@ class AudioEngine {
     _initCompleter = Completer<void>();
     try {
       _bindPlayerStreams();
-      // audio_service is best-effort; on desktop it may be unavailable.
+      // audio_service has no Windows implementation at all (only
+      // Android/iOS/macOS) — routing Windows through
+      // _OmnisWindowsMediaHandler/SMTCWindows instead of letting this
+      // throw-and-get-caught is the actual fix for "no notification/
+      // media-key controls on Windows", not just a defensive skip.
       //
       // This used to sit behind `await _player.load()`, which throws
       // ("no audio source") because nothing is loaded at boot. The throw
       // was swallowed by the outer catch and audio_service was silently
       // never initialised — no media notification, no lock-screen
       // controls, on any platform.
-      try {
-        await AudioService.init(
-          builder: () => _OmnisAudioHandler(this),
-          config: const AudioServiceConfig(
-            androidNotificationChannelId: 'com.omnis.music.channel',
-            androidNotificationChannelName: 'Omnis Playback',
-            androidNotificationOngoing: true,
-          ),
-        );
-      } catch (e) {
-        debugPrint('Omnis: audio_service unavailable, continuing without '
-            'background controls: $e');
+      if (!kIsWeb && Platform.isWindows) {
+        try {
+          _windowsMediaHandler = await _OmnisWindowsMediaHandler.create(this);
+        } catch (e) {
+          debugPrint('Omnis: Windows media controls (SMTC) unavailable, '
+              'continuing without them: $e');
+        }
+      } else {
+        try {
+          await AudioService.init(
+            builder: () => _OmnisAudioHandler(this),
+            config: const AudioServiceConfig(
+              androidNotificationChannelId: 'com.omnis.music.channel',
+              androidNotificationChannelName: 'Omnis Playback',
+              androidNotificationOngoing: true,
+            ),
+          );
+        } catch (e) {
+          debugPrint('Omnis: audio_service unavailable, continuing without '
+              'background controls: $e');
+        }
       }
     } catch (e, st) {
       debugPrint('Omnis: audio engine initialization failed: $e');
@@ -443,6 +463,7 @@ class AudioEngine {
     if (!_queueController.isClosed) {
       await _queueController.close();
     }
+    await _windowsMediaHandler?.dispose();
   }
 
   /// Replace the whole queue with [tracks].
@@ -1063,5 +1084,105 @@ class _OmnisAudioHandler extends BaseAudioHandler {
   @override
   Future<void> skipToPrevious() async {
     await _engine.previous();
+  }
+}
+
+/// Windows System Media Transport Controls integration — the
+/// notification-center / lock-screen / hardware-media-key surface
+/// [_OmnisAudioHandler]/audio_service provides on Android/iOS/macOS but
+/// has no Windows implementation of at all. Same shape as
+/// [_OmnisAudioHandler]: forwards engine state out to SMTC, forwards
+/// SMTC button presses back into the engine.
+///
+/// Uses `smtc_windows`, a Flutter Windows plugin that bundles a compiled
+/// Rust component (via cargokit) for the actual SMTC/WinRT calls —
+/// building it requires a Rust toolchain (`cargo`) on the machine doing
+/// the Windows build, on top of the usual Flutter/Visual Studio
+/// requirements. See docs/BUILDING.md.
+///
+/// **Verification status**: implemented against smtc_windows' documented
+/// public API; not exercised against a real Windows build in this
+/// environment — a pre-existing Visual Studio/Flutter tooling version
+/// mismatch blocks Windows builds here entirely (see docs/BUILDING.md),
+/// unrelated to this feature specifically. [AudioEngine.initialize]'s
+/// try/catch around [create] means a failure here degrades to "no
+/// Windows media controls," the same fail-soft contract audio_service
+/// already has on platforms it doesn't support.
+class _OmnisWindowsMediaHandler {
+  final AudioEngine _engine;
+  final SMTCWindows _smtc;
+  final List<StreamSubscription<void>> _subs = [];
+
+  _OmnisWindowsMediaHandler._(this._engine, this._smtc) {
+    _subs.add(_engine.playerStateStream.listen((state) {
+      _smtc.setPlaybackStatus(
+          state.playing ? PlaybackStatus.playing : PlaybackStatus.paused);
+    }));
+    _subs.add(_engine.positionStream.listen(_smtc.setPosition));
+    _subs.add(_engine.trackStream.listen((track) {
+      if (track == null) {
+        _smtc.clearMetadata();
+        return;
+      }
+      _smtc.updateMetadata(MusicMetadata(
+        title: track.title,
+        artist:
+            track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown',
+        album: track.album,
+        thumbnail: _thumbnailFor(track.coverArt),
+      ));
+      _smtc.setStartTime(Duration.zero);
+      _smtc.setEndTime(Duration(seconds: track.duration));
+    }));
+    _subs.add(_smtc.buttonPressStream.listen((button) {
+      switch (button) {
+        case PressedButton.play:
+          _engine.play();
+        case PressedButton.pause:
+          _engine.pause();
+        case PressedButton.next:
+          _engine.next();
+        case PressedButton.previous:
+          _engine.previous();
+        case PressedButton.stop:
+          _engine.stop();
+        case PressedButton.fastForward:
+        case PressedButton.rewind:
+        case PressedButton.record:
+        case PressedButton.channelUp:
+        case PressedButton.channelDown:
+          break; // Not surfaced in Omnis's transport controls.
+      }
+    }));
+  }
+
+  static Future<_OmnisWindowsMediaHandler> create(AudioEngine engine) async {
+    await SMTCWindows.initialize();
+    final smtc = SMTCWindows(
+      config: const SMTCConfig(
+        playEnabled: true,
+        pauseEnabled: true,
+        nextEnabled: true,
+        prevEnabled: true,
+        stopEnabled: false,
+        fastForwardEnabled: false,
+        rewindEnabled: false,
+      ),
+    );
+    return _OmnisWindowsMediaHandler._(engine, smtc);
+  }
+
+  /// SMTC's thumbnail wants a local file path or a resolvable URI.
+  /// `mediastore://` markers ([_OmnisAudioHandler._artUri]'s Android-only
+  /// concern) never occur on Windows — `MediaScanner`'s desktop path
+  /// always produces a real local path or nothing.
+  static String? _thumbnailFor(String? coverArt) =>
+      (coverArt == null || coverArt.isEmpty) ? null : coverArt;
+
+  Future<void> dispose() async {
+    for (final sub in _subs) {
+      await sub.cancel();
+    }
+    await _smtc.dispose();
   }
 }

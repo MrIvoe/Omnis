@@ -1,11 +1,57 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
-    <!-- Storage access for the library scanner -->
+    <!-- Storage read access for the library scanner. Requested at runtime
+         by on_audio_query's own checkAndRequest() — see
+         MediaScanner._scanAndroid — not through OmnisPermissions. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <!-- Pre-scoped-storage write access (Android 9 and below). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
+    <!-- Android 10+ replaced direct filesystem writes with scoped storage.
+         TagEditorPlugin writes raw ID3 bytes straight to a track's own
+         file path (id3_codec has no MediaStore-aware write path), which
+         scoped storage blocks for files the app didn't create itself —
+         exactly the failure behind tag/lyrics writes silently not
+         sticking on a real device. MANAGE_EXTERNAL_STORAGE ("All files
+         access") is the broad, Play-Store-scrutinized fix; the narrower,
+         better-practice alternative is Android 11+'s
+         MediaStore.createWriteRequest() (a per-batch, no-Settings-trip
+         permission grant) — building that requires native Kotlin
+         platform-channel code this project doesn't have and can't verify
+         without a device, so the broader permission is used here instead,
+         deliberately, not by oversight. A music tag editor is a
+         legitimate, Play-Store-accepted use case for it (the
+         `tools:ignore` below silences the lint that flags this as
+         needing manual review confirmation).
+    -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"/>
+    <!-- Android 13+ requires this to post the media notification at all
+         (lock-screen / notification-center playback controls). Requested
+         at startup via OmnisPermissions.ensureCorePermissions(). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 12+ split classic BLUETOOTH/BLUETOOTH_ADMIN into these
+         runtime-requestable permissions. Requested contextually (not at
+         startup) by BluetoothPlaybackPlugin/DrivingModePlugin via
+         OmnisPermissions.requestBluetooth() when either is actually
+         enabled. android:maxSdkVersion on the legacy pair keeps them
+         working on Android 11 and below, which never asks for them at
+         runtime — only a manifest declaration is needed there. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+    <!-- Only requested at runtime when DrivingModePlugin is enabled, via
+         OmnisPermissions.requestLocation(). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- "Set as ringtone" (RingtonePlugin) needs this to modify system
+         settings on Android 6+. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
     <application
         android:label="Omnis"
         android:name="${applicationName}"

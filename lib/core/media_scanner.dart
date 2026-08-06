@@ -124,11 +124,11 @@ class MediaScanner {
     };
 
     final tagEditor = TagEditorPlugin();
-    final tracks = <BaseTrack>[];
+    final files = <File>[];
     try {
       await for (final entity
           in root.list(recursive: true, followLinks: false)) {
-        if (tracks.length >= limit) break;
+        if (files.length >= limit) break;
         final fileName = entity.uri.pathSegments.isNotEmpty
             ? entity.uri.pathSegments.last
             : '';
@@ -136,11 +136,30 @@ class MediaScanner {
             fileName.isNotEmpty &&
             !fileName.startsWith('.') &&
             extensions.contains(entity.path.split('.').last.toLowerCase())) {
-          tracks.add(await _trackFromFile(entity, tagEditor));
+          files.add(entity);
         }
       }
     } catch (_) {
       // Unreadable directories should not kill the scan.
+    }
+
+    // Reading and ID3-decoding each file used to happen one at a time —
+    // every file waited for the previous one's disk read to finish before
+    // starting its own, even though these are independent, I/O-bound
+    // operations with nothing to serialize on. Processing in concurrent
+    // batches lets the OS/disk actually overlap those reads instead of
+    // going strictly file-by-file, which is what made scanning a real
+    // (thousands-of-files) desktop library feel slow. The batch size
+    // caps how many files are open at once rather than firing all of
+    // them at the OS simultaneously for a very large library.
+    const batchSize = 32;
+    final tracks = <BaseTrack>[];
+    for (var i = 0; i < files.length; i += batchSize) {
+      final batch = files.skip(i).take(batchSize);
+      final results = await Future.wait(
+        batch.map((file) => _trackFromFile(file, tagEditor)),
+      );
+      tracks.addAll(results);
     }
     return tracks;
   }

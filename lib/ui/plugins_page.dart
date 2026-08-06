@@ -87,7 +87,11 @@ class _PluginsPageState extends State<PluginsPage> {
       final proceed = await _confirmPermissions(installed.manifest);
       if (!proceed) {
         await widget.pluginManager.installer.uninstall(installed.directory);
-        setState(() => _installResult = 'Install cancelled.');
+        // Each of these awaits (download, the permission dialog,
+        // uninstall) is long enough for the user to have navigated away
+        // and disposed this page before it resolves — every setState
+        // below must check first.
+        if (mounted) setState(() => _installResult = 'Install cancelled.');
         return;
       }
 
@@ -96,8 +100,10 @@ class _PluginsPageState extends State<PluginsPage> {
         installed,
         sourceUrl: url,
       );
-      setState(
-          () => _installResult = 'Installed ${plugin.name} v${plugin.version}');
+      if (mounted) {
+        setState(
+            () => _installResult = 'Installed ${plugin.name} v${plugin.version}');
+      }
     } catch (e) {
       // Clean up a partially-downloaded plugin directory on failure so it
       // doesn't linger on disk as an orphaned, unregistered folder.
@@ -106,7 +112,7 @@ class _PluginsPageState extends State<PluginsPage> {
           await widget.pluginManager.installer.uninstall(installed.directory);
         } catch (_) {}
       }
-      setState(() => _installError = 'Install failed: $e');
+      if (mounted) setState(() => _installError = 'Install failed: $e');
     } finally {
       if (mounted) setState(() => _installing = false);
     }

@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel a stale run when new commits land on the same PR/branch, so
+# pushes during review don't queue up redundant runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned to match the version this repo was developed against
+  # (`flutter --version`) — bump deliberately, not implicitly, since a
+  # silent Flutter upgrade here could pass CI on a config that doesn't
+  # match what anyone actually built locally.
+  FLUTTER_VERSION: "3.27.4"
+
+jobs:
+  analyze-and-test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      # `dart format --set-exit-if-changed` is deliberately not enforced
+      # here yet: as of the commit that added this workflow, running it
+      # reformats ~50 pre-existing files (this codebase's long doc
+      # comments and dense single-line expressions diverge from its
+      # 80-column defaults in plenty of places). Enforcing it now would
+      # fail CI for everyone until someone does that mass reformat as its
+      # own reviewed change — worth doing, just not silently as a side
+      # effect of adding CI.
+
+      - name: flutter test
+        run: flutter test
+
+  build-android:
+    name: Build Android (debug)
+    runs-on: ubuntu-latest
+    needs: analyze-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: flutter pub get
+
+      # Debug build only — a genuine compile-and-package check, not a
+      # signed release artifact. See docs/BUILDING.md for signing a real
+      # release build.
+      - name: flutter build apk --debug
+        run: flutter build apk --debug
+
+  build-windows:
+    name: Build Windows (debug)
+    runs-on: windows-latest
+    needs: analyze-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter config --enable-windows-desktop
+
+      - run: flutter pub get
+
+      - name: flutter build windows --debug
+        run: flutter build windows --debug

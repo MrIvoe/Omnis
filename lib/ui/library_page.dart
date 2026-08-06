@@ -15,6 +15,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/plugins/favorites_plugin.dart';
 import 'package:omnis/plugins/metadata_enrichment_plugin.dart';
+import 'package:omnis/plugins/ringtone_plugin.dart';
 import 'package:omnis/plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
@@ -282,7 +283,11 @@ class _LibraryPageState extends State<LibraryPage> {
 
       // Scan fast using the platform-optimized scanner.
       // On Android this queries the OS MediaStore (pre-indexed, instant).
+      // A scan can take a while on a large library — long enough that the
+      // user may well have navigated away before it resolves, so every
+      // setState below has to check mounted first.
       final scanned = await MediaScanner.instance.scanLibrary();
+      if (!mounted) return;
       if (scanned.isEmpty) {
         setState(() =>
             _error = 'No audio files found. Try picking a folder in Settings.');
@@ -296,12 +301,14 @@ class _LibraryPageState extends State<LibraryPage> {
       final newTracks =
           scanned.where((t) => !existingIds.contains(t.id)).toList();
       setState(() => _tracks = [..._tracks, ...newTracks]);
-      // Persist so the library survives app restarts.
+      // Persist so the library survives app restarts. Deliberately does
+      // NOT touch the playback queue or start playback — scanning/adding
+      // to the library is a data operation, not a "play something"
+      // action, and previously did both: every scan silently replaced
+      // whatever queue was playing and started a random track.
       await LibraryStore.instance.save(_tracks);
-      await widget.engine.setQueue(_tracks);
-      await widget.engine.play();
     } catch (e) {
-      setState(() => _error = 'Could not load audio files: $e');
+      if (mounted) setState(() => _error = 'Could not load audio files: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -837,6 +844,9 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _deleteTracks(Set<String> ids) async {
     if (ids.isEmpty) return;
     final toDelete = _tracks.where((t) => ids.contains(t.id)).toList();
+    // Deleting many files from disk can take a while — long enough that
+    // the user may have navigated away before this loop finishes, so
+    // every UI touch below has to check mounted first.
     for (final track in toDelete) {
       final path = track.localPath;
       if (path == null) continue;
@@ -847,13 +857,16 @@ class _LibraryPageState extends State<LibraryPage> {
         debugPrint('Omnis: failed to delete "$path": $e');
       }
     }
+    if (!mounted) return;
     setState(() {
       _tracks.removeWhere((t) => ids.contains(t.id));
       _selectedIds.removeAll(ids);
     });
     await LibraryStore.instance.save(_tracks);
     await widget.engine.setQueue(_tracks);
-    _toast('Deleted ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}.');
+    if (mounted) {
+      _toast('Deleted ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}.');
+    }
   }
 
   Future<void> _deleteSelected() async {
@@ -895,6 +908,21 @@ class _LibraryPageState extends State<LibraryPage> {
 
   TagEditorPlugin? get _tagEditorPlugin =>
       widget.pluginManager.bundled<TagEditorPlugin>(onlyEnabled: true);
+
+  RingtonePlugin? get _ringtonePlugin =>
+      widget.pluginManager.bundled<RingtonePlugin>(onlyEnabled: true);
+
+  Future<void> _setAsRingtone(BaseTrack track) async {
+    final plugin = _ringtonePlugin;
+    if (plugin == null) {
+      _toast('The Ringtone plugin is disabled in Settings.');
+      return;
+    }
+    final ok = await plugin.setAsRingtone(track);
+    _toast(ok
+        ? 'Set "${track.title}" as your ringtone.'
+        : plugin.lastError ?? 'Could not set ringtone.');
+  }
 
   bool _isFavorite(String trackId) =>
       _favoritesPlugin?.isFavorite(trackId) ?? false;
@@ -1015,6 +1043,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
     final tags =
         await tagEditor.readTags(track.localPath!, includeArtwork: false);
+    if (!mounted) return;
     final index = _tracks.indexWhere((t) => t.id == track.id);
     if (index < 0) return;
 
@@ -1698,6 +1727,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             }
                             if (value == 'enrich') _enrichSingle(track);
                             if (value == 'analyze') _analyzeSingle(track);
+                            if (value == 'set_ringtone') _setAsRingtone(track);
                           },
                           itemBuilder: (context) => const [
                             PopupMenuItem(
@@ -1715,6 +1745,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             PopupMenuItem(
                               value: 'analyze',
                               child: Text('Analyze audio (BPM/key/mood)'),
+                            ),
+                            PopupMenuItem(
+                              value: 'set_ringtone',
+                              child: Text('Set as ringtone'),
                             ),
                           ],
                         ),

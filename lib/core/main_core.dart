@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
@@ -35,6 +36,12 @@ class MainCore {
   /// plugins, and any plugins installed on disk from previous sessions.
   Future<void> initialize() async {
     debugPrint('Initializing Omnis Core...');
+
+    // Best-effort; a denial degrades to "no notification controls," never
+    // blocks boot. Requested before the audio engine initializes
+    // audio_service below, so the notification permission is already
+    // resolved by the time there's a notification to post.
+    await OmnisPermissions.ensureCorePermissions();
 
     // Audio engine first — the player must be ready before any plugin hook.
     await _audioEngine.initialize();

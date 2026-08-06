@@ -64,7 +64,7 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
             trailing: FilledButton.tonal(
               onPressed: () async {
                 final result = await FilePicker.platform.getDirectoryPath();
-                if (result != null) {
+                if (result != null && mounted) {
                   setState(() => settings.selectedFolderPath = result);
                 }
               },

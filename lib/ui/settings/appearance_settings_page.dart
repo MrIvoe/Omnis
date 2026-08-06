@@ -274,7 +274,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 builder: (context) =>
                     _ColorPickerDialog(initialColor: settings.accentColor),
               );
-              if (color != null) {
+              if (color != null && mounted) {
                 setState(() => settings.accentColor = color);
               }
             },

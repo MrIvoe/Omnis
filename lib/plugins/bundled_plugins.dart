@@ -1,11 +1,14 @@
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/plugins/audio_analysis_plugin.dart';
+import 'package:omnis/plugins/bluetooth_playback_plugin.dart';
+import 'package:omnis/plugins/driving_mode_plugin.dart';
 import 'package:omnis/plugins/equalizer_plugin.dart';
 import 'package:omnis/plugins/favorites_plugin.dart';
 import 'package:omnis/plugins/lyrics_plugin.dart';
 import 'package:omnis/plugins/metadata_enrichment_plugin.dart';
 import 'package:omnis/plugins/queue_preset_plugin.dart';
 import 'package:omnis/plugins/replay_gain_plugin.dart';
+import 'package:omnis/plugins/ringtone_plugin.dart';
 import 'package:omnis/plugins/scrobble_plugin.dart';
 import 'package:omnis/plugins/shuffle_repeat_plugin.dart';
 import 'package:omnis/plugins/sleep_timer_plugin.dart';
@@ -59,4 +62,7 @@ List<MusicPlugin> createBundledPlugins() => <MusicPlugin>[
       SpotifyPlaybackPlugin(),
       YoutubeMusicImportPlugin(),
       YoutubePlaybackPlugin(),
+      BluetoothPlaybackPlugin(),
+      RingtonePlugin(),
+      DrivingModePlugin(),
     ];
