@@ -14,6 +14,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -29,6 +30,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Catches the OAuth redirect for flutter_web_auth_2, used by
+             SpotifyAuth (lib/plugins/spotify_auth.dart) and
+             YouTubeMusicImportPlugin's OAuth flow — both use the same
+             "omnis" custom scheme, disambiguated by path/query, not by a
+             separate activity each. See SpotifyAuth's doc comment for the
+             full redirect-URI story (desktop uses a different, loopback
+             mechanism instead of this). -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true"
+            android:taskAffinity="">
+            <intent-filter android:label="flutter_web_auth_2">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="omnis"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

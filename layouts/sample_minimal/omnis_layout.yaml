@@ -1,0 +1,33 @@
+# Sample Omnis Now Playing layout: a minimal centered arrangement with a
+# small badge from any plugin content injected at 'now_playing_overlay'.
+#
+# Import via Settings → Player layout → "Import a layout" by pasting a
+# raw link to this file, or by picking it after downloading it locally.
+# See lib/ui/player_layouts/declarative/layout_manifest.dart for the full
+# node/component vocabulary this format supports.
+
+id: sample_minimal
+name: Sample Minimal
+description: A small, centered layout — a template to build your own from.
+author: Omnis Team
+version: 1.0.0
+defines_own_gestures: false
+
+background:
+  type: color
+  value: surface
+
+root:
+  type: column
+  main_axis_alignment: center
+  children:
+    - { type: component, component: plugin_slot_overlay }
+    - { type: component, component: album_art, size: 200 }
+    - { type: spacer, height: 24 }
+    - { type: component, component: track_info }
+    - { type: spacer, height: 16 }
+    - { type: component, component: progress_bar }
+    - { type: spacer, height: 16 }
+    - { type: component, component: controls_row }
+    - { type: spacer, height: 12 }
+    - { type: component, component: plugin_slot_bottom }

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omnis/core/lyrics_plugin.dart';
-import 'package:omnis/core/replay_gain_plugin.dart';
+import 'package:omnis/plugins/lyrics_plugin.dart';
+import 'package:omnis/plugins/replay_gain_plugin.dart';
 import 'package:omnis/core/base_track.dart';
 
 void main() {

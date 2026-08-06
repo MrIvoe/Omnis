@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/ui/plugin_settings_page.dart';
 
 /// Plugins screen.
 ///
@@ -30,22 +35,28 @@ class _PluginsPageState extends State<PluginsPage> {
   List<ManagedPlugin> _plugins = [];
   List<PluginHealthRecord> _health = [];
   String _installResult = '';
+  StreamSubscription<List<ManagedPlugin>>? _pluginsSub;
+  late final void Function(List<PluginHealthRecord>) _healthListener;
 
   @override
   void initState() {
     super.initState();
     _plugins = widget.pluginManager.plugins;
-    widget.pluginManager.changes.listen((p) {
+    _health = widget.sandbox.healthRecords;
+    // Both subscriptions used to outlive the page.
+    _pluginsSub = widget.pluginManager.changes.listen((p) {
       if (mounted) setState(() => _plugins = p);
     });
-    _health = widget.sandbox.healthRecords;
-    widget.sandbox.addHealthListener((records) {
+    _healthListener = (records) {
       if (mounted) setState(() => _health = records);
-    });
+    };
+    widget.sandbox.addHealthListener(_healthListener);
   }
 
   @override
   void dispose() {
+    _pluginsSub?.cancel();
+    widget.sandbox.removeHealthListener(_healthListener);
     _urlController.dispose();
     super.dispose();
   }
@@ -61,14 +72,116 @@ class _PluginsPageState extends State<PluginsPage> {
       _installError = null;
       _installResult = '';
     });
+
+    InstalledPlugin? installed;
     try {
-      final plugin = await widget.pluginManager.installFromUrl(url);
+      // Step 1: download, extract, and parse the manifest. No plugin code
+      // has executed yet at this point.
+      installed = await widget.pluginManager.installer.installFromUrl(url);
+
+      // Step 2: show the user what the plugin is asking for *before* its
+      // code runs. Previously this page installed and executed arbitrary
+      // downloaded code with zero disclosure — the manifest's
+      // `permissions:` list existed and was validated, but nobody ever
+      // showed it to a human before the code actually ran.
+      final proceed = await _confirmPermissions(installed.manifest);
+      if (!proceed) {
+        await widget.pluginManager.installer.uninstall(installed.directory);
+        setState(() => _installResult = 'Install cancelled.');
+        return;
+      }
+
+      // Step 3: only now compile and execute the plugin's entrypoint.
+      final plugin = await widget.pluginManager.registerInstalled(
+        installed,
+        sourceUrl: url,
+      );
       setState(
           () => _installResult = 'Installed ${plugin.name} v${plugin.version}');
     } catch (e) {
+      // Clean up a partially-downloaded plugin directory on failure so it
+      // doesn't linger on disk as an orphaned, unregistered folder.
+      if (installed != null) {
+        try {
+          await widget.pluginManager.installer.uninstall(installed.directory);
+        } catch (_) {}
+      }
       setState(() => _installError = 'Install failed: $e');
     } finally {
       if (mounted) setState(() => _installing = false);
+    }
+  }
+
+  /// Shows what the plugin declares in its manifest and asks for
+  /// confirmation before any of its code executes. Always shown — even
+  /// with an empty permission list — so "this plugin asks for nothing" is
+  /// as visible as "this plugin wants network + storage".
+  Future<bool> _confirmPermissions(PluginManifest manifest) async {
+    if (!mounted) return false;
+    final permissions = manifest.permissions;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Install "${manifest.name}"?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${manifest.description}\nv${manifest.version} · '
+                '${manifest.author}'),
+            const SizedBox(height: 16),
+            Text(
+              permissions.isEmpty
+                  ? 'This plugin does not declare any special permissions.'
+                  : 'This plugin declares the following permissions:',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if (permissions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final perm in permissions)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber, size: 18),
+                      const SizedBox(width: 6),
+                      Text(_permissionLabel(perm)),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
+              const Text(
+                'Only install plugins from sources you trust — downloaded '
+                'plugin code runs inside the app.',
+                style: TextStyle(fontStyle: FontStyle.italic),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Install'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  String _permissionLabel(String perm) {
+    switch (perm) {
+      case 'storage':
+      case 'filesystem':
+        return 'Storage — can read/write files on this device';
+      case 'network':
+        return 'Network — can make internet requests';
+      default:
+        return perm;
     }
   }
 
@@ -151,6 +264,16 @@ class _PluginsPageState extends State<PluginsPage> {
                     subtitle:
                         Text('${p.description}\nv${p.version} · ${p.author}'),
                     isThreeLine: true,
+                    // Tapping the plugin opens its own settings page — the
+                    // RuneLite-style "click the plugin to configure it"
+                    // model, so a plugin's settings never need a section
+                    // added to the shared Settings page.
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PluginSettingsPage(
+                        pluginManager: widget.pluginManager,
+                        plugin: p,
+                      ),
+                    )),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -167,6 +290,7 @@ class _PluginsPageState extends State<PluginsPage> {
                             onPressed: () =>
                                 widget.pluginManager.uninstallPlugin(p),
                           ),
+                        const Icon(Icons.chevron_right),
                       ],
                     ),
                   ),

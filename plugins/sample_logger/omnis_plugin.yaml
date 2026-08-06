@@ -7,5 +7,6 @@ entrypoint: plugin.dart
 hooks:
   - onTrackStart
   - onLibraryScan
+  - uiSlot
 permissions:
   - network

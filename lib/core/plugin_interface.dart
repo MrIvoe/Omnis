@@ -1,11 +1,38 @@
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/plugin_context.dart';
+import 'package:omnis/core/plugin_storage.dart';
 
 /// Abstract base class for all plugins in the Omnis music engine.
 ///
 /// The Core never references a concrete plugin. It only knows about
-/// this interface plus the [PluginDispatcher] hooks, so a crashing
+/// this interface plus the [PluginManager] hooks, so a crashing
 /// plugin can never take the player down.
 abstract class MusicPlugin {
+  PluginContext? _context;
+  PluginStorage? _storage;
+
+  /// The Core capabilities available to this plugin.
+  ///
+  /// `null` until the plugin is registered with a [PluginManager] that has
+  /// a context attached — and in unit tests that construct the plugin
+  /// directly. Always call through `context?.` so a detached plugin
+  /// degrades to a no-op instead of throwing.
+  PluginContext? get context => _context;
+
+  /// This plugin's own namespaced key-value store. Unlike [context], never
+  /// `null` — safe to use from a plugin constructed directly in a test,
+  /// with no [PluginManager] involved at all. See [PluginStorage].
+  PluginStorage get storage => _storage ??= PluginStorage(id);
+
+  /// Called by the [PluginManager] at registration, before [initialize].
+  ///
+  /// This is what lets a plugin reach the audio engine without the Core
+  /// knowing the plugin exists. Override it only to react to attachment;
+  /// always call `super.attach(context)`.
+  void attach(PluginContext context) {
+    _context = context;
+  }
+
   /// Unique identifier for the plugin.
   String get id;
 
@@ -42,6 +69,13 @@ abstract class MusicPlugin {
   ///  - `library_header`
   ///  - `settings_page`
   ///  - `sidebar_item`
+  ///  - `plugin_settings` — this plugin's own configuration UI, shown on
+  ///    a dedicated page reached by tapping it in the Plugins list (see
+  ///    `PluginSettingsPage`). Unlike every other location, which every
+  ///    enabled plugin is asked about at once and whose results are
+  ///    combined, this one is only ever asked of a single plugin — the
+  ///    one the user tapped — so a plugin can own settings that used to
+  ///    require adding a section to the shared Settings page.
   ///
   /// Return `null` when the plugin has nothing to show at this slot.
   dynamic uiSlot(String locationID);
@@ -49,9 +83,11 @@ abstract class MusicPlugin {
   /// Called when the plugin is shut down.
   Future<void> dispose();
 
-  /// Enable the plugin (no-op by default).
+  /// Called when the user re-enables a plugin that was already initialized.
   Future<void> enable() async {}
 
-  /// Disable the plugin (no-op by default).
+  /// Called when the user disables the plugin. Use this to release any
+  /// effect the plugin has on playback (e.g. drop a gain contribution) so
+  /// a disabled plugin leaves no trace behind.
   Future<void> disable() async {}
 }

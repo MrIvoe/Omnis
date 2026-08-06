@@ -202,6 +202,32 @@ dynamic onLibraryScan(dynamic file) {
         throwsA(isA<PluginRuntimeException>()),
       );
     });
+
+    test(
+        'sample_logger plugin.dart executes for real, including its uiSlot '
+        'declarative-Map hook', () async {
+      // Loads the actual shipped example (plugins/sample_logger/plugin.dart)
+      // through the real dart_eval interpreter — not a hand-typed source
+      // string — to prove the declarative uiSlot payload PluginSlotView
+      // depends on (a downloaded plugin returning {'type': 'badge', ...}
+      // instead of a real Widget) really executes, not just "looks right"
+      // by inspection.
+      final source =
+          await File(p.join('plugins', 'sample_logger', 'plugin.dart'))
+              .readAsString();
+      final runtime = PluginRuntime.create(source);
+
+      expect(runtime.id, 'sample_logger');
+      expect(runtime.hasHook('uiSlot'), isTrue);
+
+      final overlay = runtime.callHook('uiSlot', ['now_playing_overlay']);
+      expect(overlay, isA<Map>());
+      expect((overlay as Map)['type'], 'badge');
+      expect(overlay['text'], 'Sample Logger active');
+
+      final elsewhere = runtime.callHook('uiSlot', ['settings_page']);
+      expect(elsewhere, isNull);
+    });
   });
 
   group('In-process plugins (MusicPlugin)', () {

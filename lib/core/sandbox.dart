@@ -48,8 +48,17 @@ class PluginSandbox {
   List<PluginHealthRecord> get healthRecords => List.unmodifiable(_records);
 
   /// Subscribe to health record changes (e.g. to update the dashboard UI).
+  ///
+  /// Callers must pair this with [removeHealthListener] in their `dispose`,
+  /// otherwise every rebuilt page leaves a listener behind that holds its
+  /// `setState` — and its whole element tree — alive forever.
   void addHealthListener(void Function(List<PluginHealthRecord>) listener) {
     _healthListeners.add(listener);
+  }
+
+  /// Unsubscribe a listener registered with [addHealthListener].
+  void removeHealthListener(void Function(List<PluginHealthRecord>) listener) {
+    _healthListeners.remove(listener);
   }
 
   /// Run [operation] inside the sandbox.

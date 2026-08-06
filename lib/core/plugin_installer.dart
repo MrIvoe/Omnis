@@ -98,7 +98,7 @@ class PluginInstaller {
     final topLevel = _findTopLevel(files);
 
     final targetDir = Directory(
-      p.join((await _pluginsRoot()).path, 'plugin_$topLevel'),
+      p.join((await _pluginsRoot()).path, _targetDirName(topLevel, url)),
     );
     if (await targetDir.exists()) {
       // Reinstall: clear old files.
@@ -263,14 +263,47 @@ class PluginInstaller {
     );
   }
 
+  /// The single directory every entry in the archive sits under, if there
+  /// is one (GitHub wraps a repo zip in `repo-branch/`).
+  ///
+  /// This used to return the first segment of the first file unconditionally,
+  /// so a zip whose files sit at the root (`omnis_plugin.yaml`,
+  /// `plugin.dart`) reported a "top level" of `omnis_plugin.yaml` and
+  /// installed into a directory named `plugin_omnis_plugin.yaml`. Requiring
+  /// that *every* entry share the prefix — and that it actually be a
+  /// directory — makes both zip layouts work.
   static String? _findTopLevel(Iterable<ArchiveFile> files) {
+    String? candidate;
     for (final f in files) {
-      if (f.isFile) {
-        final parts = f.name.split('/');
-        if (parts.isNotEmpty) return parts.first;
+      if (!f.isFile) continue;
+      final parts = f.name.split('/');
+      // A file at the archive root means there is no common wrapper.
+      if (parts.length < 2) return null;
+      final first = parts.first;
+      if (candidate == null) {
+        candidate = first;
+      } else if (candidate != first) {
+        return null;
       }
     }
-    return null;
+    return candidate;
+  }
+
+  /// A stable, filesystem-safe directory name for an installed plugin.
+  ///
+  /// Prefers the archive's wrapper directory (`repo-main`) so reinstalling
+  /// the same plugin replaces it instead of piling up copies. Falls back to
+  /// the source URL when the zip has no wrapper.
+  static String _targetDirName(String? topLevel, String url) {
+    final raw = (topLevel != null && topLevel.isNotEmpty)
+        ? topLevel
+        : Uri.tryParse(url)
+                ?.pathSegments
+                .where((s) => s.isNotEmpty)
+                .join('_') ??
+            'unknown';
+    final safe = raw.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return 'plugin_${safe.isEmpty ? 'unknown' : safe}';
   }
 
   static String _stripTopLevel(String name, String? top) {

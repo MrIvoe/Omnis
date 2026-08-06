@@ -1,106 +1,120 @@
-# Omnis — Micro-kernel Music Engine
+# Omnis
 
-A high-performance, indestructible music player with a hot-swappable plugin ecosystem. The Core stays lightweight and never crashes; 100% of features live in plugins.
+A micro-kernel music player with a hot-swappable plugin ecosystem. The
+Core stays small and never crashes; every feature — equalizer, lyrics,
+scrobbling, smart playlists, tag editing, Spotify/YouTube integration —
+lives in a plugin.
 
-## Architecture
+## Features
 
-```
-┌─────────────────────────────────────────────┐
-│                  UI Layer                     │
-│  Now Playing · Library · Plugins · Settings  │
-├─────────────────────────────────────────────┤
-│              PluginManager                    │
-│  install · register · sandbox · health        │
-├─────────────────────────────────────────────┤
-│              AudioEngine (Core)               │
-│  just_audio · gapless · crossfade · ReplayGain│
-└─────────────────────────────────────────────┘
-```
+**Playback**
+- Gapless queue playback, crossfade, ReplayGain-based volume normalization
+- Shuffle, repeat (off/all/one), A-B repeat
+- Independent pitch and speed controls, skip-silence
+- Real per-band hardware equalizer on Android; a virtual bass/mid/treble
+  model everywhere else
 
-### Core Kernel (Indestructible)
+**Library**
+- List/grid views (2–5 column density) for Songs, Albums, and Genres;
+  list views for Artists and Folders
+- Duplicate and short-track ("ad stinger") detection with multi-select
+  cleanup
+- Real embedded artwork everywhere (MediaStore on Android, direct ID3
+  parsing on desktop) — not a placeholder icon
+- Manual and automatic ID3 tag editing — every standard field, plus
+  freeform custom fields — with smart skip-if-already-tagged tracking
+- Configurable "feat./ft./featuring" artist-separator rules, so a
+  featured artist doesn't stay stuck in the title field
 
-- **AudioEngine** (`lib/core/audio_engine.dart`): gapless playback via `ConcatenatingAudioSource`, crossfade, ReplayGain pre-gain, real `audio_service` handler. If a file is corrupt, it auto-skips to the next track.
-- **BaseTrack** (`lib/core/base_track.dart`): unified schema — local files, Spotify tracks, and YouTube streams are the same `BaseTrack` object with a `TrackType` enum.
-- **PluginSandbox** (`lib/core/sandbox.dart`): every plugin hook runs in a try-catch. Failures log to a `PluginHealthRecord` dashboard, never crash the app.
+**Lyrics**
+- Manual lyrics entry, or automatic online lookup (via
+  [lrclib.net](https://lrclib.net), free, no API key) with optional
+  time-synced display
+- Optional auto-fetch when a track starts playing, and an option to embed
+  fetched lyrics directly into the file's own tags
 
-### Plugin Ecosystem
+**Customization**
+- Six built-in Now Playing layouts (Standard, Top Controls, Landscape,
+  Full Art + Gestures, Karaoke Gestures, Car Mode), plus an importable
+  declarative layout format for building your own — no code required,
+  safe to import from a URL with no permission prompt
+- Full theming: light/dark/system, accent color, presets
+- Every plugin has its own settings page — tap it in the Plugins list —
+  the same "click the plugin to configure it" model RuneLite uses
 
-- **PluginInstaller** (`lib/core/plugin_installer.dart`): paste a GitHub URL → downloads the repo as a zip → extracts → validates `omnis_plugin.yaml` → registers.
-- **PluginRuntime** (`lib/core/plugin_runtime.dart`): executes downloaded plugin Dart code at runtime via `dart_eval` (a full Dart bytecode interpreter). Plugins are sandboxed — they cannot import `package:omnis` or `dart:ui`.
-- **PluginManager** (`lib/core/plugin_manager.dart`): hot-swap (enable/disable/uninstall at runtime), hook dispatch (`onTrackStart`, `onLibraryScan`, `uiSlot`), health dashboard.
+**Streaming integrations** *(bring your own API credentials — see
+[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md))*
+- Spotify: browse/import your playlists, or remote-control playback on a
+  Spotify Connect device
+- YouTube: search and browse your playlists, or play a video through
+  YouTube's own embedded player
 
-## Plugin Contract
+**Ecosystem**
+- Install community plugins by pasting a GitHub URL — sandboxed, with a
+  permission-confirmation dialog before any downloaded code runs
+- A plugin crash never takes down playback — every hook runs sandboxed,
+  with failures surfaced on a Plugin Health dashboard, not silently
+  swallowed or fatal
 
-A plugin is a self-contained Dart file (`plugin.dart`) plus a manifest (`omnis_plugin.yaml`):
+## Documentation
 
-### `omnis_plugin.yaml`
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how the micro-kernel
+  is put together and why: the Core/plugin split, `ServiceRegistry`/
+  `EventBus`, `PluginContext`/`PluginStorage`, player layouts, and an
+  honest "what's real vs. approximated" feature-by-feature breakdown.
+- **[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md)** — how to build a
+  plugin, bundled or downloadable, with a complete working example at
+  [`example/example_plugin.dart`](example/example_plugin.dart).
+- **[docs/BUILDING.md](docs/BUILDING.md)** — prerequisites, running,
+  testing, building release artifacts, signing.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — the ground rules and workflow
+  for contributing.
 
-```yaml
-id: my_plugin
-name: My Plugin
-description: Does something cool
-version: 1.0.0
-author: Your Name
-entrypoint: plugin.dart
-hooks:
-  - onTrackStart
-  - onLibraryScan
-permissions:
-  - network
-```
-
-### `plugin.dart`
-
-```dart
-dynamic createPlugin(dynamic api) {
-  return {
-    'id': 'my_plugin',
-    'name': 'My Plugin',
-    'description': 'Does something cool',
-    'version': '1.0.0',
-    'author': 'Your Name',
-    'hooks': ['onTrackStart', 'onLibraryScan'],
-  };
-}
-
-dynamic onTrackStart(dynamic track) {
-  // track is a JSON Map: {id, title, artists, album, duration, ...}
-  return null;
-}
-
-dynamic onLibraryScan(dynamic file) {
-  // file is a String path
-  return null;
-}
-```
-
-### Installing a Plugin
-
-1. Open the **Plugins** tab.
-2. Paste a GitHub repository URL (e.g. `https://github.com/user/my-plugin`).
-3. Click **Install**.
-4. The plugin is downloaded, extracted, compiled, and executed at runtime.
-5. Toggle it on/off or uninstall at any time (hot-swap).
-
-### Plugin Health Dashboard
-
-If a plugin crashes, the failure appears in the **Plugin Health** section of the Plugins tab. The music never stops.
-
-## Running
+## Quick start
 
 ```bash
+git clone <this-repo-url>
 cd Omnis
 flutter pub get
 flutter run
 ```
 
-## Testing
+See [docs/BUILDING.md](docs/BUILDING.md) for platform prerequisites,
+building release artifacts, and troubleshooting.
 
-```bash
-cd Omnis
-flutter test
+## Architecture, in one picture
+
+```
+┌───────────────────────────────────────────────┐
+│                   UI Layer                     │
+│   Now Playing · Library · Plugins · Settings   │
+├───────────────────────────────────────────────┤
+│      lib/plugins/  — every feature lives here  │
+│  equalizer · lyrics · replay gain · scrobble   │
+│  Spotify · YouTube · smart playlist · …        │
+├───────────────────────────────────────────────┤
+│  lib/plugin_api/  — capability contracts.      │
+│  Grows with the ecosystem. Depends on core;    │
+│  core never depends back.                      │
+├───────────────────────────────────────────────┤
+│      lib/core/  — the kernel, plugin-agnostic  │
+│  AudioEngine · PluginManager · Sandbox         │
+│  PluginContext · ServiceRegistry · EventBus    │
+└───────────────────────────────────────────────┘
 ```
 
-## Sample Plugin
+The kernel never imports a concrete plugin — `lib/core/main_core.dart`
+has exactly one plugin-side import, the registry. Adding a plugin means
+editing `lib/plugins/`, never `lib/core/`. Full rationale in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-See `plugins/sample_logger/` for a minimal example plugin.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `flutter analyze`
+and `flutter test` clean before every PR, new features come with tests,
+and most contributions are plugins — see
+[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md).
+
+## License
+
+[MIT](LICENSE).

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/core/lyrics_plugin.dart';
-import 'package:omnis/core/scrobble_plugin.dart';
-import 'package:omnis/core/smart_playlist_plugin.dart';
+import 'package:omnis/plugins/lyrics_plugin.dart';
+import 'package:omnis/plugins/scrobble_plugin.dart';
+import 'package:omnis/plugins/smart_playlist_plugin.dart';
 
 void main() {
   test('smart playlist builds a mood-based queue', () {

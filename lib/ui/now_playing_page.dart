@@ -1,19 +1,42 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
-import 'package:omnis/core/equalizer_plugin.dart';
-import 'package:omnis/core/lyrics_plugin.dart';
+import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
-import 'package:omnis/core/sleep_timer_plugin.dart';
-import 'package:omnis/core/visualizer_plugin.dart';
+import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/plugins/equalizer_plugin.dart';
+import 'package:omnis/plugins/lyrics_plugin.dart';
+import 'package:omnis/plugins/shuffle_repeat_plugin.dart';
+import 'package:omnis/plugins/sleep_timer_plugin.dart';
+import 'package:omnis/plugins/visualizer_plugin.dart';
+import 'package:omnis/ui/player_layouts/layout_manager.dart';
+import 'package:omnis/ui/player_layouts/player_layout.dart';
 
-/// Global GetIt instance (same singleton used in main.dart).
-GetIt get locator => GetIt.instance;
+/// Which way a "Taps" gesture-mode tap should skip.
+enum TapZoneAction { previous, next }
 
-/// Now Playing screen — bound directly to [AudioEngine] streams.
+/// Decides which way a tap-zone gesture should skip: right half → next,
+/// left half → previous, `null` when the content hasn't been laid out yet
+/// (width <= 0). A top-level function (not a method on the page's private
+/// State class) so it's directly testable from `test/` without pumping the
+/// whole page — previously "Taps" was declared as a gesture mode in
+/// Settings but had no implementation at all; only swipe ever worked.
+TapZoneAction? tapZoneAction(double dx, double width) {
+  if (width <= 0) return null;
+  return dx > width / 2 ? TapZoneAction.next : TapZoneAction.previous;
+}
+
+/// Now Playing screen.
+///
+/// This page is deliberately thin: it owns the audio-engine subscriptions
+/// and plugin lookups, packages the result into a [PlayerLayoutData], and
+/// hands rendering off entirely to whichever [PlayerLayout] is selected
+/// (`AppSettings.playerLayoutId`, see `lib/ui/player_layouts/`). Adding a
+/// new arrangement of the screen — moving buttons, going gesture-only,
+/// whatever — means adding a layout, never touching this file.
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
 
@@ -23,21 +46,48 @@ class NowPlayingPage extends StatefulWidget {
 
 class _NowPlayingPageState extends State<NowPlayingPage> {
   AudioEngine get engine => locator<AudioEngine>();
+  PluginManager get _plugins => locator<MainCore>().pluginManager;
+  LayoutManager get _layouts => locator<LayoutManager>();
 
-  StreamSubscription? _trackSub;
-  StreamSubscription? _stateSub;
+  // Every plugin below resolves to the *registered* shared instance so a
+  // disabled plugin (`onlyEnabled: true`) genuinely disappears from every
+  // layout at once, rather than each layout needing its own lookup logic.
+  //
+  // Lyrics is looked up two ways: [_lyricsProvider] by interface, for the
+  // display path (what a layout shows) — [_lyricsEditor] stays a concrete
+  // lookup because editing is specific to this plugin's own storage
+  // format, not part of the generic "read the current lyric" contract.
+  ILyricsProvider? get _lyricsProvider =>
+      _plugins.services.get<ILyricsProvider>();
+  LyricsPlugin? get _lyricsEditor =>
+      _plugins.bundled<LyricsPlugin>(onlyEnabled: true);
+  EqualizerPlugin? get _equalizer =>
+      _plugins.bundled<EqualizerPlugin>(onlyEnabled: true);
+  // Same split as lyrics: [_visualizerProvider] by interface for the
+  // display path — [_visualizerEmitter] stays a concrete lookup because
+  // `emitLevels` (how *this* provider produces levels) isn't part of the
+  // generic read-only interface.
+  IVisualizerProvider? get _visualizerProvider =>
+      _plugins.services.get<IVisualizerProvider>();
+  VisualizerPlugin? get _visualizerEmitter =>
+      _plugins.bundled<VisualizerPlugin>(onlyEnabled: true);
+  SleepTimerPlugin? get _sleepTimer =>
+      _plugins.bundled<SleepTimerPlugin>(onlyEnabled: true);
+  ShuffleRepeatPlugin? get _shuffleRepeat =>
+      _plugins.bundled<ShuffleRepeatPlugin>(onlyEnabled: true);
+
+  StreamSubscription<dynamic>? _trackSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration?>? _durationSub;
+  StreamSubscription<List<ManagedPlugin>>? _pluginsSub;
+  StreamSubscription<List<PlayerLayout>>? _layoutsSub;
+
   bool _playing = false;
   bool _buffering = false;
   Duration _position = Duration.zero;
   Duration? _duration;
   late AppSettings _settings;
-  final LyricsPlugin _lyricsPlugin = LyricsPlugin();
-  final EqualizerPlugin _equalizerPlugin = EqualizerPlugin();
-  final VisualizerPlugin _visualizerPlugin = VisualizerPlugin();
-  final SleepTimerPlugin _sleepTimer = SleepTimerPlugin(onPause: () async {
-    final core = locator<MainCore>();
-    await core.audioEngine.pause();
-  });
 
   @override
   void initState() {
@@ -51,14 +101,24 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       if (!mounted) return;
       setState(() {
         _playing = state.playing;
-        _buffering = state.processingState == ProcessingState.loading;
+        _buffering = state.processingState == ProcessingState.loading ||
+            state.processingState == ProcessingState.buffering;
       });
     });
-    engine.positionStream.listen((pos) {
+    _positionSub = engine.positionStream.listen((pos) {
       if (mounted) setState(() => _position = pos);
     });
-    engine.durationStream.listen((dur) {
+    _durationSub = engine.durationStream.listen((dur) {
       if (mounted) setState(() => _duration = dur);
+    });
+    // Enabling/disabling a plugin changes which controls a layout shows.
+    _pluginsSub = _plugins.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+    // Installing/uninstalling an imported layout should be reflected
+    // immediately if it happens to be the one currently selected.
+    _layoutsSub = _layouts.changes.listen((_) {
+      if (mounted) setState(() {});
     });
   }
 
@@ -67,6 +127,10 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _settings.removeListener(_refresh);
     _trackSub?.cancel();
     _stateSub?.cancel();
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    _pluginsSub?.cancel();
+    _layoutsSub?.cancel();
     super.dispose();
   }
 
@@ -74,230 +138,266 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     if (mounted) setState(() {});
   }
 
-  String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '${d.inMinutes}:$m:$s';
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  /// Duration picker for the sleep timer. Previously this was hardcoded
+  /// to a single fixed 15-minute button with no way to change it — the
+  /// plugin itself (`SleepTimerPlugin.startTimer`) already accepts any
+  /// `Duration`, only the UI never offered one.
+  Future<void> _pickSleepTimerDuration(SleepTimerPlugin sleepTimer) async {
+    const presets = [5, 10, 15, 30, 45, 60, 90];
+    final chosen = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        // Pre-filled from this plugin's own settings (default duration),
+        // so "the timer I always use" is one Enter away instead of
+        // needing to find the matching chip every time.
+        final controller =
+            TextEditingController(text: '${sleepTimer.defaultMinutes}');
+        return AlertDialog(
+          title: const Text('Sleep timer'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final minutes in presets)
+                    ActionChip(
+                      label: Text('${minutes}m'),
+                      onPressed: () => Navigator.pop(context, minutes),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Custom (minutes)',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (value) =>
+                    Navigator.pop(context, int.tryParse(value)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, int.tryParse(controller.text)),
+              child: const Text('Start'),
+            ),
+          ],
+        );
+      },
+    );
+    if (chosen == null || chosen <= 0 || !mounted) return;
+    sleepTimer.startTimer(Duration(minutes: chosen));
+    setState(() {});
+    _toast('Sleep timer started for $chosen minute${chosen == 1 ? '' : 's'}.');
+  }
+
+  /// Wraps [child] with the Settings → Gesture mode handler (swipe / taps /
+  /// none). Layouts that define their own gestures
+  /// ([PlayerLayout.definesOwnGestures]) skip this entirely — their
+  /// gestures *are* the interaction model, not an addition on top of
+  /// visible buttons the way this wrapper is for the other layouts.
+  Widget _wrapWithGestureMode(Widget child, AppSettings settings) {
+    if (!settings.allowSwipeGestures) return child;
+    switch (settings.gestureMode) {
+      case GestureMode.swipe:
+        return GestureDetector(
+          onHorizontalDragEnd: (details) {
+            switch (swipeSkipActionFor(details.primaryVelocity)) {
+              case SwipeSkipAction.next:
+                engine.next();
+              case SwipeSkipAction.previous:
+                engine.previous();
+              case null:
+                break;
+            }
+          },
+          child: child,
+        );
+      case GestureMode.taps:
+        return GestureDetector(
+          onTapUp: (details) {
+            final width = context.size?.width ?? 0;
+            switch (tapZoneAction(details.localPosition.dx, width)) {
+              case TapZoneAction.next:
+                engine.next();
+              case TapZoneAction.previous:
+                engine.previous();
+              case null:
+                break;
+            }
+          },
+          child: child,
+        );
+      case GestureMode.none:
+        return child;
+    }
+  }
+
+  /// The active layout, honouring the auto-landscape override: while the
+  /// device is rotated and `autoLandscapeLayout` is on, a "portrait"
+  /// layout (Standard, Top Controls) renders as Landscape instead —
+  /// without touching the persisted `playerLayoutId` the user actually
+  /// picked. Gesture-first layouts and Car Mode already suit a wide
+  /// viewport on their own, so they're left alone.
+  PlayerLayout _resolveActiveLayout(BuildContext context, AppSettings settings) {
+    final selected = _layouts.resolve(settings.playerLayoutId);
+    const portraitOriented = {'standard', 'top_controls'};
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    if (settings.autoLandscapeLayout &&
+        isLandscape &&
+        portraitOriented.contains(selected.id)) {
+      return _layouts.resolve('landscape');
+    }
+    return selected;
   }
 
   @override
   Widget build(BuildContext context) {
     final track = engine.currentTrack;
-    final theme = Theme.of(context);
     final settings = _settings;
-    final buttonLayout = settings.buttonLayout;
-    final showLyrics = settings.showLyrics;
-    final karaokeMode = settings.karaokeMode;
-    final showAlbumArt = settings.showAlbumArt;
-    final scale = settings.albumArtScale;
-    final lyricText = showLyrics && track != null
-        ? _lyricsPlugin.currentLyricFor(track, _position)
-        : null;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Now Playing')),
-      body: Center(
-        child: track == null
-            ? const Text('Nothing playing — pick a track from the Library.')
-            : GestureDetector(
-                onHorizontalDragEnd: settings.allowSwipeGestures &&
-                        settings.gestureMode == GestureMode.swipe
-                    ? (details) {
-                        if (details.primaryVelocity == null) return;
-                        if (details.primaryVelocity! < -200) {
-                          engine.next();
-                        } else if (details.primaryVelocity! > 200) {
-                          engine.previous();
-                        }
-                      }
-                    : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (showAlbumArt)
-                        Transform.scale(
-                          scale: scale,
-                          child: Container(
-                            width: 220,
-                            height: 220,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: theme.colorScheme.shadow
-                                      .withOpacity(0.15),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Icon(Icons.album,
-                                  size: 96,
-                                  color: theme.colorScheme.onPrimaryContainer),
-                            ),
-                          ),
-                        )
-                      else
-                        Icon(Icons.music_note,
-                            size: 72, color: theme.colorScheme.primary),
-                      const SizedBox(height: 24),
-                      Text(track.title,
-                          style: theme.textTheme.headlineSmall,
-                          textAlign: TextAlign.center),
-                      const SizedBox(height: 8),
-                      Text(track.artists.join(', '),
-                          style: theme.textTheme.bodyLarge),
-                      const SizedBox(height: 16),
-                      if (showLyrics)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest
-                                .withOpacity(0.35),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            karaokeMode
-                                ? '♪ ${track.title} ♪'
-                                : (lyricText ??
-                                    'Lyrics mode is on — karaoke visuals will appear here.'),
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ),
-                      const SizedBox(height: 24),
-                      if (showLyrics)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: VisualizerBars(plugin: _visualizerPlugin),
-                        ),
-                      Slider(
-                        value: (_duration ?? Duration.zero).inMilliseconds > 0
-                            ? _position.inMilliseconds
-                                .clamp(0, _duration!.inMilliseconds)
-                                .toDouble()
-                            : 0,
-                        max: (_duration ?? Duration.zero).inMilliseconds > 0
-                            ? _duration!.inMilliseconds.toDouble()
-                            : 1,
-                        onChanged: (v) =>
-                            engine.seek(Duration(milliseconds: v.round())),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_fmt(_position)),
-                          Text(_fmt(_duration ?? Duration.zero)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: () {
-                              _equalizerPlugin.setBand('bass', 6.0);
-                              _equalizerPlugin.setBand('mid', 2.0);
-                              _equalizerPlugin.setBand('treble', -2.0);
-                              _visualizerPlugin.emitLevels(
-                                  [0.2, 0.5, 0.8, 0.3, 0.7, 0.4, 0.6, 0.2]);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Equalizer preset applied.')),
-                              );
-                            },
-                            child: const Text('EQ preset'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: () {
-                              _visualizerPlugin.emitLevels(
-                                  [0.2, 0.5, 0.7, 0.3, 0.8, 0.4, 0.6, 0.3]);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Visualizer activated.')),
-                              );
-                            },
-                            child: const Text('Visualizer'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildControlRow(buttonLayout),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: () {
-                              _sleepTimer
-                                  .startTimer(const Duration(minutes: 15));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Sleep timer started for 15 minutes.')),
-                              );
-                            },
-                            child: const Text('Sleep in 15m'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: () {
-                              _sleepTimer.stopTimer();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Sleep timer cancelled.')),
-                              );
-                            },
-                            child: const Text('Cancel'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildControlRow(ButtonLayout layout) {
-    final compact = layout != ButtonLayout.standard;
-    final showLarge = layout == ButtonLayout.standard;
-
-    Widget buildButton(IconData icon,
-        {required VoidCallback onPressed, double size = 40}) {
-      return IconButton(
-        iconSize: size,
-        icon: Icon(icon),
-        onPressed: onPressed,
+    if (track == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Now Playing')),
+        body: const Center(
+          child: Text('Nothing playing — pick a track from the Library.'),
+        ),
       );
     }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (layout != ButtonLayout.minimal)
-          buildButton(Icons.skip_previous,
-              onPressed: () => engine.previous(), size: compact ? 32 : 40),
-        const SizedBox(width: 16),
-        _buffering
-            ? const SizedBox(
-                width: 48, height: 48, child: CircularProgressIndicator())
-            : buildButton(
-                _playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                onPressed: () => _playing ? engine.pause() : engine.play(),
-                size: showLarge ? 56 : 44,
-              ),
-        const SizedBox(width: 16),
-        if (layout != ButtonLayout.minimal)
-          buildButton(Icons.skip_next,
-              onPressed: () => engine.next(), size: compact ? 32 : 40),
-      ],
+    final lyricsProvider = _lyricsProvider;
+    final lyricsEditor = _lyricsEditor;
+    final lyricText = settings.showLyrics && lyricsProvider != null
+        ? lyricsProvider.currentLyricFor(track, _position)
+        : null;
+    final sleepTimer = _sleepTimer;
+    final equalizer = _equalizer;
+    final visualizerProvider = _visualizerProvider;
+    final visualizerEmitter = _visualizerEmitter;
+    final crossfadeStatus = engine.crossfadeDuration > Duration.zero
+        ? (engine.isCrossfading
+            ? 'Crossfading into the next track…'
+            : 'Crossfade armed for the last '
+                '${engine.crossfadeDuration.inSeconds}s.')
+        : null;
+
+    final data = PlayerLayoutData(
+      track: track,
+      position: _position,
+      duration: _duration,
+      playing: _playing,
+      buffering: _buffering,
+      settings: settings,
+      pluginManager: _plugins,
+      lyricsPlugin: lyricsProvider,
+      equalizerPlugin: equalizer,
+      visualizerPlugin: visualizerProvider,
+      sleepTimerPlugin: sleepTimer,
+      lyricText: lyricText,
+      crossfadeStatusText: crossfadeStatus,
+      shuffleEnabled: engine.shuffleEnabled,
+      repeatMode: engine.repeatMode,
+      loopAMarker: engine.loopAMarker,
+      abRepeatRange: engine.abRepeatRange,
+      onToggleShuffle: () async {
+        final plugin = _shuffleRepeat;
+        if (plugin != null) {
+          await plugin.toggleShuffle();
+        } else {
+          await engine.setShuffleEnabled(!engine.shuffleEnabled);
+        }
+        if (mounted) setState(() {});
+      },
+      onCycleRepeat: () async {
+        final plugin = _shuffleRepeat;
+        if (plugin != null) {
+          await plugin.cycleRepeat();
+        } else {
+          final next = switch (engine.repeatMode) {
+            RepeatMode.off => RepeatMode.all,
+            RepeatMode.all => RepeatMode.one,
+            RepeatMode.one => RepeatMode.off,
+          };
+          await engine.setRepeatMode(next);
+        }
+        if (mounted) setState(() {});
+      },
+      onCycleAbRepeat: () {
+        // Cycle: off -> A marked -> looping A-B -> off.
+        if (engine.abRepeatRange != null) {
+          engine.clearLoop();
+        } else if (engine.loopAMarker != null) {
+          engine.markLoopB();
+        } else {
+          engine.markLoopA();
+        }
+        setState(() {});
+      },
+      onPlayPause: () => _playing ? engine.pause() : engine.play(),
+      onNext: () => engine.next(),
+      onPrevious: () => engine.previous(),
+      onSeek: (position) => engine.seek(position),
+      onOpenEqualizer: equalizer == null
+          ? () {}
+          : () async {
+              await EqualizerSheet.show(context, equalizer);
+              if (mounted) setState(() {});
+            },
+      onEditLyrics: lyricsEditor == null
+          ? () {}
+          : () async {
+              final changed = await LyricEditDialog.show(
+                context,
+                plugin: lyricsEditor,
+                track: track,
+              );
+              if (changed && mounted) setState(() {});
+            },
+      onActivateVisualizer: visualizerEmitter == null
+          ? () {}
+          : () {
+              visualizerEmitter
+                  .emitLevels([0.2, 0.5, 0.7, 0.3, 0.8, 0.4, 0.6, 0.3]);
+              _toast('Visualizer activated.');
+            },
+      onStartSleepTimer: sleepTimer == null
+          ? () {}
+          : () => _pickSleepTimerDuration(sleepTimer),
+      onCancelSleepTimer: sleepTimer == null
+          ? null
+          : () {
+              sleepTimer.stopTimer();
+              setState(() {});
+              _toast('Sleep timer cancelled.');
+            },
+    );
+
+    final layout = _resolveActiveLayout(context, settings);
+    final body = layout.build(context, data);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Now Playing')),
+      body: layout.definesOwnGestures
+          ? body
+          : _wrapWithGestureMode(body, settings),
     );
   }
 }

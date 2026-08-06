@@ -1,37 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 import 'package:omnis/core/app_settings.dart';
-import 'package:omnis/core/audio_engine.dart';
-import 'package:omnis/core/main_core.dart';
 import 'package:omnis/ui/home_page.dart';
 
-/// Global service locator (Core does not know about concrete features).
-final GetIt locator = GetIt.instance;
-
-Future<MainCore> ensureCoreReady() async {
-  if (locator.isRegistered<MainCore>()) {
-    return locator<MainCore>();
-  }
-
-  final core = MainCore();
-  try {
-    await core.initialize();
-  } catch (e, st) {
-    debugPrint('Omnis: core initialization failed: $e');
-    debugPrint('$st');
-  }
-
-  locator.registerSingleton<MainCore>(core);
-  if (!locator.isRegistered<AudioEngine>()) {
-    locator.registerSingleton<AudioEngine>(core.audioEngine);
-  }
-  return core;
-}
+export 'package:omnis/core/bootstrap.dart' show ensureCoreReady, locator;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Only AppSettings is awaited before the first frame — it's a single
+  // SharedPreferences read, fast enough that skipping it would just
+  // trade one flicker (default theme, then a jump to the real one) for
+  // another. The heavy part of startup — the audio engine, plugin
+  // manager, and installed-plugin/layout disk I/O inside ensureCoreReady
+  // and ensureLayoutManagerReady — used to run here too, which meant the
+  // OS saw nothing but a blank window until all of it finished. Neither
+  // is needed to paint the first frame: HomePage already gates on
+  // _coreReady (a plain spinner, not a branded splash) and calls both
+  // itself in initState, so they now run *after* something is on screen
+  // instead of *before*.
   await AppSettings.instance.initialize();
-  await ensureCoreReady();
   runApp(const OmnisApp());
 }
 

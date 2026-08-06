@@ -1,32 +1,168 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:omnis/core/app_settings.dart' show RepeatMode;
 import 'package:omnis/core/base_track.dart';
+
+/// A single adjustable band on the platform's native equalizer.
+///
+/// Deliberately just_audio-agnostic in its public surface — no
+/// `AndroidEqualizerBand` type leaks out — so a plugin that wants real
+/// per-band control depends only on this, not on the audio backend.
+class HardwareEqBand {
+  /// Index of this band on the native equalizer.
+  final int index;
+
+  /// Approximate center frequency in Hz, as reported by the platform.
+  final double centerFrequencyHz;
+
+  /// Minimum gain the platform accepts, in decibels.
+  final double minDecibels;
+
+  /// Maximum gain the platform accepts, in decibels.
+  final double maxDecibels;
+
+  final Future<void> Function(double gain) _applyGain;
+  double _gain;
+
+  HardwareEqBand._({
+    required this.index,
+    required this.centerFrequencyHz,
+    required this.minDecibels,
+    required this.maxDecibels,
+    required double initialGain,
+    required Future<void> Function(double gain) applyGain,
+  })  : _gain = initialGain,
+        _applyGain = applyGain;
+
+  /// Test-only constructor — production bands only come from
+  /// [AudioEngine.hardwareEqBands], which reads real platform state.
+  @visibleForTesting
+  factory HardwareEqBand.forTesting({
+    required int index,
+    required double centerFrequencyHz,
+    double minDecibels = -15,
+    double maxDecibels = 15,
+    double initialGain = 0,
+    Future<void> Function(double gain)? applyGain,
+  }) {
+    return HardwareEqBand._(
+      index: index,
+      centerFrequencyHz: centerFrequencyHz,
+      minDecibels: minDecibels,
+      maxDecibels: maxDecibels,
+      initialGain: initialGain,
+      applyGain: applyGain ?? (_) async {},
+    );
+  }
+
+  /// Current gain in decibels.
+  double get gain => _gain;
+
+  /// Set this band's gain, clamped to the platform's supported range.
+  Future<void> setGain(double decibels) async {
+    final clamped = decibels.clamp(minDecibels, maxDecibels);
+    _gain = clamped;
+    await _applyGain(clamped);
+  }
+}
 
 /// Core playback engine.
 ///
-/// This is the "indestructible layer" of Omnis. It owns the single
-/// [AudioPlayer] instance and exposes reactive [Stream]s that the UI and
-/// plugins consume. No plugin code runs inside this class.
+/// This is the "indestructible layer" of Omnis. It owns the [AudioPlayer]
+/// instances and exposes reactive [Stream]s that the UI and plugins
+/// consume. No plugin code runs inside this class.
+///
+/// ## Queue model
+///
+/// The whole queue is always loaded as one [ConcatenatingAudioSource] on
+/// the primary player, and just_audio owns advancement. [_sourceToQueue]
+/// maps a player source index back to a queue index, because tracks with
+/// no playable URL are skipped when the source is built and the two
+/// indices would otherwise drift.
+///
+/// ## Crossfade
+///
+/// When [crossfadeDuration] is greater than zero, a second, otherwise-idle
+/// [AudioPlayer] (`_crossfadePlayer`) preloads the next track and plays it
+/// silently in parallel during the overlap window; a periodic ramp fades
+/// the primary player's volume down and the second player's volume up.
+/// When the primary auto-advances onto that same track (which just_audio's
+/// own gapless engine does on its own), the second player is stopped —
+/// the primary is now serving that audio natively, so there is no
+/// discontinuity. A manual skip/seek abandons any in-flight crossfade
+/// immediately; crossfade only ever applies to the automatic
+/// end-of-track transition it was designed for.
 class AudioEngine {
-  final AudioPlayer _player = AudioPlayer();
+  late final AudioPlayer _player;
+  final AndroidEqualizer? _androidEqualizer;
+  AudioPlayer? _crossfadePlayer;
+
   final List<BaseTrack> _queue = [];
+
+  /// Maps player source index -> index in [_queue]. Tracks without a
+  /// playable URI are omitted from the audio source, so these can differ.
+  final List<int> _sourceToQueue = [];
+
   int _currentIndex = -1;
   BaseTrack? _currentTrack;
   Completer<void>? _initCompleter;
 
+  /// Guards against reacting to index events emitted while we are swapping
+  /// the audio source out from under the player.
+  bool _rebuilding = false;
+
+  /// Identity of the track the `onTrackStarted` hook last fired for, so a
+  /// hook fires once per track rather than on every state change.
+  String? _lastHookedTrack;
+
+  /// Consecutive load failures, used to stop an auto-skip loop when every
+  /// track in the queue is unplayable.
+  int _consecutiveErrors = 0;
+
+  StreamSubscription<int?>? _indexSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<PlaybackEvent>? _eventSub;
+  StreamSubscription<Duration>? _crossfadeWatchSub;
+
   /// Global volume (0..1).
   double _volume = 1.0;
 
-  /// User volume multiplier used by the ReplayGain plugin.
+  /// Combined pre-gain multiplier contributed by plugins.
   double _preGainMultiplier = 1.0;
+
+  /// Named multiplicative gain contributions (e.g. `'replay_gain'`,
+  /// `'equalizer'`). Multiple plugins can each contribute a factor without
+  /// clobbering one another — the effective pre-gain is the product of all
+  /// contributions.
+  final Map<String, double> _gainContributions = {};
 
   /// Crossfade duration (0 = disabled).
   Duration _crossfadeDuration = Duration.zero;
 
   /// Whether gapless concatenation is enabled.
   bool _gaplessEnabled = true;
+
+  /// Shuffle/repeat state, mirrored onto the underlying just_audio player
+  /// (see [setShuffleEnabled]/[setRepeatMode]) so that both manual
+  /// next()/previous() *and* just_audio's own gapless auto-advance — which
+  /// this class never intercepts, see the queue-model class doc — agree on
+  /// what "next" means.
+  bool _shuffleEnabled = false;
+  RepeatMode _repeatMode = RepeatMode.off;
+
+  // --- Crossfade transition state (see class doc) ---
+  bool _crossfading = false;
+  double? _crossfadeProgress;
+  int? _crossfadeTargetQueueIndex;
+  Timer? _crossfadeTicker;
+
+  // --- Hardware equalizer state ---
+  List<HardwareEqBand>? _hardwareEqBands;
+  bool _hardwareEqLoadAttempted = false;
 
   /// Stream of the current track.
   final StreamController<BaseTrack?> _trackController =
@@ -38,14 +174,24 @@ class AudioEngine {
 
   bool _disposed = false;
 
-  /// Called whenever a playable item should trigger plugin hooks.
+  /// Called whenever a track actually starts playing. Fires once per track.
   Function(BaseTrack)? onTrackStarted;
 
-  /// Constructor.
-  AudioEngine();
+  static bool get _supportsHardwareEq => !kIsWeb && Platform.isAndroid;
 
-  /// The underlying just_audio player (exposed for plugins like the
-  /// equalizer that need low-level access).
+  /// Constructor. The native Android equalizer effect (if any) is attached
+  /// to the primary player's pipeline at construction time — just_audio
+  /// requires that up front, it cannot be bolted on later.
+  AudioEngine()
+      : _androidEqualizer = _supportsHardwareEq ? AndroidEqualizer() : null {
+    final eq = _androidEqualizer;
+    _player = AudioPlayer(
+      audioPipeline:
+          eq != null ? AudioPipeline(androidAudioEffects: [eq]) : null,
+    );
+  }
+
+  /// The underlying just_audio player (exposed for low-level access).
   AudioPlayer get player => _player;
 
   /// Current track, or null when the queue is empty.
@@ -78,20 +224,104 @@ class AudioEngine {
   /// Crossfade duration (0 = disabled).
   Duration get crossfadeDuration => _crossfadeDuration;
 
+  /// Whether a crossfade transition is in progress right now.
+  bool get isCrossfading => _crossfading;
+
   /// Gapless mode flag.
   bool get gaplessEnabled => _gaplessEnabled;
 
-  /// Set the crossfade duration. When > 0, gapless concatenation is
-  /// replaced by a per-transition crossfade.
+  /// Shuffle playback toggle.
+  bool get shuffleEnabled => _shuffleEnabled;
+
+  /// Repeat mode (off / repeat whole queue / repeat current track).
+  RepeatMode get repeatMode => _repeatMode;
+
+  /// Enable/disable shuffle. Mirrored onto just_audio itself — its own
+  /// engine (not this class) drives auto-advance at the end of a track,
+  /// so it has to be the one that actually knows the shuffled order.
+  /// Turning shuffle on also rerolls the order immediately, so it doesn't
+  /// wait for the next queue rebuild to feel randomised.
+  Future<void> setShuffleEnabled(bool enabled) async {
+    _shuffleEnabled = enabled;
+    await _player.setShuffleModeEnabled(enabled);
+    if (enabled) {
+      await _player.shuffle();
+    }
+  }
+
+  /// Set the repeat mode. Mirrored onto just_audio's own [LoopMode], for
+  /// the same reason as [setShuffleEnabled].
+  Future<void> setRepeatMode(RepeatMode mode) async {
+    _repeatMode = mode;
+    await _player.setLoopMode(switch (mode) {
+      RepeatMode.off => LoopMode.off,
+      RepeatMode.all => LoopMode.all,
+      RepeatMode.one => LoopMode.one,
+    });
+  }
+
+  /// Set the crossfade duration (0 disables it).
+  ///
+  /// Takes effect on the next automatic end-of-track transition; it does
+  /// not rebuild the currently loaded source, so touching this setting
+  /// never restarts the track that's playing.
   void setCrossfadeDuration(Duration duration) {
-    _crossfadeDuration = duration;
-    _rebuildQueueSource();
+    _crossfadeDuration = duration.isNegative ? Duration.zero : duration;
+    if (_crossfadeDuration <= Duration.zero) {
+      _cancelCrossfade(restoreVolume: true);
+    }
   }
 
   /// Enable/disable gapless concatenation.
+  ///
+  /// NOTE: the queue is always loaded as one [ConcatenatingAudioSource],
+  /// which is inherently gapless on Android/iOS/macOS. Turning this off is
+  /// therefore not honoured by the engine today; the flag is kept so the
+  /// preference survives and a future non-gapless path can read it.
   void setGaplessEnabled(bool enabled) {
     _gaplessEnabled = enabled;
-    _rebuildQueueSource();
+  }
+
+  /// Real per-band hardware equalizer bands, when available.
+  ///
+  /// Populated the first time a queue successfully loads on a platform
+  /// with a native equalizer (Android only via just_audio's
+  /// `AndroidEqualizer`). `null` before that happens, or permanently
+  /// everywhere else — callers must treat `null` the same as "not
+  /// available" and fall back to a virtual model.
+  List<HardwareEqBand>? get hardwareEqBands => _hardwareEqBands;
+
+  /// Query the native equalizer's bands, if this platform has one.
+  ///
+  /// Safe to call repeatedly — only the first call (after a source has
+  /// loaded) does any work. Never throws: platform channel failures leave
+  /// [hardwareEqBands] `null` and callers fall back to their virtual
+  /// model. This path only runs on Android and has not been exercised
+  /// against real hardware while building this feature — treat it as
+  /// best-effort until verified on a device.
+  Future<void> ensureHardwareEqLoaded() async {
+    final eq = _androidEqualizer;
+    if (eq == null || _hardwareEqLoadAttempted) return;
+    _hardwareEqLoadAttempted = true;
+    try {
+      await eq.setEnabled(true);
+      final params = await eq.parameters.timeout(const Duration(seconds: 5));
+      _hardwareEqBands = [
+        for (final band in params.bands)
+          HardwareEqBand._(
+            index: band.index,
+            centerFrequencyHz: band.centerFrequency,
+            minDecibels: params.minDecibels,
+            maxDecibels: params.maxDecibels,
+            initialGain: band.gain,
+            applyGain: band.setGain,
+          ),
+      ];
+    } catch (e) {
+      debugPrint('Omnis: native equalizer unavailable, plugins should fall '
+          'back to a virtual model: $e');
+      _hardwareEqBands = null;
+    }
   }
 
   /// Initialize the engine. Also initializes audio_service if the
@@ -104,8 +334,14 @@ class AudioEngine {
 
     _initCompleter = Completer<void>();
     try {
-      await _player.load();
+      _bindPlayerStreams();
       // audio_service is best-effort; on desktop it may be unavailable.
+      //
+      // This used to sit behind `await _player.load()`, which throws
+      // ("no audio source") because nothing is loaded at boot. The throw
+      // was swallowed by the outer catch and audio_service was silently
+      // never initialised — no media notification, no lock-screen
+      // controls, on any platform.
       try {
         await AudioService.init(
           builder: () => _OmnisAudioHandler(this),
@@ -115,8 +351,9 @@ class AudioEngine {
             androidNotificationOngoing: true,
           ),
         );
-      } catch (_) {
-        // The core player works without audio_service.
+      } catch (e) {
+        debugPrint('Omnis: audio_service unavailable, continuing without '
+            'background controls: $e');
       }
     } catch (e, st) {
       debugPrint('Omnis: audio engine initialization failed: $e');
@@ -131,10 +368,75 @@ class AudioEngine {
   /// Await engine initialization (used by tests / callers that need it).
   Future<void> get initialized => _initCompleter?.future ?? Future.value();
 
+  /// Subscribe to the player once, for the player's whole lifetime.
+  void _bindPlayerStreams() {
+    _indexSub = _player.currentIndexStream.listen((sourceIndex) {
+      if (_disposed || _rebuilding || sourceIndex == null) return;
+      if (sourceIndex < 0 || sourceIndex >= _sourceToQueue.length) return;
+      final queueIndex = _sourceToQueue[sourceIndex];
+      if (queueIndex < 0 || queueIndex >= _queue.length) return;
+      if (_crossfading) {
+        if (queueIndex == _crossfadeTargetQueueIndex) {
+          unawaited(_finishCrossfade());
+        } else {
+          // The primary landed somewhere our crossfade wasn't expecting
+          // (a manual seek/skip that raced past our guards) — abandon the
+          // stale fade rather than leave two players fighting for volume.
+          _cancelCrossfade(restoreVolume: true);
+        }
+      }
+      _setCurrent(_queue[queueIndex], queueIndex);
+    });
+
+    _stateSub = _player.playerStateStream.listen((state) {
+      if (_disposed) return;
+      if (state.processingState == ProcessingState.ready) {
+        _consecutiveErrors = 0;
+      }
+      if (state.playing) _fireTrackStarted();
+    });
+
+    // A corrupt or missing file surfaces as an error on the playback event
+    // stream. Skip past it instead of leaving the player wedged.
+    _eventSub = _player.playbackEventStream.listen(
+      null,
+      onError: (Object e, StackTrace st) {
+        if (_disposed) return;
+        debugPrint('Omnis: playback error: $e');
+        _skipAfterError();
+      },
+    );
+
+    // Drives the crossfade state machine — see class doc.
+    _crossfadeWatchSub = _player.positionStream.listen(_onPositionForCrossfade);
+  }
+
+  Future<void> _skipAfterError() async {
+    _consecutiveErrors++;
+    // Every remaining track failed — stop rather than spin.
+    if (_consecutiveErrors > _sourceToQueue.length) {
+      debugPrint('Omnis: no playable tracks left in the queue, stopping.');
+      await _player.stop();
+      return;
+    }
+    await next();
+  }
+
   /// Dispose the engine.
   Future<void> dispose() async {
+    if (_disposed) return;
     _disposed = true;
+    _crossfadeTicker?.cancel();
+    await _indexSub?.cancel();
+    await _stateSub?.cancel();
+    await _eventSub?.cancel();
+    await _crossfadeWatchSub?.cancel();
+    await _abRepeatSub?.cancel();
     await _player.dispose();
+    final fadePlayer = _crossfadePlayer;
+    if (fadePlayer != null) {
+      await fadePlayer.dispose();
+    }
     if (!_trackController.isClosed) {
       await _trackController.close();
     }
@@ -148,62 +450,78 @@ class AudioEngine {
     _queue
       ..clear()
       ..addAll(tracks);
-    _currentIndex = startIndex >= 0 && startIndex < _queue.length
-        ? startIndex
-        : (_queue.isEmpty ? -1 : 0);
     _emitQueue();
     if (_queue.isEmpty) {
-      _setCurrent(null, -1);
-      await _rebuildQueueSource();
+      await _clearSource();
       return;
     }
-    await _rebuildQueueSource();
-    // Emit the current track so the UI (Now Playing) updates immediately,
-    // even when playback is started via play() after setQueue().
-    _setCurrent(_queue[_currentIndex], _currentIndex);
+    final start =
+        (startIndex >= 0 && startIndex < _queue.length) ? startIndex : 0;
+    await _rebuildQueueSource(initialQueueIndex: start);
   }
 
-  /// Add a track to the end of the queue.
+  /// Add a track to the end of the queue, preserving current playback.
   Future<void> addTrack(BaseTrack track) async {
     _queue.add(track);
     _emitQueue();
     if (_currentIndex < 0) {
-      await setQueue(_queue, startIndex: 0);
-    } else if (_gaplessEnabled) {
-      await _rebuildQueueSource();
+      await _rebuildQueueSource(initialQueueIndex: 0);
+    } else {
+      await _rebuildQueueSource(
+        initialQueueIndex: _currentIndex,
+        initialPosition: _player.position,
+      );
     }
   }
 
-  /// Remove a track at [index].
+  /// Remove the track at [index].
   Future<void> removeTrack(int index) async {
     if (index < 0 || index >= _queue.length) return;
+    final wasCurrent = index == _currentIndex;
+    final position = _player.position;
     _queue.removeAt(index);
-    if (_currentIndex > index) _currentIndex--;
+
+    if (_currentIndex > index) {
+      _currentIndex--;
+    } else if (wasCurrent && _currentIndex >= _queue.length) {
+      _currentIndex = _queue.length - 1;
+    }
     _emitQueue();
-    await _rebuildQueueSource();
+
+    if (_queue.isEmpty) {
+      await _clearSource();
+      return;
+    }
+    await _rebuildQueueSource(
+      initialQueueIndex: _currentIndex < 0 ? 0 : _currentIndex,
+      // Removing the playing track starts its replacement from the top;
+      // removing any other track must not disturb the current position.
+      initialPosition: wasCurrent ? Duration.zero : position,
+    );
   }
 
-  /// Play the track at [index]. If [index] is null, plays the
-  /// current/queued position.
+  /// Play the track at queue [index].
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
-    _currentIndex = index;
-    await _playCurrent();
+    _cancelCrossfade(restoreVolume: true);
+    final sourceIndex = _sourceToQueue.indexOf(index);
+    if (sourceIndex < 0) {
+      // Not currently represented in the audio source (e.g. the queue
+      // changed underneath us): rebuild around the requested track.
+      await _rebuildQueueSource(initialQueueIndex: index);
+    } else {
+      await _player.seek(Duration.zero, index: sourceIndex);
+      _setCurrent(_queue[index], index);
+    }
+    await _player.play();
   }
 
   /// Start playing (resume).
   Future<void> play() async {
-    if (_currentIndex < 0 && _queue.isNotEmpty) {
-      _currentIndex = 0;
-      await _playCurrent();
+    if (_queue.isEmpty) return;
+    if (_currentIndex < 0) {
+      await playAt(0);
       return;
-    }
-    // If the queue is loaded (ConcatenatingAudioSource) but the current
-    // track was never emitted, emit it now so the UI stays in sync.
-    if (_currentIndex >= 0 &&
-        _currentIndex < _queue.length &&
-        _currentTrack == null) {
-      _setCurrent(_queue[_currentIndex], _currentIndex);
     }
     await _player.play();
   }
@@ -213,64 +531,137 @@ class AudioEngine {
 
   /// Stop playback.
   Future<void> stop() async {
-    await _revertProcessingState();
+    _cancelCrossfade(restoreVolume: true);
     await _player.stop();
   }
 
-  /// Skip to the next track. Returns false when there is no next track
-  /// and `wrap` is true.
+  /// Skip to the next track, honouring shuffle/repeat. Returns false when
+  /// there is no next track and [wrap] is false.
+  ///
+  /// Delegates to just_audio's own `hasNext`/`nextIndex`/`seekToNext()`
+  /// rather than hand-rolled index math, so a manual skip always agrees
+  /// with the engine's own gapless auto-advance (which only just_audio
+  /// itself ever triggers — see the queue-model class doc) about what
+  /// "next" means under shuffle/repeat. One consequence: with repeat-one,
+  /// "next" restarts the current track rather than skipping past the
+  /// repeat — just_audio ties both to the same loop-mode-aware index, and
+  /// diverging from that would mean tracking a second, parallel notion of
+  /// "next" that could drift out of sync with it.
   Future<bool> next({bool wrap = false}) async {
-    if (_queue.isEmpty) return false;
-    if (_currentIndex + 1 >= _queue.length) {
+    if (_sourceToQueue.isEmpty) return false;
+    _cancelCrossfade(restoreVolume: true);
+    if (!_player.hasNext) {
       if (!wrap) return false;
-      _currentIndex = 0;
-    } else {
-      _currentIndex++;
+      final indices = _player.effectiveIndices;
+      final target =
+          (indices != null && indices.isNotEmpty) ? indices.first : 0;
+      if (target >= _sourceToQueue.length) return false;
+      await _player.seek(Duration.zero, index: target);
+      _setCurrent(_queue[_sourceToQueue[target]], _sourceToQueue[target]);
+      await _player.play();
+      return true;
     }
-    await _playCurrent();
+    final target = _player.nextIndex;
+    await _player.seekToNext();
+    if (target != null && target < _sourceToQueue.length) {
+      _setCurrent(_queue[_sourceToQueue[target]], _sourceToQueue[target]);
+    }
+    await _player.play();
     return true;
   }
 
   /// Skip to the previous track (or restart the current one if it has
-  /// played for more than 3 seconds).
+  /// played for more than 3 seconds, or there is no previous track under
+  /// the current shuffle/repeat state).
   Future<bool> previous() async {
-    if (_queue.isEmpty) return false;
-    if (_player.position > const Duration(seconds: 3)) {
+    if (_sourceToQueue.isEmpty) return false;
+    _cancelCrossfade(restoreVolume: true);
+    if (_player.position > const Duration(seconds: 3) || !_player.hasPrevious) {
       await seek(Duration.zero);
       return true;
     }
-    if (_currentIndex > 0) {
-      _currentIndex--;
-      await _playCurrent();
-      return true;
+    final target = _player.previousIndex;
+    await _player.seekToPrevious();
+    if (target != null && target < _sourceToQueue.length) {
+      _setCurrent(_queue[_sourceToQueue[target]], _sourceToQueue[target]);
     }
-    await seek(Duration.zero);
+    await _player.play();
     return true;
   }
 
-  /// Seek to [position].
-  Future<void> seek(Duration position) async {
-    if (_playingFromProcessingUrl) {
-      await _player.seek(_processingCorrection + position);
-    } else {
-      await _player.seek(position);
-    }
-  }
+  /// Seek within the current track.
+  Future<void> seek(Duration position) => _player.seek(position);
 
   /// Set the global master volume.
   Future<void> setVolume(double volume) async {
     _volume = volume.clamp(0.0, 1.0);
-    await _player.setVolume(_volume * _preGainMultiplier);
+    await _applyVolumes();
   }
 
-  /// Set the ReplayGain pre-gain multiplier (used by the ReplayGain
-  /// plugin). Must be a positive value.
-  Future<void> setPreGain(double multiplier) async {
-    _preGainMultiplier = multiplier <= 0 ? 1.0 : multiplier;
-    await _player.setVolume(_volume * _preGainMultiplier);
+  /// Master volume (0..1), before plugin gain contributions.
+  double get volume => _volume;
+
+  /// Set a named multiplicative gain contribution. The effective pre-gain
+  /// applied to the player is the product of every contribution currently
+  /// registered, clamped to a sane range so a bug in one plugin can't blow
+  /// out the volume or silence it entirely.
+  Future<void> setGainContribution(String source, double multiplier) async {
+    _gainContributions[source] =
+        (multiplier.isFinite && multiplier > 0) ? multiplier : 1.0;
+    await _applyVolumes();
   }
 
-  /// Set playback speed.
+  /// Drop a named gain contribution entirely (e.g. its plugin was
+  /// disabled), so it stops multiplying into the effective volume.
+  Future<void> clearGainContribution(String source) async {
+    if (_gainContributions.remove(source) == null) return;
+    await _applyVolumes();
+  }
+
+  /// Set the pre-gain directly. Kept for backward compatibility — prefer
+  /// [setGainContribution] with a named source.
+  Future<void> setPreGain(double multiplier) =>
+      setGainContribution('_direct', multiplier);
+
+  /// Pure crossfade volume math: given a base volume and progress (0..1)
+  /// through the overlap window, returns the (outgoing, incoming) volumes
+  /// for the primary and crossfade players. Exposed as a pure function so
+  /// it has a unit test independent of any real [AudioPlayer].
+  static (double outgoing, double incoming) crossfadeVolumes(
+    double base,
+    double progress,
+  ) {
+    final t = progress.clamp(0.0, 1.0);
+    final b = base.clamp(0.0, 1.0);
+    return (b * (1 - t), b * t);
+  }
+
+  Future<void> _applyVolumes() async {
+    final combined = _gainContributions.values.fold<double>(
+      1.0,
+      (acc, m) => acc * m,
+    );
+    _preGainMultiplier = combined.clamp(0.1, 2.0);
+    final base = (_volume * _preGainMultiplier).clamp(0.0, 1.0);
+
+    final progress = _crossfadeProgress;
+    if (progress == null) {
+      await _player.setVolume(base);
+      return;
+    }
+    final (outgoing, incoming) = crossfadeVolumes(base, progress);
+    await _player.setVolume(outgoing);
+    final fadePlayer = _crossfadePlayer;
+    if (fadePlayer != null) {
+      await fadePlayer.setVolume(incoming);
+    }
+  }
+
+  /// Set playback speed. This also shifts pitch unless [setPitch] is used
+  /// to compensate — just_audio ties the two together the way most
+  /// platform media players do; [pitch] is the independent knob for
+  /// anyone who wants speed changed without the "chipmunk"/"slow-mo"
+  /// pitch shift, the way Poweramp's separate tempo/pitch controls work.
   Future<void> setSpeed(double speed) async {
     await _player.setSpeed(speed.clamp(0.25, 2.0));
   }
@@ -278,104 +669,198 @@ class AudioEngine {
   /// Playback speed.
   double get speed => _player.speed;
 
-  /// The URL of the track currently at [index], or null.
-  String? _urlFor(BaseTrack track) {
-    if (track.localPath != null) return track.localPath;
-    return track.streamUrl;
+  /// Set pitch independently of speed (1.0 = unshifted). Real, native
+  /// just_audio support — not a DSP effect this project implemented.
+  Future<void> setPitch(double pitch) async {
+    await _player.setPitch(pitch.clamp(0.5, 2.0));
   }
 
-  /// Rebuilds the ConcatenatingAudioSource. When a crossfade duration is
-  /// set, the source is shuffled into overlapping pairs so just_audio's
-  /// built-in overlap/crossfade support kicks in.
-  Future<void> _rebuildQueueSource() async {
-    if (_queue.isEmpty) {
-      await _player.stop();
-      return;
-    }
+  /// Current pitch factor.
+  double get pitch => _player.pitch;
 
-    // NOTE on crossfade: just_audio's single AudioPlayer instance cannot
-    // overlap the tail of one source with the head of the next — that
-    // requires two AudioPlayer instances handed off with a volume ramp,
-    // which is a separate feature (dual-player crossfade engine), not yet
-    // built. Previously this code silently reduced the queue to a single
-    // track and never advanced past it when crossfade was on. Until the
-    // real dual-player engine exists, we deliberately fall back to correct
-    // gapless ConcatenatingAudioSource playback — the queue always advances
-    // correctly, it just doesn't overlap tracks yet.
-    final children = <AudioSource>[];
-    for (final track in _queue) {
-      final url = _urlFor(track);
-      if (url == null) continue;
-      children.add(AudioSource.uri(
-        Uri.parse(url),
-        tag: track,
-      ));
-    }
-    if (children.isEmpty) {
-      await _player.stop();
-      return;
-    }
-    await _player.setAudioSource(ConcatenatingAudioSource(children: children));
-    _listenForCompletion();
+  /// Skip-silence toggle: shortens silent gaps in playback instead of
+  /// playing through them at normal speed — same feature name/behavior as
+  /// Poweramp's and most podcast players'. Real, native just_audio
+  /// support, not something this project implemented.
+  Future<void> setSkipSilenceEnabled(bool enabled) async {
+    await _player.setSkipSilenceEnabled(enabled);
+  }
 
-    if (_crossfadeDuration > Duration.zero) {
-      debugPrint(
-        'Omnis: crossfade duration is set but the dual-player crossfade '
-        'engine is not implemented yet — falling back to gapless playback.',
-      );
+  /// Whether skip-silence is on.
+  bool get skipSilenceEnabled => _player.skipSilenceEnabled;
+
+  // --- A-B repeat ---
+  //
+  // Loops a marked section [_loopA, _loopB] of the current track
+  // indefinitely — set point A, set point B, playback jumps back to A
+  // every time it reaches B, until cleared. A common practicing/DJ
+  // feature (Poweramp, Musicolet, most desktop players all have it) that
+  // just_audio has no built-in concept of, so it's driven off the same
+  // positionStream-watcher pattern the crossfade state machine already
+  // uses in this class.
+
+  Duration? _loopA;
+  Duration? _loopB;
+  StreamSubscription<Duration>? _abRepeatSub;
+
+  /// The current A-B loop points, or `null` if A-B repeat is off.
+  (Duration a, Duration b)? get abRepeatRange =>
+      (_loopA != null && _loopB != null) ? (_loopA!, _loopB!) : null;
+
+  /// Point A, once marked — set even before B is marked (and thus before
+  /// looping actually starts), so UI can show a mid-way "A marked, tap
+  /// again for B" state distinct from both "off" and "looping."
+  Duration? get loopAMarker => _loopA;
+
+  /// Marks point A at [position] (defaults to the current position).
+  /// Clears any previously completed loop until [markLoopB] is also
+  /// called — a lone A point does nothing yet.
+  void markLoopA([Duration? position]) {
+    _loopA = position ?? _player.position;
+    _loopB = null;
+  }
+
+  /// Marks point B and, if it's after A, starts looping between them
+  /// immediately. B at or before A is rejected (a zero/negative loop
+  /// makes no sense) rather than silently doing nothing useful.
+  bool markLoopB([Duration? position]) {
+    final a = _loopA;
+    if (a == null) return false;
+    final b = position ?? _player.position;
+    if (b <= a) return false;
+    _loopB = b;
+    _abRepeatSub ??= _player.positionStream.listen(_onPositionForAbRepeat);
+    return true;
+  }
+
+  /// Clears A-B repeat and lets playback continue normally.
+  void clearLoop() {
+    _loopA = null;
+    _loopB = null;
+    _abRepeatSub?.cancel();
+    _abRepeatSub = null;
+  }
+
+  void _onPositionForAbRepeat(Duration position) {
+    final b = _loopB;
+    if (b == null || _disposed) return;
+    if (position >= b) {
+      unawaited(_player.seek(_loopA));
     }
   }
 
-  bool _playingFromProcessingUrl = false;
-  Duration _processingCorrection = Duration.zero;
-
-  /// Track completion so the next track fires the plugin hook.
-  void _listenForCompletion() {
-    _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed && !_disposed) {
-        _handleSequenceCompleted();
+  /// Resolve a track to a playable URI.
+  ///
+  /// Local paths must go through [Uri.file]: a Windows path such as
+  /// `C:\Music\a.mp3` fed to `Uri.parse` yields a URI with scheme `c`,
+  /// which just_audio cannot open. A single-letter scheme is therefore
+  /// treated as a drive letter, not a real scheme.
+  static Uri? uriFor(BaseTrack track) {
+    final local = track.localPath;
+    if (local != null && local.isNotEmpty) {
+      final parsed = Uri.tryParse(local);
+      if (parsed != null && parsed.hasScheme && parsed.scheme.length > 1) {
+        // Already a real URI (content://, file://, http://, asset://…).
+        return parsed;
       }
-    });
+      try {
+        return Uri.file(local);
+      } catch (_) {
+        return null;
+      }
+    }
+    final stream = track.streamUrl;
+    if (stream == null || stream.isEmpty) return null;
+    final parsed = Uri.tryParse(stream);
+    if (parsed == null || !parsed.hasScheme) return null;
+    return parsed;
   }
 
-  /// True when a track is physically loaded. Emits the plugin hook.
-  Future<void> _playCurrent() async {
-    final track = _queue[_currentIndex];
-    await _loadCurrent(track);
-    await _player.play();
+  Future<void> _clearSource() async {
+    _cancelCrossfade(restoreVolume: true);
+    _sourceToQueue.clear();
+    _rebuilding = true;
+    try {
+      await _player.stop();
+    } catch (_) {
+      // Stopping a player that never loaded a source is not an error.
+    } finally {
+      _rebuilding = false;
+    }
+    _setCurrent(null, -1);
   }
 
-  Future<void> _loadCurrent(BaseTrack track) async {
-    final url = _urlFor(track);
-    if (url == null) {
-      _setCurrent(null, -1);
+  /// Rebuild the [ConcatenatingAudioSource] from the current queue.
+  Future<void> _rebuildQueueSource({
+    int? initialQueueIndex,
+    Duration? initialPosition,
+  }) async {
+    _cancelCrossfade(restoreVolume: true);
+    final children = <AudioSource>[];
+    _sourceToQueue.clear();
+    for (var i = 0; i < _queue.length; i++) {
+      final uri = uriFor(_queue[i]);
+      if (uri == null) {
+        debugPrint('Omnis: skipping "${_queue[i].title}" — no playable URI.');
+        continue;
+      }
+      children.add(AudioSource.uri(uri, tag: _queue[i]));
+      _sourceToQueue.add(i);
+    }
+
+    if (children.isEmpty) {
+      await _clearSource();
       return;
     }
+
+    final target = initialQueueIndex ?? _currentIndex;
+    var sourceIndex = _sourceToQueue.indexOf(target);
+    if (sourceIndex < 0) sourceIndex = 0;
+
+    _rebuilding = true;
     try {
       await _player.setAudioSource(
-        AudioSource.uri(Uri.parse(url), tag: track),
-        initialPosition: null,
+        ConcatenatingAudioSource(children: children),
+        initialIndex: sourceIndex,
+        initialPosition: initialPosition ?? Duration.zero,
       );
-      _playingFromProcessingUrl = false;
-      _processingCorrection = Duration.zero;
+      // The platform is guaranteed connected once a source has loaded —
+      // this is the only reliable place to query the native equalizer.
+      unawaited(ensureHardwareEqLoaded());
     } catch (e) {
-      // Corrupt/unplayable file: skip to the next one instead of crashing.
-      debugPrint('Omnis: unable to play ${track.title}: $e');
-      await next();
-      return;
+      debugPrint('Omnis: failed to load the queue: $e');
+    } finally {
+      _rebuilding = false;
     }
-    _setCurrent(track, _currentIndex);
-    _listenForCompletion();
+
+    final queueIndex = _sourceToQueue[sourceIndex];
+    _setCurrent(_queue[queueIndex], queueIndex);
   }
 
   void _setCurrent(BaseTrack? track, int index) {
+    final changed = _currentTrack?.id != track?.id || _currentIndex != index;
     _currentTrack = track;
     _currentIndex = index;
-    if (_trackController.isClosed) return;
-    _trackController.add(track);
-    if (track != null) {
-      onTrackStarted?.call(track);
+    if (!changed) return;
+    // An A-B loop only makes sense against the track it was marked on —
+    // leaving it armed across a skip would silently start looping an
+    // unrelated section of whatever plays next.
+    clearLoop();
+    if (!_trackController.isClosed) {
+      _trackController.add(track);
     }
+    if (_player.playing) _fireTrackStarted();
+  }
+
+  /// Fire the plugin hook once per track, whichever happens last: the
+  /// track becoming current, or playback actually starting.
+  void _fireTrackStarted() {
+    final track = _currentTrack;
+    if (track == null) return;
+    final key = '$_currentIndex:${track.id}';
+    if (_lastHookedTrack == key) return;
+    _lastHookedTrack = key;
+    onTrackStarted?.call(track);
   }
 
   void _emitQueue() {
@@ -383,30 +868,118 @@ class AudioEngine {
     _queueController.add(List.unmodifiable(_queue));
   }
 
-  /// Handle the sequence completing (either set-source completion or
-  /// processingState == completed).
-  void _handleSequenceCompleted() {
-    if (_queue.isNotEmpty && _currentIndex >= 0) {
-      if (_currentIndex + 1 < _queue.length) {
-        _currentIndex++;
-        // Load the next source in the concatenation; just_audio advances
-        // itself, we just fire the hook.
-        _currentTrack = _queue[_currentIndex];
-        _trackController.add(_currentTrack);
-        onTrackStarted?.call(_currentTrack!);
-        // The position relative to the concatenation is cumulative; reset.
-        _processingCorrection = Duration.zero;
-        _playingFromProcessingUrl = true;
-        _player.play();
-      } else {
-        _playingFromProcessingUrl = false;
+  // --- Crossfade state machine ---
+  //
+  // Entered only from _onPositionForCrossfade, which fires on every
+  // position tick of the primary player. When the remaining time on the
+  // current track drops to or below _crossfadeDuration and there is a
+  // next track in the queue, _startCrossfade preloads it on a second,
+  // otherwise-idle player and ramps volumes over the overlap window.
+  // Manual navigation (next/previous/playAt/stop) and queue rebuilds all
+  // abandon an in-flight crossfade via _cancelCrossfade — crossfade only
+  // ever applies to the automatic end-of-track transition.
+
+  void _onPositionForCrossfade(Duration position) {
+    if (_disposed || _rebuilding || _crossfading) return;
+    if (_crossfadeDuration <= Duration.zero) return;
+    if (position <= Duration.zero) return;
+    final total = _player.duration;
+    if (total == null || total <= Duration.zero) return;
+    final remaining = total - position;
+    if (remaining.isNegative || remaining > _crossfadeDuration) return;
+
+    // Uses just_audio's own shuffle/repeat-aware nextIndex rather than
+    // "current source position + 1" — under shuffle, the actual next
+    // track is almost never the next sequential one. Repeat-one's
+    // nextIndex equals the current index; crossfading a track into
+    // itself would just be two overlapping copies of the same audio, so
+    // that case is skipped rather than "faded."
+    final sourceIndex = _sourceToQueue.indexOf(_currentIndex);
+    final nextSourceIndex = _player.nextIndex;
+    if (sourceIndex < 0 ||
+        nextSourceIndex == null ||
+        nextSourceIndex == sourceIndex ||
+        nextSourceIndex >= _sourceToQueue.length) {
+      return;
+    }
+    final nextQueueIndex = _sourceToQueue[nextSourceIndex];
+    final uri = uriFor(_queue[nextQueueIndex]);
+    if (uri == null) return;
+
+    unawaited(_startCrossfade(nextQueueIndex, uri, remaining));
+  }
+
+  Future<void> _startCrossfade(
+    int queueIndex,
+    Uri uri,
+    Duration overlap,
+  ) async {
+    _crossfading = true;
+    _crossfadeTargetQueueIndex = queueIndex;
+    _crossfadeProgress = 0.0;
+
+    final fadePlayer = _crossfadePlayer ??= AudioPlayer();
+    try {
+      await fadePlayer.setVolume(0);
+      await fadePlayer.setAudioSource(AudioSource.uri(uri));
+      await fadePlayer.play();
+    } catch (e) {
+      debugPrint(
+        'Omnis: crossfade preload failed, staying gapless for this '
+        'transition: $e',
+      );
+      _cancelCrossfade(restoreVolume: true);
+      return;
+    }
+
+    final totalMs = overlap.inMilliseconds.clamp(1, 1 << 30);
+    final startedAt = DateTime.now();
+    _crossfadeTicker?.cancel();
+    _crossfadeTicker = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!_crossfading) return;
+      final elapsedMs = DateTime.now().difference(startedAt).inMilliseconds;
+      final t = (elapsedMs / totalMs).clamp(0.0, 1.0);
+      _crossfadeProgress = t;
+      unawaited(_applyVolumes());
+      if (t >= 1.0) {
+        _crossfadeTicker?.cancel();
+        _crossfadeTicker = null;
       }
+    });
+  }
+
+  /// The primary player has landed on the track the crossfade was fading
+  /// into — its own gapless engine did the handoff, so the second player
+  /// is now redundant and can stop.
+  Future<void> _finishCrossfade() async {
+    _crossfadeTicker?.cancel();
+    _crossfadeTicker = null;
+    _crossfading = false;
+    _crossfadeProgress = null;
+    _crossfadeTargetQueueIndex = null;
+    await _applyVolumes();
+    final fadePlayer = _crossfadePlayer;
+    if (fadePlayer != null) {
+      try {
+        await fadePlayer.stop();
+      } catch (_) {}
     }
   }
 
-  Future<void> _revertProcessingState() async {
-    _playingFromProcessingUrl = false;
-    _processingCorrection = Duration.zero;
+  void _cancelCrossfade({required bool restoreVolume}) {
+    _crossfadeTicker?.cancel();
+    _crossfadeTicker = null;
+    final wasActive = _crossfading;
+    _crossfading = false;
+    _crossfadeProgress = null;
+    _crossfadeTargetQueueIndex = null;
+    final fadePlayer = _crossfadePlayer;
+    if (wasActive && fadePlayer != null) {
+      unawaited(fadePlayer.stop());
+    }
+    if (restoreVolume) {
+      unawaited(_applyVolumes());
+    }
   }
 }
 
@@ -421,11 +994,18 @@ class _OmnisAudioHandler extends BaseAudioHandler {
       final processing = state.processingState;
       playbackState.add(playbackState.value.copyWith(
         playing: playing,
-        processingState: processing == ProcessingState.completed
-            ? AudioProcessingState.completed
-            : processing == ProcessingState.loading
-                ? AudioProcessingState.loading
-                : AudioProcessingState.ready,
+        controls: [
+          MediaControl.skipToPrevious,
+          if (playing) MediaControl.pause else MediaControl.play,
+          MediaControl.skipToNext,
+        ],
+        processingState: switch (processing) {
+          ProcessingState.idle => AudioProcessingState.idle,
+          ProcessingState.loading => AudioProcessingState.loading,
+          ProcessingState.buffering => AudioProcessingState.buffering,
+          ProcessingState.ready => AudioProcessingState.ready,
+          ProcessingState.completed => AudioProcessingState.completed,
+        },
       ));
     });
     _engine.positionStream.listen((pos) {
@@ -440,10 +1020,27 @@ class _OmnisAudioHandler extends BaseAudioHandler {
         title: track.title,
         artist: track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown',
         album: track.album,
-        duration: Duration(milliseconds: track.duration),
-        artUri: track.coverArt != null ? Uri.tryParse(track.coverArt!) : null,
+        // BaseTrack.duration is in seconds everywhere else in the app; this
+        // used to be read as milliseconds, so the notification showed a
+        // ~3-minute song as 3 seconds long.
+        duration: Duration(seconds: track.duration),
+        artUri: _artUri(track.coverArt),
       ));
     });
+  }
+
+  /// Only hand audio_service artwork URIs it can actually fetch.
+  ///
+  /// `MediaScanner` stores Android artwork as `mediastore://<id>`, which is
+  /// a marker for `QueryArtworkWidget`, not a resolvable URI — passing it
+  /// through made the media notification try (and fail) to load it.
+  static Uri? _artUri(String? coverArt) {
+    if (coverArt == null || coverArt.isEmpty) return null;
+    final uri = Uri.tryParse(coverArt);
+    if (uri == null) return null;
+    const loadable = {'http', 'https', 'file', 'content', 'asset'};
+    if (!loadable.contains(uri.scheme)) return null;
+    return uri;
   }
 
   @override

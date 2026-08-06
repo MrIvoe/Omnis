@@ -2,19 +2,23 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/event_bus.dart';
+import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/core/service_registry.dart';
 import 'package:path/path.dart' as p;
 
 /// A plugin that is loaded at runtime.
 ///
 /// Two kinds of plugins are unified here:
-///  - [inProcess]: a [MusicPlugin] compiled into the app (e.g. bundled
-///    plugins like ReplayGain or the visualizer).
+///  - [inProcess]: a [MusicPlugin] compiled into the app (everything under
+///    `lib/plugins/`).
 ///  - [external]: a plugin downloaded from GitHub and executed with
 ///    dart_eval. Its hooks receive JSON Maps (serialised tracks).
 class ManagedPlugin {
@@ -45,6 +49,10 @@ class ManagedPlugin {
   /// Whether the plugin is currently enabled.
   bool enabled;
 
+  /// Whether [MusicPlugin.initialize] has already run. Re-enabling an
+  /// already-initialized plugin calls `enable()`, not `initialize()` again.
+  bool initialized;
+
   /// Directory on disk (for external plugins).
   final String? directory;
 
@@ -58,10 +66,14 @@ class ManagedPlugin {
     this.inProcess,
     this.external,
     this.enabled = true,
+    this.initialized = false,
     this.directory,
   });
 
   bool get isExternal => external != null;
+
+  /// True for plugins compiled into the app (`lib/plugins/`).
+  bool get isBundled => sourceUrl == 'bundled';
 }
 
 /// PluginManager is the heart of the micro-kernel plugin ecosystem.
@@ -80,6 +92,20 @@ class PluginManager {
   final StreamController<List<ManagedPlugin>> _changes =
       StreamController.broadcast();
 
+  /// Capability lookup by interface type (`ILyricsProvider`, ...) and
+  /// event bus for plugin-to-plugin/plugin-to-UI announcements. Both are
+  /// handed to every plugin via [PluginContext] (`context.services`/
+  /// `context.events`) and are the *same* instances UI code reaches
+  /// through this manager — a plugin registering a service and a page
+  /// looking it up share one object, not two.
+  final ServiceRegistry services = ServiceRegistry();
+  final EventBus events = EventBus();
+
+  /// Capabilities handed to every in-process plugin at registration.
+  PluginContext? _context;
+
+  bool _disposed = false;
+
   PluginManager({PluginInstaller? installer, PluginSandbox? sandbox})
       : _installer = installer ?? PluginInstaller(),
         _sandbox = sandbox ?? PluginSandbox();
@@ -96,9 +122,22 @@ class PluginManager {
   /// Stream of plugin list changes (register/install/uninstall).
   Stream<List<ManagedPlugin>> get changes => _changes.stream;
 
-  /// Register an in-process [MusicPlugin] (bundled plugin).
+  /// Attach the Core capability surface.
+  ///
+  /// Must be called before [register] so plugins can reach playback. Any
+  /// plugin already registered is attached retroactively.
+  void attachContext(PluginContext context) {
+    _context = context;
+    for (final plugin in _plugins) {
+      plugin.inProcess?.attach(context);
+    }
+  }
+
+  /// Register an in-process [MusicPlugin] (a plugin from `lib/plugins/`).
   void register(MusicPlugin plugin) {
     if (_plugins.any((p) => p.id == plugin.id)) return;
+    final context = _context;
+    if (context != null) plugin.attach(context);
     final managed = ManagedPlugin(
       id: plugin.id,
       name: plugin.name,
@@ -107,9 +146,40 @@ class PluginManager {
       author: plugin.author,
       sourceUrl: 'bundled',
       inProcess: plugin,
+      // A plugin the user switched off previously must come back off.
+      enabled: !AppSettings.instance.isPluginDisabled(plugin.id),
     );
     _plugins.add(managed);
     _emit();
+  }
+
+  /// Find a registered in-process plugin by type.
+  ///
+  /// This is how the UI binds to the *shared* instance of a bundled plugin.
+  /// Pages used to construct their own (`EqualizerPlugin()`,
+  /// `VisualizerPlugin()`, `SleepTimerPlugin()`), which were never
+  /// registered, never received hooks, and never reached the audio engine —
+  /// so the controls wired to them did nothing.
+  ///
+  /// When [onlyEnabled] is true, a disabled plugin resolves to `null`, so
+  /// switching a plugin off in Settings actually removes its UI.
+  T? bundled<T extends MusicPlugin>({bool onlyEnabled = false}) {
+    for (final managed in _plugins) {
+      final plugin = managed.inProcess;
+      if (plugin is T) {
+        if (onlyEnabled && !managed.enabled) return null;
+        return plugin;
+      }
+    }
+    return null;
+  }
+
+  /// Look up a managed plugin by its id.
+  ManagedPlugin? byId(String id) {
+    for (final plugin in _plugins) {
+      if (plugin.id == id) return plugin;
+    }
+    return null;
   }
 
   /// Initialize all enabled plugins (in-process and external).
@@ -117,41 +187,63 @@ class PluginManager {
   /// Each plugin is initialised inside the sandbox: a failing plugin does
   /// not block the rest.
   Future<void> initializeAll() async {
-    for (final plugin in _plugins.where((p) => p.enabled)) {
-      await initPlugin(plugin);
+    for (final plugin in List<ManagedPlugin>.from(_plugins)) {
+      if (plugin.enabled) await initPlugin(plugin);
     }
   }
 
   /// Initialize a single plugin.
   Future<void> initPlugin(ManagedPlugin plugin) async {
-    if (plugin.enabled) {
-      await _sandbox.run(
-        pluginId: plugin.id,
-        pluginName: plugin.name,
-        hook: 'initialize',
-        operation: () async {
-          if (plugin.inProcess != null) {
-            await plugin.inProcess!.initialize();
-          } else if (plugin.external != null) {
-            // external plugins expose optional lifecycle hooks
-            plugin.external!.callHook('initialize', const []);
-          }
-          return null;
-        },
-      );
-    }
+    if (!plugin.enabled || plugin.initialized) return;
+    plugin.initialized = true;
+    await _sandbox.run(
+      pluginId: plugin.id,
+      pluginName: plugin.name,
+      hook: 'initialize',
+      operation: () async {
+        if (plugin.inProcess != null) {
+          // Warm the plugin's storage before its own initialize() runs, so
+          // it can read persisted state from the very first line of it.
+          await plugin.inProcess!.storage.initialize();
+          await plugin.inProcess!.initialize();
+        } else if (plugin.external != null &&
+            plugin.external!.hasHook('initialize')) {
+          plugin.external!.callHook('initialize', const []);
+        }
+        return null;
+      },
+    );
   }
 
   /// Install a plugin from a GitHub (or direct .zip) URL.
   ///
   /// Downloads, extracts, validates the manifest, then loads and executes
-  /// the entrypoint. Returns the new [ManagedPlugin], or throws
-  /// [PluginInstallException].
+  /// the entrypoint immediately. Returns the new [ManagedPlugin], or
+  /// throws [PluginInstallException].
+  ///
+  /// Prefer the two-step [PluginInstaller.installFromUrl] +
+  /// [registerInstalled] flow when a human is present (see
+  /// `plugins_page.dart`) — that lets the UI show the plugin's declared
+  /// `permissions:` before its code actually runs. This one-step version
+  /// exists for programmatic callers (tests, `loadInstalled()` at startup)
+  /// where there's no user to ask.
   Future<ManagedPlugin> installFromUrl(String url) async {
     final installed = await _installer.installFromUrl(url);
+    return registerInstalled(installed, sourceUrl: url);
+  }
+
+  /// Registers and executes an already-downloaded plugin (the manifest has
+  /// already been parsed and validated by [PluginInstaller.installFromUrl],
+  /// but its Dart source has not been compiled or run yet). Splitting this
+  /// out from [installFromUrl] is what lets the install UI show a
+  /// permission-confirmation step before any plugin code executes.
+  Future<ManagedPlugin> registerInstalled(
+    InstalledPlugin installed, {
+    required String sourceUrl,
+  }) {
     return _registerInstalledPlugin(
       directory: installed.directory,
-      sourceUrl: url,
+      sourceUrl: sourceUrl,
       manifest: installed.manifest,
     );
   }
@@ -193,11 +285,15 @@ class PluginManager {
       );
     }
 
-    final runtime = PluginRuntime.create(source);
+    final runtime = PluginRuntime.create(
+      source,
+      declaredPermissions: manifest.permissions,
+    );
+    final id = runtime.id.isNotEmpty && runtime.id != 'unknown'
+        ? runtime.id
+        : manifest.id;
     final managed = ManagedPlugin(
-      id: runtime.id.isNotEmpty && runtime.id != 'unknown'
-          ? runtime.id
-          : manifest.id,
+      id: id,
       name: runtime.name,
       description: runtime.description,
       version: runtime.version,
@@ -205,6 +301,7 @@ class PluginManager {
       sourceUrl: sourceUrl,
       external: runtime,
       directory: directory,
+      enabled: !AppSettings.instance.isPluginDisabled(id),
     );
 
     _plugins.removeWhere((p) => p.id == managed.id);
@@ -225,12 +322,15 @@ class PluginManager {
   Future<void> _loadPluginInfo(InstalledPluginInfo info) async {
     final manifest = info.manifest;
     final directory = info.directory;
-    final source = await _installer.readEntrypoint(directory);
-    if (source.trim().isEmpty) return;
     try {
-      final runtime = PluginRuntime.create(source);
+      final source = await _installer.readEntrypoint(directory);
+      if (source.trim().isEmpty) return;
+      final runtime = PluginRuntime.create(
+        source,
+        declaredPermissions: manifest.permissions,
+      );
       if (_plugins.any((p) => p.id == runtime.id)) return;
-      _plugins.add(ManagedPlugin(
+      final managed = ManagedPlugin(
         id: runtime.id,
         name: runtime.name,
         description: runtime.description,
@@ -239,9 +339,13 @@ class PluginManager {
         sourceUrl: manifest.sourceUrl,
         external: runtime,
         directory: directory,
-      ));
+        enabled: !AppSettings.instance.isPluginDisabled(runtime.id),
+      );
+      _plugins.add(managed);
       _emit();
-      await initPlugin(_plugins.last);
+      // Previously this used `_plugins.last`, which is only correct as long
+      // as nothing else touches the list in between.
+      await initPlugin(managed);
     } catch (e) {
       debugPrint('Omnis: failed to load plugin ${manifest.name}: $e');
     }
@@ -252,7 +356,8 @@ class PluginManager {
   /// In-process plugins receive the full [BaseTrack]; external plugins
   /// receive a JSON-serialisable Map. Every call is sandboxed.
   Future<void> onTrackStart(BaseTrack track) async {
-    for (final plugin in _plugins.where((p) => p.enabled)) {
+    Map<String, dynamic>? json;
+    for (final plugin in _enabled()) {
       if (plugin.inProcess != null) {
         await _sandbox.run(
           pluginId: plugin.id,
@@ -263,14 +368,15 @@ class PluginManager {
             return null;
           },
         );
-      } else if (plugin.external != null &&
-          plugin.external!.hasHook('onTrackStart')) {
+      } else if (plugin.external!.hasHook('onTrackStart')) {
+        // Serialise once, not once per external plugin.
+        json ??= track.toJson();
         await _sandbox.run(
           pluginId: plugin.id,
           pluginName: plugin.name,
           hook: 'onTrackStart',
           operation: () async {
-            plugin.external!.callHook('onTrackStart', [track.toJson()]);
+            plugin.external!.callHook('onTrackStart', [json]);
             return null;
           },
         );
@@ -280,7 +386,7 @@ class PluginManager {
 
   /// Trigger the onLibraryScan hook across all enabled plugins.
   Future<void> onLibraryScan(String file) async {
-    for (final plugin in _plugins.where((p) => p.enabled)) {
+    for (final plugin in _enabled()) {
       if (plugin.inProcess != null) {
         await _sandbox.run(
           pluginId: plugin.id,
@@ -291,8 +397,7 @@ class PluginManager {
             return null;
           },
         );
-      } else if (plugin.external != null &&
-          plugin.external!.hasHook('onLibraryScan')) {
+      } else if (plugin.external!.hasHook('onLibraryScan')) {
         await _sandbox.run(
           pluginId: plugin.id,
           pluginName: plugin.name,
@@ -309,7 +414,7 @@ class PluginManager {
   /// Collect UI widgets injected by plugins at [locationID].
   Future<List<dynamic>> uiSlot(String locationID) async {
     final widgets = <dynamic>[];
-    for (final plugin in _plugins.where((p) => p.enabled)) {
+    for (final plugin in _enabled()) {
       if (plugin.inProcess != null) {
         final result = await _sandbox.run(
           pluginId: plugin.id,
@@ -318,8 +423,7 @@ class PluginManager {
           operation: () async => plugin.inProcess!.uiSlot(locationID),
         );
         if (result != null) widgets.add(result);
-      } else if (plugin.external != null &&
-          plugin.external!.hasHook('uiSlot')) {
+      } else if (plugin.external!.hasHook('uiSlot')) {
         final result = await _sandbox.run(
           pluginId: plugin.id,
           pluginName: plugin.name,
@@ -334,10 +438,40 @@ class PluginManager {
     return widgets;
   }
 
+  /// Calls [MusicPlugin.uiSlot] for exactly one [plugin], not the
+  /// aggregate dispatch [uiSlot] does across every enabled plugin.
+  ///
+  /// Used for a plugin's own settings page (`locationID: 'plugin_settings'`),
+  /// reached by tapping it in the Plugins list — showing exactly one
+  /// plugin's UI, not everyone's, is the whole point there. Works
+  /// regardless of [ManagedPlugin.enabled] so a disabled plugin's settings
+  /// can still be viewed (and re-enabled from the same page); every other
+  /// hook only reaches enabled plugins.
+  Future<dynamic> uiSlotForPlugin(ManagedPlugin plugin, String locationID) {
+    if (plugin.inProcess != null) {
+      return _sandbox.run(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'uiSlot',
+        operation: () async => plugin.inProcess!.uiSlot(locationID),
+      );
+    } else if (plugin.external != null && plugin.external!.hasHook('uiSlot')) {
+      return _sandbox.run(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'uiSlot',
+        operation: () async =>
+            plugin.external!.callHook('uiSlot', [locationID]),
+      );
+    }
+    return Future.value(null);
+  }
+
   /// Disable a plugin (hot-swap: it stays loaded but stops receiving hooks).
   Future<void> disablePlugin(ManagedPlugin plugin) async {
     if (!plugin.enabled) return;
     plugin.enabled = false;
+    await AppSettings.instance.setPluginEnabled(plugin.id, false);
     await _sandbox.run(
       pluginId: plugin.id,
       pluginName: plugin.name,
@@ -356,10 +490,33 @@ class PluginManager {
   }
 
   /// Enable a plugin.
+  ///
+  /// A plugin that has never run is initialized; one that was merely
+  /// switched off gets its [MusicPlugin.enable] hook. That hook existed on
+  /// the interface but nothing ever called it — re-enabling always went
+  /// through `initialize()` instead.
   Future<void> enablePlugin(ManagedPlugin plugin) async {
     if (plugin.enabled) return;
     plugin.enabled = true;
-    await initPlugin(plugin);
+    await AppSettings.instance.setPluginEnabled(plugin.id, true);
+    if (!plugin.initialized) {
+      await initPlugin(plugin);
+    } else {
+      await _sandbox.run(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'enable',
+        operation: () async {
+          if (plugin.inProcess != null) {
+            await plugin.inProcess!.enable();
+          } else if (plugin.external != null &&
+              plugin.external!.hasHook('enable')) {
+            plugin.external!.callHook('enable', const []);
+          }
+          return null;
+        },
+      );
+    }
     _emit();
   }
 
@@ -374,12 +531,16 @@ class PluginManager {
         debugPrint('Omnis: failed to uninstall ${plugin.name}: $e');
       }
     }
+    // An uninstalled plugin should not stay on the disabled list forever.
+    await AppSettings.instance.forgetPluginState(plugin.id);
     _emit();
   }
 
   /// Dispose all plugins and streams.
   Future<void> dispose() async {
-    for (final plugin in _plugins.where((p) => p.enabled)) {
+    if (_disposed) return;
+    _disposed = true;
+    for (final plugin in _plugins.where((p) => p.initialized)) {
       await _sandbox.run(
         pluginId: plugin.id,
         pluginName: plugin.name,
@@ -395,8 +556,14 @@ class PluginManager {
         },
       );
     }
+    await services.dispose();
+    await events.dispose();
     await _changes.close();
   }
+
+  /// Enabled plugins that actually have something to dispatch to.
+  Iterable<ManagedPlugin> _enabled() => List<ManagedPlugin>.from(_plugins)
+      .where((p) => p.enabled && (p.inProcess != null || p.external != null));
 
   void _emit() {
     if (!_changes.isClosed) {

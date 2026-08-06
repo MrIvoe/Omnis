@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omnis/core/sleep_timer_plugin.dart';
+import 'package:omnis/plugins/sleep_timer_plugin.dart';
 
 void main() {
   test('sleep timer pauses playback after the selected duration', () async {

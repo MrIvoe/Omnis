@@ -7,8 +7,17 @@ plugins {
 
 android {
     namespace = "com.omnis.music"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // flutter_web_auth_2 (via androidx.browser 1.9.0) requires compileSdk
+    // 36+ — flutter.compileSdkVersion (the Flutter SDK's own default) was
+    // still 35 as of this Flutter version, so it's pinned explicitly here
+    // rather than left to that default. Safe to raise further later;
+    // compileSdk is backward compatible.
+    compileSdk = 36
+    // webview_flutter_android and a few other plugins now require a newer
+    // NDK than flutter.ndkVersion (the Flutter SDK's own default)
+    // provides — pinned explicitly for the same reason as compileSdk
+    // above.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

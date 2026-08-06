@@ -10,7 +10,7 @@ dynamic createPlugin(dynamic api) {
     'description': 'Logs track starts to the console',
     'version': '1.0.0',
     'author': 'Omnis Team',
-    'hooks': ['onTrackStart', 'onLibraryScan'],
+    'hooks': ['onTrackStart', 'onLibraryScan', 'uiSlot'],
   };
 }
 
@@ -26,4 +26,22 @@ dynamic onTrackStart(dynamic track) {
 /// [file] is the file path as a String.
 dynamic onLibraryScan(dynamic file) {
   return 'scanned';
+}
+
+/// Injects a small badge into the Now Playing screen.
+///
+/// Downloaded plugins run in dart_eval and cannot import `dart:ui`, so
+/// they cannot build a real Flutter widget the way a bundled plugin can.
+/// Instead they return a small declarative Map — `{'type': ..., ...}` —
+/// which the host app (`PluginSlotView`) knows how to render. This is the
+/// only shape of UI a downloaded plugin can contribute.
+dynamic uiSlot(dynamic locationID) {
+  if (locationID != 'now_playing_overlay') {
+    return null;
+  }
+  return {
+    'type': 'badge',
+    'text': 'Sample Logger active',
+    'icon': 'info',
+  };
 }

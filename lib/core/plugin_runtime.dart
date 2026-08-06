@@ -57,7 +57,26 @@ class PluginRuntime {
   PluginRuntime._(this._metadata, this._runtime, this._declaredHooks);
 
   /// Compile and execute `pluginSource`, calling `createPlugin(api)`.
-  factory PluginRuntime.create(String pluginSource) {
+  ///
+  /// [declaredPermissions] comes from the plugin's `omnis_plugin.yaml`
+  /// manifest (the `permissions:` list). Runtime permissions are granted
+  /// **only** for what the plugin explicitly declared — this used to grant
+  /// `FilesystemPermission.any` unconditionally to every plugin regardless
+  /// of its manifest, which meant any pasted GitHub URL got full file
+  /// system access. That defeated the sandbox story entirely, so the grant
+  /// is now opt-in per declared permission.
+  ///
+  /// NOTE: dart_eval's `FilesystemPermission.any` is still all-or-nothing —
+  /// there is no per-directory scoping available at this layer. A plugin
+  /// that declares `storage` still gets broad file access, it's just no
+  /// longer silent/automatic. Before shipping, the install UI
+  /// (`plugins_page.dart`) should show the declared permission list to the
+  /// user and require confirmation before a `storage` or `network` plugin
+  /// is installed, the same way a mobile OS shows a permission prompt.
+  factory PluginRuntime.create(
+    String pluginSource, {
+    List<String> declaredPermissions = const [],
+  }) {
     Map<dynamic, dynamic> metadata;
     Runtime runtime;
     try {
@@ -65,7 +84,12 @@ class PluginRuntime {
         'default': {'main.dart': pluginSource},
       });
       runtime = Runtime.ofProgram(program);
-      runtime.grant(FilesystemPermission.any);
+      final wantsStorage = declaredPermissions.any(
+        (p) => p == 'storage' || p == 'filesystem',
+      );
+      if (wantsStorage) {
+        runtime.grant(FilesystemPermission.any);
+      }
       runtime.args = [
         <String, dynamic>{'omnisVersion': '0.1.0'},
       ];

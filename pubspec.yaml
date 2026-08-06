@@ -24,14 +24,23 @@ dependencies:
   permission_handler: ^11.3.1
   on_audio_query: ^2.9.0
   shared_preferences: ^2.2.3
+  # --- ID3 tag reading/writing (pure Dart, no native build) ---
+  id3_codec: ^1.0.3
   # --- Plugin runtime (dart_eval provides a full Dart interpreter so
   #     downloaded plugins can execute at runtime) ---
   dart_eval: ^0.8.3
+  flutter_web_auth_2: ^5.0.3
+  youtube_player_iframe: ^5.2.2
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  # Used by test/library_store_test.dart to fake the app documents
+  # directory. Imported directly, so they must be declared directly.
+  path_provider_platform_interface: ^2.1.0
+  plugin_platform_interface: ^2.1.0
 
 flutter:
   uses-material-design: true
