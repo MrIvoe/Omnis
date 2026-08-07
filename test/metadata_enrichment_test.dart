@@ -72,6 +72,77 @@ void main() {
       expect(result.genres, isEmpty);
     });
 
+    test(
+        'albumArtist/releaseType/releaseDate come from the release-group '
+        'MusicBrainz lookup, not the recording-level artist credit',
+        () async {
+      final client = _mockFor({
+        'musicbrainz.org': (req) => http.Response(
+              jsonEncode({
+                'recordings': [
+                  {
+                    'title': 'Sunrise',
+                    'artist-credit': [
+                      {'name': 'Ava'}
+                    ],
+                    'releases': [
+                      {
+                        'title': 'Various Mornings',
+                        'date': '2011-05-01',
+                        'artist-credit': [
+                          {'name': 'Various Artists'}
+                        ],
+                        'release-group': {'primary-type': 'Compilation'},
+                      }
+                    ],
+                  }
+                ],
+              }),
+              200,
+            ),
+      });
+      final plugin = MetadataEnrichmentPlugin(client: client);
+
+      final result = await plugin.enrichTrack(_track());
+
+      // The recording's own artist ("Ava") stays the track's canonical
+      // artist; the release's distinct artist-credit ("Various Artists")
+      // is what becomes albumArtist.
+      expect(result.canonicalArtist, 'Ava');
+      expect(result.albumArtist, 'Various Artists');
+      expect(result.releaseType, ReleaseType.compilation);
+      expect(result.releaseDate, DateTime(2011, 5, 1));
+    });
+
+    test(
+        'a partial MusicBrainz date (year-only) never becomes releaseDate',
+        () async {
+      final client = _mockFor({
+        'musicbrainz.org': (req) => http.Response(
+              jsonEncode({
+                'recordings': [
+                  {
+                    'title': 'Sunrise',
+                    'artist-credit': [
+                      {'name': 'Ava'}
+                    ],
+                    'releases': [
+                      {'title': 'Morning', 'date': '2011'}
+                    ],
+                  }
+                ],
+              }),
+              200,
+            ),
+      });
+      final plugin = MetadataEnrichmentPlugin(client: client);
+
+      final result = await plugin.enrichTrack(_track());
+
+      expect(result.year, 2011);
+      expect(result.releaseDate, isNull);
+    });
+
     test('Last.fm is skipped entirely when no API key is configured', () async {
       var lastfmCalled = false;
       final client = _mockFor({

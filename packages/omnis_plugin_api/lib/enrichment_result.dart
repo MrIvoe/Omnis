@@ -1,3 +1,5 @@
+import 'package:omnis_plugin_api/base_track.dart';
+
 /// Result of enriching one track against external metadata sources.
 ///
 /// Lives in `omnis_plugin_api` (not inside a plugin file) because
@@ -10,6 +12,20 @@ class EnrichmentResult {
   final String? canonicalArtist;
   final String? canonicalAlbum;
   final int? year;
+
+  /// The release's own artist credit, distinct from [canonicalArtist] (the
+  /// *recording*'s artist) — e.g. "Various Artists" for a compilation
+  /// whose matched track credits one specific performer. See
+  /// [BaseTrack.albumArtist].
+  final String? albumArtist;
+
+  /// The kind of release the matched album is, when the source reports
+  /// one. See [BaseTrack.releaseType].
+  final ReleaseType? releaseType;
+
+  /// Full release date, when the source reports one more precise than
+  /// [year]. See [BaseTrack.releaseDate].
+  final DateTime? releaseDate;
 
   /// Merged genre tags from whichever sources contributed something.
   final List<String> genres;
@@ -27,6 +43,9 @@ class EnrichmentResult {
     this.canonicalArtist,
     this.canonicalAlbum,
     this.year,
+    this.albumArtist,
+    this.releaseType,
+    this.releaseDate,
     this.genres = const [],
     this.mood,
     this.sourcesUsed = const [],
@@ -37,6 +56,9 @@ class EnrichmentResult {
       canonicalArtist == null &&
       canonicalAlbum == null &&
       year == null &&
+      albumArtist == null &&
+      releaseType == null &&
+      releaseDate == null &&
       genres.isEmpty &&
       mood == null;
 }

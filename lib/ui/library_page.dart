@@ -345,6 +345,9 @@ class _LibraryPageState extends State<LibraryPage> {
       year: current.year ?? result.year,
       genres: {...current.genres, ...result.genres}.toList(),
       mood: current.mood ?? result.mood,
+      albumArtist: current.albumArtist ?? result.albumArtist,
+      releaseType: current.releaseType ?? result.releaseType,
+      releaseDate: current.releaseDate ?? result.releaseDate,
     );
     if (mounted) {
       setState(() => _tracks[index] = updated);

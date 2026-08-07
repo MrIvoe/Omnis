@@ -57,6 +57,20 @@ class BaseTrack {
   /// ReplayGain values
   final ReplayGainValues? replayGain;
 
+  /// Album artist — distinct from [artists] (the track's own performers),
+  /// e.g. "Various Artists" for a compilation whose individual tracks
+  /// each credit different performers. `null` when unknown; callers that
+  /// want a display value should fall back to `artists.first`.
+  final String? albumArtist;
+
+  /// The kind of release this track's album is, when known.
+  final ReleaseType? releaseType;
+
+  /// Full release date, when known — more precise than [year], which
+  /// stays for backward compatibility and as a fallback when only the
+  /// year is known.
+  final DateTime? releaseDate;
+
   /// Constructor
   BaseTrack({
     required this.id,
@@ -78,6 +92,9 @@ class BaseTrack {
     this.localPath,
     this.streamUrl,
     this.replayGain,
+    this.albumArtist,
+    this.releaseType,
+    this.releaseDate,
   });
 
   /// Create a copy of this track with updated values
@@ -101,6 +118,9 @@ class BaseTrack {
     String? localPath,
     String? streamUrl,
     ReplayGainValues? replayGain,
+    String? albumArtist,
+    ReleaseType? releaseType,
+    DateTime? releaseDate,
   }) {
     return BaseTrack(
       id: id ?? this.id,
@@ -122,6 +142,9 @@ class BaseTrack {
       localPath: localPath ?? this.localPath,
       streamUrl: streamUrl ?? this.streamUrl,
       replayGain: replayGain ?? this.replayGain,
+      albumArtist: albumArtist ?? this.albumArtist,
+      releaseType: releaseType ?? this.releaseType,
+      releaseDate: releaseDate ?? this.releaseDate,
     );
   }
 
@@ -147,6 +170,9 @@ class BaseTrack {
       'localPath': localPath,
       'streamUrl': streamUrl,
       'replayGain': replayGain?.toJson(),
+      'albumArtist': albumArtist,
+      'releaseType': releaseType?.name,
+      'releaseDate': releaseDate?.toIso8601String(),
     };
   }
 
@@ -174,6 +200,18 @@ class BaseTrack {
       replayGain: json['replayGain'] != null
           ? ReplayGainValues.fromJson(json['replayGain'])
           : null,
+      // Additive fields: absent in JSON written before they existed,
+      // which must decode as null rather than throw.
+      albumArtist: json['albumArtist'] as String?,
+      releaseType: json['releaseType'] != null
+          ? ReleaseType.values.firstWhere(
+              (t) => t.name == json['releaseType'],
+              orElse: () => ReleaseType.album,
+            )
+          : null,
+      releaseDate: json['releaseDate'] != null
+          ? DateTime.tryParse(json['releaseDate'] as String)
+          : null,
     );
   }
 
@@ -200,12 +238,18 @@ class BaseTrack {
         other.youtubeId == youtubeId &&
         other.localPath == localPath &&
         other.streamUrl == streamUrl &&
-        other.replayGain == replayGain;
+        other.replayGain == replayGain &&
+        other.albumArtist == albumArtist &&
+        other.releaseType == releaseType &&
+        other.releaseDate == releaseDate;
   }
 
   @override
   int get hashCode {
-    return Object.hash(
+    // Object.hash() caps out at 20 positional arguments; this class has
+    // more fields than that, so hashAll (no such limit) is required, not
+    // just a style preference.
+    return Object.hashAll([
       id,
       title,
       artists,
@@ -225,7 +269,10 @@ class BaseTrack {
       localPath,
       streamUrl,
       replayGain,
-    );
+      albumArtist,
+      releaseType,
+      releaseDate,
+    ]);
   }
 }
 
@@ -239,6 +286,23 @@ enum TrackType {
 
   /// YouTube stream
   youtube,
+}
+
+/// ReleaseType represents the kind of release an album is.
+enum ReleaseType {
+  /// A standard full-length album.
+  album,
+
+  /// A single (typically one to a few tracks).
+  single,
+
+  /// An EP (extended play — more than a single, shorter than an album).
+  ep,
+
+  /// A compilation of tracks from multiple releases (often multiple
+  /// album artists, hence [BaseTrack.albumArtist] commonly reading
+  /// "Various Artists" for these).
+  compilation,
 }
 
 /// ReplayGainValues stores ReplayGain information for a track

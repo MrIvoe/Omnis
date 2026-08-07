@@ -192,6 +192,7 @@ class MediaScanner {
     final year = int.tryParse((tags.year ?? '').trim());
     final trackNumber = int.tryParse((tags.track ?? '').trim());
     final discNumber = int.tryParse((tags.disc ?? '').trim());
+    final rawAlbumArtist = tags.albumArtist?.trim();
 
     return BaseTrack(
       id: 'local:${file.path}',
@@ -213,6 +214,13 @@ class MediaScanner {
       // ReplayGain scanner (mp3gain, foobar2000, ...); Omnis doesn't
       // compute loudness itself.
       replayGain: tags.replayGainValues,
+      // Real data when present — the standard TPE2 frame or a
+      // TXXX:ALBUMARTIST custom field (see TrackTags.albumArtist).
+      // `null`, not empty-string, when absent: BaseTrack.albumArtist
+      // documents null as "unknown, fall back to artists.first."
+      albumArtist: (rawAlbumArtist != null && rawAlbumArtist.isNotEmpty)
+          ? rawAlbumArtist
+          : null,
     );
   }
 
