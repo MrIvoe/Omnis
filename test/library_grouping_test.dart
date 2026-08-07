@@ -94,6 +94,55 @@ void main() {
       final unknown = sections.firstWhere((s) => s.title == 'Unknown location');
       expect(unknown.tracks.map((t) => t.id), ['4']);
     });
+
+    test(
+        'groupArtistsByAlbumArtist groups a compilation under one album '
+        'artist instead of scattering by each track\'s own performer', () {
+      final tracks = [
+        BaseTrack(
+          id: '1',
+          title: 'Track One',
+          artists: ['Solo Performer A'],
+          album: 'Big Compilation',
+          albumArtist: 'Various Artists',
+          duration: 180,
+          type: TrackType.local,
+        ),
+        BaseTrack(
+          id: '2',
+          title: 'Track Two',
+          artists: ['Solo Performer B'],
+          album: 'Big Compilation',
+          albumArtist: 'Various Artists',
+          duration: 180,
+          type: TrackType.local,
+        ),
+        // No albumArtist tag — falls back to its own artist, same as the
+        // setting being off.
+        BaseTrack(
+          id: '3',
+          title: 'Solo Song',
+          artists: ['Independent Artist'],
+          album: 'Solo Album',
+          duration: 180,
+          type: TrackType.local,
+        ),
+      ];
+
+      final off = buildLibrarySections(tracks,
+          viewMode: LibraryViewMode.artists, showAlbums: false);
+      expect(off.map((s) => s.title).toSet(),
+          {'Solo Performer A', 'Solo Performer B', 'Independent Artist'});
+
+      final on = buildLibrarySections(tracks,
+          viewMode: LibraryViewMode.artists,
+          showAlbums: false,
+          groupArtistsByAlbumArtist: true);
+      expect(on.map((s) => s.title).toSet(),
+          {'Various Artists', 'Independent Artist'});
+      final compilation = on.firstWhere((s) => s.title == 'Various Artists');
+      expect(compilation.tracks.map((t) => t.id).toSet(), {'1', '2'});
+    });
   });
 
   group('findDuplicateTracks', () {

@@ -63,6 +63,8 @@ class AppSettings extends ChangeNotifier {
   static const _genresGridColumnsKey = 'app_genres_grid_columns';
   static const _shortTrackThresholdSecondsKey =
       'app_short_track_threshold_seconds';
+  static const _groupArtistsByAlbumArtistKey =
+      'app_group_artists_by_album_artist';
   static const _reduceMotionEnabledKey = 'app_reduce_motion_enabled';
   static const _reduceTransparencyEnabledKey =
       'app_reduce_transparency_enabled';
@@ -464,6 +466,23 @@ class AppSettings extends ChangeNotifier {
   set shortTrackThresholdSeconds(int seconds) {
     _ensurePrefs();
     _prefs!.setInt(_shortTrackThresholdSecondsKey, seconds < 0 ? 0 : seconds);
+    notifyListeners();
+  }
+
+  /// When true, the Artists view groups by [BaseTrack.albumArtist]
+  /// instead of each track's own first listed performer — the
+  /// difference that matters is a various-artists compilation, whose
+  /// tracks would otherwise scatter across many different per-track
+  /// artist sections instead of grouping under one album artist.
+  /// Defaults off: `albumArtist` is only populated where a real source
+  /// (embedded tags, MusicBrainz) actually reports it, so most libraries
+  /// see no difference until it is.
+  bool get groupArtistsByAlbumArtist =>
+      _prefs?.getBool(_groupArtistsByAlbumArtistKey) ?? false;
+
+  set groupArtistsByAlbumArtist(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_groupArtistsByAlbumArtistKey, value);
     notifyListeners();
   }
 

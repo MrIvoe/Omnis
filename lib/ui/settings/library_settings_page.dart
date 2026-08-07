@@ -93,6 +93,18 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
               },
             ),
           ),
+          SwitchListTile(
+            title: const Text('Group Artists view by album artist'),
+            subtitle: const Text(
+                'Groups a compilation\'s tracks under one album artist '
+                '(e.g. "Various Artists") instead of scattering them '
+                'across each track\'s own listed performer. Only affects '
+                'tracks with an album artist tag — most local files won\'t '
+                'have one until re-tagged or looked up.'),
+            value: settings.groupArtistsByAlbumArtist,
+            onChanged: (value) =>
+                setState(() => settings.groupArtistsByAlbumArtist = value),
+          ),
           const SizedBox(height: 16),
           Text('Library cleanup & tagging', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),

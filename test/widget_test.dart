@@ -57,6 +57,17 @@ void main() {
     expect(AppSettings.instance.seekIncrementSeconds, 10);
   });
 
+  test('groupArtistsByAlbumArtist defaults off and persists when toggled',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.groupArtistsByAlbumArtist, isFalse);
+
+    AppSettings.instance.groupArtistsByAlbumArtist = true;
+    expect(AppSettings.instance.groupArtistsByAlbumArtist, isTrue);
+  });
+
   test('AppSettings persists theme presets and builds themed surfaces',
       () async {
     SharedPreferences.setMockInitialValues({});

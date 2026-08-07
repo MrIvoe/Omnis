@@ -42,6 +42,7 @@ List<LibrarySection> buildLibrarySections(
   List<BaseTrack> tracks, {
   required LibraryViewMode viewMode,
   required bool showAlbums,
+  bool groupArtistsByAlbumArtist = false,
 }) {
   if (tracks.isEmpty) {
     return const [];
@@ -96,8 +97,18 @@ List<LibrarySection> buildLibrarySections(
   if (viewMode == LibraryViewMode.artists) {
     final byArtist = <String, List<BaseTrack>>{};
     for (final track in tracks) {
-      final artist =
-          track.artists.isNotEmpty ? track.artists.first : 'Unknown Artist';
+      // Off (default): each track's own listed performer, same as
+      // before this setting existed. On: the album's credited artist
+      // when known — the difference that actually matters is a
+      // various-artists compilation, whose tracks would otherwise
+      // scatter across many different per-track artist sections instead
+      // of grouping under the one album artist ("Various Artists" or
+      // similar).
+      final artist = groupArtistsByAlbumArtist
+          ? (track.albumArtist ??
+              (track.artists.isNotEmpty ? track.artists.first : null) ??
+              'Unknown Artist')
+          : (track.artists.isNotEmpty ? track.artists.first : 'Unknown Artist');
       byArtist.putIfAbsent(artist, () => []).add(track);
     }
 
@@ -1225,7 +1236,10 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final sections = buildLibrarySections(_tracks,
-        viewMode: _viewMode, showAlbums: _showAlbums);
+        viewMode: _viewMode,
+        showAlbums: _showAlbums,
+        groupArtistsByAlbumArtist:
+            AppSettings.instance.groupArtistsByAlbumArtist);
     return Scaffold(
       appBar: _selectionMode
           ? AppBar(
@@ -1550,7 +1564,11 @@ class _LibraryPageState extends State<LibraryPage> {
           .map((t) => LibrarySection(title: t.title, tracks: [t]))
           .toList();
     }
-    return buildLibrarySections(_tracks, viewMode: _viewMode, showAlbums: false);
+    return buildLibrarySections(_tracks,
+        viewMode: _viewMode,
+        showAlbums: false,
+        groupArtistsByAlbumArtist:
+            AppSettings.instance.groupArtistsByAlbumArtist);
   }
 
   Widget _buildGrid() {
