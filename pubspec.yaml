@@ -22,14 +22,20 @@ dependencies:
     git:
       url: https://github.com/MrIvoe/Omnis.git
       path: packages/omnis_plugin_api
+      ref: plugin-api-v0.1.0
   # --- The bundled plugins themselves, published at
   #     github.com/MrIvoe/Omnis-Plugins. A clean checkout (no
   #     pubspec_overrides.yaml present) resolves straight from GitHub;
   #     pubspec_overrides.yaml (local-only) points this at the sibling
-  #     checkout instead for fast local iteration — see that file. ---
+  #     checkout instead for fast local iteration — see that file.
+  #     Pinned to a tag, not a floating branch: a push to Omnis-Plugins
+  #     must not silently change what this app builds against. Bump the
+  #     ref deliberately (its own reviewed commit) when picking up new
+  #     plugin-side work on purpose. ---
   omnis_plugins:
     git:
       url: https://github.com/MrIvoe/Omnis-Plugins.git
+      ref: v0.1.0
   # --- Core playback ---
   just_audio: ^0.9.36
   audio_service: ^0.18.11

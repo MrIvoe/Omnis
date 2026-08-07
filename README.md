@@ -108,6 +108,16 @@ has exactly one plugin-side import, the registry. Adding a plugin means
 editing `lib/plugins/`, never `lib/core/`. Full rationale in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Versioning across the plugin split
+
+`omnis_plugins` ([github.com/MrIvoe/Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins))
+and `packages/omnis_plugin_api` (in this repo) are pinned to each other by
+git tag, not a floating branch — `pubspec.yaml`'s `ref:` fields. A push to
+either repo never silently changes what the other builds against. To pick
+up new work on purpose: cut a new tag in the changed repo, then bump the
+`ref:` in whichever `pubspec.yaml` depends on it, as its own reviewed
+commit.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `flutter analyze`
