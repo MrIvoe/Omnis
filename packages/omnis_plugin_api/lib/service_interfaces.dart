@@ -138,3 +138,20 @@ abstract class IVisualizerProvider {
 
   Stream<List<double>> get levels;
 }
+
+/// Reports which output device (if any) is currently connected.
+///
+/// Implemented by `BluetoothPlaybackPlugin`. Exists so another plugin
+/// that wants to react to a device connecting/disconnecting —
+/// `EqualizerPlugin`'s per-device EQ presets today — can do so without
+/// depending on `BluetoothPlaybackPlugin` by concrete type, the same
+/// "ask for the interface, not the plugin" pattern every other interface
+/// here follows.
+abstract class IDeviceConnectivityProvider {
+  /// The currently connected device's name, or `null` when nothing is
+  /// connected.
+  String? get connectedDeviceName;
+
+  /// Emits every time [connectedDeviceName] changes.
+  Stream<String?> get deviceChanges;
+}
