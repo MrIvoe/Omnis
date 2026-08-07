@@ -48,6 +48,14 @@ abstract class MusicPlugin {
   /// Plugin author.
   String get author;
 
+  /// Whether this plugin makes its own outbound network requests (an API
+  /// lookup, OAuth, streaming playback) — as opposed to one that only
+  /// touches local files/storage. Defaults `false`; a plugin that does
+  /// reach the network overrides this to `true`. Drives the "disable
+  /// every plugin with network access" privacy control on the Plugins
+  /// page — a bulk, one-tap version of switching each one off by hand.
+  bool get usesNetwork => false;
+
   /// Called once when the plugin is registered and enabled.
   Future<void> initialize();
 

@@ -340,7 +340,19 @@ class _PluginsPageState extends State<PluginsPage> {
           const SizedBox(height: 16),
 
           // --- Installed plugins ---
-          Text('Installed plugins', style: theme.textTheme.titleMedium),
+          Row(
+            children: [
+              Text('Installed plugins', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              if (_plugins.any(
+                  (p) => p.enabled && (p.inProcess?.usesNetwork ?? false)))
+                TextButton.icon(
+                  onPressed: () => widget.pluginManager.disableAllNetworkPlugins(),
+                  icon: const Icon(Icons.wifi_off, size: 18),
+                  label: const Text('Disable all network plugins'),
+                ),
+            ],
+          ),
           const SizedBox(height: 8),
           if (_plugins.isEmpty)
             const Card(

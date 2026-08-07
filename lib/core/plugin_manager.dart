@@ -558,6 +558,21 @@ class PluginManager {
     _emit();
   }
 
+  /// Switches off every currently-enabled bundled plugin that reaches the
+  /// network ([MusicPlugin.usesNetwork]) — a one-tap version of disabling
+  /// each one by hand, for a user who wants nothing to phone out without
+  /// auditing the plugin list themselves. External (downloaded) plugins
+  /// aren't included: `usesNetwork` is only meaningful on the
+  /// [MusicPlugin] interface, and an external plugin's actual network
+  /// use isn't something this can verify either way.
+  Future<void> disableAllNetworkPlugins() async {
+    for (final plugin in List<ManagedPlugin>.from(_plugins)) {
+      if (plugin.enabled && (plugin.inProcess?.usesNetwork ?? false)) {
+        await disablePlugin(plugin);
+      }
+    }
+  }
+
   /// Uninstall an external plugin (removes files from disk).
   Future<void> uninstallPlugin(ManagedPlugin plugin) async {
     await disablePlugin(plugin);

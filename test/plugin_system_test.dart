@@ -106,6 +106,40 @@ class _RecordingPlugin extends MusicPlugin {
   Future<void> dispose() async => calls.add('dispose');
 }
 
+/// A plugin that declares network use, and one that doesn't (the
+/// default) — used to prove disableAllNetworkPlugins() only touches the
+/// former.
+class _NetworkPlugin extends MusicPlugin {
+  @override
+  bool get usesNetwork => true;
+
+  @override
+  String get id => 'network_user';
+  @override
+  String get name => 'Network User';
+  @override
+  String get description => 'Reaches the network';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+
+  @override
+  Future<void> onLibraryScan(String file) async {}
+
+  @override
+  dynamic uiSlot(String locationID) => null;
+
+  @override
+  Future<void> dispose() async {}
+}
+
 /// A no-op stand-in for PluginContext — only used to give register() a
 /// non-null context so its attach()-guard path actually runs.
 class _FakeContext implements PluginContext {
@@ -154,6 +188,30 @@ void main() {
       expect(manager.plugins.any((p) => p.id == 'attach_crashy'), isTrue);
       expect(manager.sandbox.healthRecords, hasLength(1));
       expect(manager.sandbox.healthRecords.first.hook, 'attach');
+    });
+
+    test(
+        'disableAllNetworkPlugins only disables plugins that declare '
+        'network use, leaving the rest untouched', () async {
+      final manager = PluginManager();
+      manager.register(_NetworkPlugin());
+      manager.register(_RecordingPlugin());
+      await manager.initializeAll();
+
+      await manager.disableAllNetworkPlugins();
+
+      final network =
+          manager.plugins.firstWhere((p) => p.id == 'network_user');
+      final recorder = manager.plugins.firstWhere((p) => p.id == 'recorder');
+      expect(network.enabled, isFalse);
+      expect(recorder.enabled, isTrue);
+    });
+
+    test('disableAllNetworkPlugins is a no-op with nothing registered',
+        () async {
+      final manager = PluginManager();
+      await manager.disableAllNetworkPlugins();
+      expect(manager.plugins, isEmpty);
     });
   });
 
