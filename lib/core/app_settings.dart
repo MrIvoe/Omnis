@@ -48,6 +48,7 @@ class AppSettings extends ChangeNotifier {
   static const _pitchKey = 'app_playback_pitch';
   static const _skipSilenceEnabledKey = 'app_skip_silence_enabled';
   static const _crossfadeSecondsKey = 'app_crossfade_seconds';
+  static const _seekIncrementSecondsKey = 'app_seek_increment_seconds';
   static const _gaplessEnabledKey = 'app_gapless_enabled';
   static const _disabledPluginsKey = 'app_disabled_plugins';
   static const _playerLayoutIdKey = 'app_player_layout_id';
@@ -347,6 +348,21 @@ class AppSettings extends ChangeNotifier {
   set crossfadeSeconds(double value) {
     _ensurePrefs();
     _prefs!.setDouble(_crossfadeSecondsKey, value < 0 ? 0.0 : value);
+    notifyListeners();
+  }
+
+  /// How far a skip-forward/skip-backward tap moves playback, in seconds.
+  /// One of 10/15/30, matching the common presets other players offer —
+  /// not free-form, so the UI can be a segmented choice rather than a
+  /// slider for a value that only makes sense as a few round numbers.
+  int get seekIncrementSeconds =>
+      _prefs?.getInt(_seekIncrementSecondsKey) ?? 10;
+
+  set seekIncrementSeconds(int value) {
+    _ensurePrefs();
+    const allowed = {10, 15, 30};
+    _prefs!.setInt(
+        _seekIncrementSecondsKey, allowed.contains(value) ? value : 10);
     notifyListeners();
   }
 

@@ -38,6 +38,25 @@ void main() {
     expect(reloaded.selectedFolderPath, 'C:/Music');
   });
 
+  test('seekIncrementSeconds defaults to 10 and only accepts 10/15/30',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.seekIncrementSeconds, 10);
+
+    AppSettings.instance.seekIncrementSeconds = 30;
+    expect(AppSettings.instance.seekIncrementSeconds, 30);
+
+    AppSettings.instance.seekIncrementSeconds = 15;
+    expect(AppSettings.instance.seekIncrementSeconds, 15);
+
+    // An out-of-range value falls back to the default rather than being
+    // stored verbatim — this setting is a fixed choice, not free-form.
+    AppSettings.instance.seekIncrementSeconds = 7;
+    expect(AppSettings.instance.seekIncrementSeconds, 10);
+  });
+
   test('AppSettings persists theme presets and builds themed surfaces',
       () async {
     SharedPreferences.setMockInitialValues({});

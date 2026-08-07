@@ -23,6 +23,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   bool _skipSilence = false;
   double _crossfadeSec = 0;
   bool _gapless = true;
+  int _seekIncrement = 10;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _skipSilence = _settings.skipSilenceEnabled;
     _crossfadeSec = _settings.crossfadeSeconds;
     _gapless = _settings.gaplessEnabled;
+    _seekIncrement = _settings.seekIncrementSeconds;
   }
 
   @override
@@ -76,6 +78,24 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                 widget.engine
                     .setCrossfadeDuration(Duration(seconds: v.round()));
                 _settings.crossfadeSeconds = v;
+              },
+            ),
+          ),
+          ListTile(
+            title: const Text('Skip forward/backward'),
+            subtitle: const Text(
+                'How far the skip buttons on Now Playing move playback.'),
+            trailing: DropdownButton<int>(
+              value: _seekIncrement,
+              items: const [
+                DropdownMenuItem(value: 10, child: Text('10 sec')),
+                DropdownMenuItem(value: 15, child: Text('15 sec')),
+                DropdownMenuItem(value: 30, child: Text('30 sec')),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _seekIncrement = v);
+                _settings.seekIncrementSeconds = v;
               },
             ),
           ),

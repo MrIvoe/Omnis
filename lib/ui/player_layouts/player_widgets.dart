@@ -250,6 +250,21 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
 
     final shuffleRepeatSize = compact ? iconSize * 0.55 : iconSize * 0.65;
     final playSize = compact ? playIconSize * 0.8 : playIconSize;
+    final seekIncrement = data.settings.seekIncrementSeconds;
+    final seekIcons = switch (seekIncrement) {
+      15 => (Icons.replay_10, Icons.forward_10), // no dedicated 15s glyph
+      30 => (Icons.replay_30, Icons.forward_30),
+      _ => (Icons.replay_10, Icons.forward_10),
+    };
+    void skip(int deltaSeconds) {
+      final current = data.position;
+      var target = current + Duration(seconds: deltaSeconds);
+      if (target < Duration.zero) target = Duration.zero;
+      final total = data.duration;
+      if (total != null && target > total) target = total;
+      data.onSeek(target);
+      OmnisHaptics.selectionClick();
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -263,6 +278,12 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
           iconButton(Icons.skip_previous,
               onPressed: data.onPrevious,
               size: compact ? iconSize * 0.8 : iconSize),
+        if (layout == ButtonLayout.standard) ...[
+          iconButton(seekIcons.$1,
+              onPressed: () => skip(-seekIncrement),
+              size: shuffleRepeatSize),
+          const SizedBox(width: 4),
+        ],
         const SizedBox(width: 16),
         data.buffering
             ? SizedBox(
@@ -284,6 +305,12 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
                 onPressed: data.onPlayPause,
               ),
         const SizedBox(width: 16),
+        if (layout == ButtonLayout.standard) ...[
+          const SizedBox(width: 4),
+          iconButton(seekIcons.$2,
+              onPressed: () => skip(seekIncrement),
+              size: shuffleRepeatSize),
+        ],
         if (layout != ButtonLayout.minimal)
           iconButton(Icons.skip_next,
               onPressed: data.onNext,
