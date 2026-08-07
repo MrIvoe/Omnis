@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
@@ -108,6 +113,95 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _savePlaylists() => PlaylistStore.instance.save(_playlists);
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Exports [playlist] as an M3U8 file via the platform's save dialog.
+  /// `file_picker`'s `saveFile` writes the bytes itself on Android/iOS
+  /// (required there); on desktop it only returns the chosen path, so
+  /// this writes the file itself in that case.
+  Future<void> _exportPlaylist(Playlist playlist) async {
+    final result = PlaylistStore.instance.exportM3U(playlist, _libraryTracks);
+    final bytes = Uint8List.fromList(utf8.encode(result.content));
+    final safeName = playlist.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export playlist',
+      fileName: '$safeName.m3u8',
+      type: FileType.custom,
+      allowedExtensions: ['m3u8', 'm3u'],
+      bytes: bytes,
+    );
+    if (path == null) return;
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      await File(path).writeAsBytes(bytes);
+    }
+    _snack(result.skippedCount == 0
+        ? 'Exported ${result.writtenCount} tracks.'
+        : 'Exported ${result.writtenCount} tracks '
+            '(${result.skippedCount} skipped — not in your local library).');
+  }
+
+  /// Imports an M3U/M3U8 file, matching its entries against the current
+  /// library, and adds the result as a new playlist.
+  Future<void> _importM3U() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['m3u', 'm3u8'],
+      withData: true,
+    );
+    final file = picked?.files.single;
+    if (file == null) return;
+
+    String? content;
+    if (file.bytes != null) {
+      content = utf8.decode(file.bytes!, allowMalformed: true);
+    } else if (file.path != null) {
+      content = await File(file.path!).readAsString();
+    }
+    if (content == null || !mounted) return;
+
+    final defaultName =
+        file.name.replaceAll(RegExp(r'\.m3u8?$', caseSensitive: false), '');
+    final controller = TextEditingController(text: defaultName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+
+    final result = PlaylistStore.instance
+        .importM3U(content, _libraryTracks, name: trimmed);
+    setState(() {
+      _playlists = [..._playlists, result.playlist];
+    });
+    await _savePlaylists();
+    _snack(result.skippedCount == 0
+        ? 'Imported ${result.matchedCount} tracks.'
+        : 'Imported ${result.matchedCount} tracks '
+            '(${result.skippedCount} not found in your library).');
+  }
 
   BaseTrack? _trackById(String id) {
     for (final t in _libraryTracks) {
@@ -296,6 +390,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
         title: const Text('Playlists'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.file_upload_outlined),
+            tooltip: 'Import M3U playlist',
+            onPressed: _importM3U,
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'New playlist',
             onPressed: _createPlaylist,
@@ -374,10 +473,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     trailing: PopupMenuButton<String>(
                       onSelected: (value) {
                         if (value == 'rename') _renamePlaylist(playlist);
+                        if (value == 'export') _exportPlaylist(playlist);
                         if (value == 'delete') _deletePlaylist(playlist);
                       },
                       itemBuilder: (context) => const [
                         PopupMenuItem(value: 'rename', child: Text('Rename')),
+                        PopupMenuItem(
+                            value: 'export', child: Text('Export as M3U')),
                         PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),
@@ -408,10 +510,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'rename') _renamePlaylist(playlist);
+              if (value == 'export') _exportPlaylist(playlist);
               if (value == 'delete') _deletePlaylist(playlist);
             },
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(
+                  value: 'export', child: Text('Export as M3U')),
               PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
             ],
           ),
