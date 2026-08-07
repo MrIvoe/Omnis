@@ -5,9 +5,9 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/plugin_storage.dart';
-import 'package:omnis/plugins/spotify_auth.dart';
-import 'package:omnis/plugins/spotify_import_plugin.dart';
-import 'package:omnis/plugins/spotify_playback_plugin.dart';
+import 'package:omnis_plugins/spotify_auth.dart';
+import 'package:omnis_plugins/spotify_import_plugin.dart';
+import 'package:omnis_plugins/spotify_playback_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Seeds [storage] with a valid (non-expired) access token, the way a

@@ -1,7 +1,12 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// `RepeatMode` moved to `omnis_plugin_api` (see that package's
+// `repeat_mode.dart`) so `PluginContext`/plugins can name it without
+// depending on this file. Re-exported so every existing
+// `import 'package:omnis/core/app_settings.dart' show RepeatMode` in
+// this app keeps working unchanged.
+export 'package:omnis_plugin_api/repeat_mode.dart' show RepeatMode;
 
 enum AppThemeMode { system, light, dark }
 
@@ -13,9 +18,13 @@ enum LibrarySource { wholePhone, dedicatedFolder, none }
 
 enum GestureMode { swipe, taps, none }
 
-enum RepeatMode { off, all, one }
-
 enum LibraryDisplayMode { list, grid }
+
+/// What renders behind the controls on the Now Playing screen.
+enum NowPlayingBackgroundStyle { solid, blurredArt, gradient }
+
+/// Row/tile spacing in library list and grid views.
+enum LibraryDensity { comfortable, compact }
 
 class AppSettings extends ChangeNotifier {
   AppSettings._();
@@ -41,15 +50,9 @@ class AppSettings extends ChangeNotifier {
   static const _crossfadeSecondsKey = 'app_crossfade_seconds';
   static const _gaplessEnabledKey = 'app_gapless_enabled';
   static const _disabledPluginsKey = 'app_disabled_plugins';
-  static const _eqVirtualBandsKey = 'app_eq_virtual_bands';
-  static const _eqHardwareBandsKey = 'app_eq_hardware_bands';
-  static const _lyricsKey = 'app_lyrics_by_track';
-  static const _playHistoryKey = 'app_play_history';
   static const _playerLayoutIdKey = 'app_player_layout_id';
   static const _autoLandscapeLayoutKey = 'app_auto_landscape_layout';
   static const _carModeControlsOnRightKey = 'app_car_mode_controls_on_right';
-  static const _autoTaggedTrackIdsKey = 'app_auto_tagged_track_ids';
-  static const _favoriteTrackIdsKey = 'app_favorite_track_ids';
   static const _bottomNavAutoHideKey = 'app_bottom_nav_auto_hide';
   static const _songsViewModeKey = 'app_songs_view_mode';
   static const _songsGridColumnsKey = 'app_songs_grid_columns';
@@ -59,6 +62,16 @@ class AppSettings extends ChangeNotifier {
   static const _genresGridColumnsKey = 'app_genres_grid_columns';
   static const _shortTrackThresholdSecondsKey =
       'app_short_track_threshold_seconds';
+  static const _reduceMotionEnabledKey = 'app_reduce_motion_enabled';
+  static const _reduceTransparencyEnabledKey =
+      'app_reduce_transparency_enabled';
+  static const _hapticFeedbackEnabledKey = 'app_haptic_feedback_enabled';
+  static const _dynamicColorFromArtEnabledKey =
+      'app_dynamic_color_from_art_enabled';
+  static const _nowPlayingBackgroundStyleKey =
+      'app_now_playing_background_style';
+  static const _libraryDensityKey = 'app_library_density';
+  static const _customThemeIdKey = 'app_custom_theme_id';
 
   SharedPreferences? _prefs;
   bool _initialized = false;
@@ -368,128 +381,6 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  Map<String, double> _decodeBandMap(String? raw) {
-    if (raw == null || raw.isEmpty) return {};
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return {};
-      return decoded.map(
-        (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
-      );
-    } catch (_) {
-      // Corrupt preference value — treat as "nothing saved" rather than
-      // crashing plugin initialization over a bad string.
-      return {};
-    }
-  }
-
-  Future<void> _persistBandMap(String key, Map<String, double> bands) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    await prefs.setString(key, jsonEncode(bands));
-    notifyListeners();
-  }
-
-  /// Persisted virtual (bass/mid/treble) equalizer band gains.
-  ///
-  /// The equalizer used to reset to flat on every restart — nothing ever
-  /// wrote its bands anywhere.
-  Map<String, double> get equalizerVirtualBands =>
-      _decodeBandMap(_prefs?.getString(_eqVirtualBandsKey));
-
-  Future<void> setEqualizerVirtualBands(Map<String, double> bands) =>
-      _persistBandMap(_eqVirtualBandsKey, bands);
-
-  /// Persisted native equalizer band gains, keyed by band index (as a
-  /// string, since band layout is device-reported and not fixed).
-  Map<String, double> get equalizerHardwareBands =>
-      _decodeBandMap(_prefs?.getString(_eqHardwareBandsKey));
-
-  Future<void> setEqualizerHardwareBands(Map<String, double> bands) =>
-      _persistBandMap(_eqHardwareBandsKey, bands);
-
-  /// Persisted plain-text lyrics, keyed by track id.
-  ///
-  /// Previously `LyricsPlugin` only ever held lyrics in memory, so
-  /// anything a user typed vanished on the next restart.
-  Map<String, String> get storedLyrics {
-    final raw = _prefs?.getString(_lyricsKey);
-    if (raw == null || raw.isEmpty) return {};
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return {};
-      return decoded.map((key, value) => MapEntry(key.toString(), value.toString()));
-    } catch (_) {
-      return {};
-    }
-  }
-
-  Future<void> setStoredLyrics(Map<String, String> lyrics) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    await prefs.setString(_lyricsKey, jsonEncode(lyrics));
-    notifyListeners();
-  }
-
-  /// Persisted play history — a JSON-encoded list of per-play maps
-  /// (`trackId`, `title`, `artist`, `playedAtMs`). `ScrobblePlugin` owns
-  /// the shape and the cap on how many entries are kept; this is just
-  /// storage, the same split every other persisted-collection setting
-  /// here uses.
-  List<Map<String, dynamic>> get playHistory {
-    final raw = _prefs?.getString(_playHistoryKey);
-    if (raw == null || raw.isEmpty) return [];
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return [];
-      return decoded
-          .whereType<Map>()
-          .map((m) => Map<String, dynamic>.from(m))
-          .toList();
-    } catch (_) {
-      return [];
-    }
-  }
-
-  Future<void> setPlayHistory(List<Map<String, dynamic>> history) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    await prefs.setString(_playHistoryKey, jsonEncode(history));
-    notifyListeners();
-  }
-
-  /// Ids of tracks the automatic tagger has already processed, so a
-  /// repeat "tag whole library" pass skips them instead of re-doing (and
-  /// potentially re-fetching/re-guessing) the same work every time.
-  /// `TagEditorPlugin.clearAutoTagged` is the "redo this one anyway"
-  /// escape hatch.
-  Set<String> get autoTaggedTrackIds {
-    final raw = _prefs?.getStringList(_autoTaggedTrackIdsKey);
-    return raw == null ? <String>{} : raw.toSet();
-  }
-
-  Future<void> setAutoTaggedTrackIds(Set<String> ids) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    await prefs.setStringList(_autoTaggedTrackIdsKey, ids.toList());
-    notifyListeners();
-  }
-
-  /// Ids of tracks the user has marked a favorite ("Like" in Spotify,
-  /// "Top rated" in Musicolet). A plain persisted set — [FavoritesPlugin]
-  /// is the thin API surface over this, the same split
-  /// `TagEditorPlugin`/`autoTaggedTrackIds` already uses.
-  Set<String> get favoriteTrackIds {
-    final raw = _prefs?.getStringList(_favoriteTrackIdsKey);
-    return raw == null ? <String>{} : raw.toSet();
-  }
-
-  Future<void> setFavoriteTrackIds(Set<String> ids) async {
-    final prefs = _prefs;
-    if (prefs == null) return;
-    await prefs.setStringList(_favoriteTrackIdsKey, ids.toList());
-    notifyListeners();
-  }
 
   /// Whether the bottom navigation bar auto-hides in Car Mode / landscape
   /// (revealed by a swipe-up or the edge handle) rather than always
@@ -592,81 +483,117 @@ class AppSettings extends ChangeNotifier {
   Future<void> forgetPluginState(String pluginId) =>
       setPluginEnabled(pluginId, true);
 
-  ThemeData themeData(Brightness brightness) {
-    final base =
-        brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light();
-    final isDark = brightness == Brightness.dark;
+  /// Shortens or skips new motion added under `lib/ui/theme/` (see
+  /// `OmnisMotion.durationFor`) — accessibility-motivated, separate from
+  /// [reduceTransparencyEnabled] since a user can be sensitive to one
+  /// without the other. Defaults to `false`: this is opt-in, not a
+  /// silent behavior change for people who already like the app moving.
+  bool get reduceMotionEnabled =>
+      _prefs?.getBool(_reduceMotionEnabledKey) ?? false;
 
-    final surfaceColor =
-        isDark ? const Color(0xFF101218) : const Color(0xFFF7F7FB);
-    final elevatedColor = isDark ? const Color(0xFF171A22) : Colors.white;
-    final borderColor =
-        isDark ? const Color(0xFF2A3040) : const Color(0xFFE7EAF5);
+  set reduceMotionEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_reduceMotionEnabledKey, value);
+    notifyListeners();
+  }
 
-    final presetColors = switch (themePreset) {
-      AppThemePreset.midnight => (
-          primary: const Color(0xFF7C93FF),
-          secondary: const Color(0xFF5DE2FF)
-        ),
-      AppThemePreset.aurora => (
-          primary: const Color(0xFF26C281),
-          secondary: const Color(0xFF6D8CFF)
-        ),
-      AppThemePreset.sunset => (
-          primary: const Color(0xFFFF8A4C),
-          secondary: const Color(0xFFFF5F7D)
-        ),
-      AppThemePreset.classic => (
-          primary: accentColor,
-          secondary: accentColor.withValues(alpha: 0.7)
-        ),
+  /// Gates blur/backdrop effects (Now Playing's blurred-art background)
+  /// separately from [reduceMotionEnabled] — for lower-end hardware where
+  /// `BackdropFilter` is expensive, or vestibular/visual sensitivity to
+  /// blur specifically rather than motion.
+  bool get reduceTransparencyEnabled =>
+      _prefs?.getBool(_reduceTransparencyEnabledKey) ?? false;
+
+  set reduceTransparencyEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_reduceTransparencyEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// Whether `OmnisHaptics` calls actually vibrate. Defaults to `true` —
+  /// unlike [reduceMotionEnabled], most players ship haptics on by
+  /// default and this is the "turn it off" escape hatch, not an opt-in.
+  bool get hapticFeedbackEnabled =>
+      _prefs?.getBool(_hapticFeedbackEnabledKey) ?? true;
+
+  set hapticFeedbackEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_hapticFeedbackEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// Whether Now Playing tints itself from the current track's artwork
+  /// (`DynamicColorExtractor`) instead of the static preset scheme.
+  /// Defaults to `false`: extraction has a real cost and a preset-scheme
+  /// upgrade must not silently start doing more work per track change
+  /// than it did before.
+  bool get dynamicColorFromArtEnabled =>
+      _prefs?.getBool(_dynamicColorFromArtEnabledKey) ?? false;
+
+  set dynamicColorFromArtEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_dynamicColorFromArtEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// What renders behind Now Playing's controls. Defaults to `solid` —
+  /// exactly what every layout already draws today, so upgrading never
+  /// changes an existing user's screen until they opt into something else.
+  NowPlayingBackgroundStyle get nowPlayingBackgroundStyle {
+    final value = _prefs?.getString(_nowPlayingBackgroundStyleKey) ?? 'solid';
+    return switch (value) {
+      'blurredArt' => NowPlayingBackgroundStyle.blurredArt,
+      'gradient' => NowPlayingBackgroundStyle.gradient,
+      _ => NowPlayingBackgroundStyle.solid,
     };
+  }
 
-    final themedScheme = ColorScheme.fromSeed(
-      seedColor: presetColors.primary,
-      brightness: brightness,
-      secondary: presetColors.secondary,
-    );
+  set nowPlayingBackgroundStyle(NowPlayingBackgroundStyle style) {
+    _ensurePrefs();
+    _prefs!.setString(
+        _nowPlayingBackgroundStyleKey,
+        switch (style) {
+          NowPlayingBackgroundStyle.blurredArt => 'blurredArt',
+          NowPlayingBackgroundStyle.gradient => 'gradient',
+          NowPlayingBackgroundStyle.solid => 'solid',
+        });
+    notifyListeners();
+  }
 
-    return base.copyWith(
-        colorScheme: themedScheme,
-        scaffoldBackgroundColor: surfaceColor,
-        cardColor: elevatedColor,
-        cardTheme: CardTheme(
-          color: elevatedColor,
-          elevation: 1,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: borderColor)),
-        ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: surfaceColor,
-          foregroundColor: themedScheme.onSurface,
-          elevation: 0,
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: elevatedColor,
-          indicatorColor: themedScheme.secondaryContainer,
-          labelTextStyle:
-              WidgetStatePropertyAll(TextStyle(color: themedScheme.onSurface)),
-          iconTheme: WidgetStatePropertyAll(
-              IconThemeData(color: themedScheme.onSurface)),
-        ),
-        dividerColor: borderColor,
-        textTheme: base.textTheme.apply(
-            bodyColor: themedScheme.onSurface,
-            displayColor: themedScheme.onSurface),
-        inputDecorationTheme: InputDecorationTheme(
-            border:
-                OutlineInputBorder(borderSide: BorderSide(color: borderColor))),
-        filledButtonTheme: FilledButtonThemeData(
-            style: FilledButton.styleFrom(
-                backgroundColor: themedScheme.primary,
-                foregroundColor: themedScheme.onPrimary)),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-            style: OutlinedButton.styleFrom(
-                side: BorderSide(
-                    color: themedScheme.primary.withValues(alpha: 0.3)))));
+  /// Row/tile spacing in library list and grid views. Defaults to
+  /// `comfortable` — today's existing spacing, unchanged until a user
+  /// opts into `compact`.
+  LibraryDensity get libraryDensity {
+    final value = _prefs?.getString(_libraryDensityKey) ?? 'comfortable';
+    return value == 'compact'
+        ? LibraryDensity.compact
+        : LibraryDensity.comfortable;
+  }
+
+  set libraryDensity(LibraryDensity density) {
+    _ensurePrefs();
+    _prefs!.setString(_libraryDensityKey,
+        density == LibraryDensity.compact ? 'compact' : 'comfortable');
+    notifyListeners();
+  }
+
+  /// The id of a user-imported theme to use instead of [themePreset]/
+  /// [accentColor], or `null` to use the built-in preset system as
+  /// normal. `null` rather than an empty string for "not set" — an id an
+  /// imported theme actually chose could theoretically be empty-ish after
+  /// a bad import, so `null` unambiguously means "nothing selected"
+  /// separately from "selected, but not found" (a since-uninstalled
+  /// theme), which callers resolving this id distinguish themselves.
+  String? get customThemeId => _prefs?.getString(_customThemeIdKey);
+
+  set customThemeId(String? id) {
+    _ensurePrefs();
+    if (id == null) {
+      _prefs!.remove(_customThemeIdKey);
+    } else {
+      _prefs!.setString(_customThemeIdKey, id);
+    }
+    notifyListeners();
   }
 
   void _ensurePrefs() {

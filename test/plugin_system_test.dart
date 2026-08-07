@@ -206,15 +206,17 @@ dynamic onLibraryScan(dynamic file) {
     test(
         'sample_logger plugin.dart executes for real, including its uiSlot '
         'declarative-Map hook', () async {
-      // Loads the actual shipped example (plugins/sample_logger/plugin.dart)
-      // through the real dart_eval interpreter — not a hand-typed source
-      // string — to prove the declarative uiSlot payload PluginSlotView
+      // Loads a local fixture mirroring the actual shipped example —
+      // https://github.com/MrIvoe/Omnis-Plugins/blob/main/sample_logger/plugin.dart,
+      // now published in its own repo rather than bundled in this one —
+      // through the real dart_eval interpreter (not a hand-typed source
+      // string) to prove the declarative uiSlot payload PluginSlotView
       // depends on (a downloaded plugin returning {'type': 'badge', ...}
       // instead of a real Widget) really executes, not just "looks right"
       // by inspection.
-      final source =
-          await File(p.join('plugins', 'sample_logger', 'plugin.dart'))
-              .readAsString();
+      final source = await File(p.join(
+              'test', 'fixtures', 'sample_logger_plugin.dart.txt'))
+          .readAsString();
       final runtime = PluginRuntime.create(source);
 
       expect(runtime.id, 'sample_logger');

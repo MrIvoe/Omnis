@@ -5,9 +5,9 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/plugin_storage.dart';
-import 'package:omnis/plugins/youtube_auth.dart';
-import 'package:omnis/plugins/youtube_music_import_plugin.dart';
-import 'package:omnis/plugins/youtube_playback_plugin.dart';
+import 'package:omnis_plugins/youtube_auth.dart';
+import 'package:omnis_plugins/youtube_music_import_plugin.dart';
+import 'package:omnis_plugins/youtube_playback_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Seeds [storage] with a valid (non-expired) access token — see the

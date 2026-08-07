@@ -6,7 +6,7 @@ import 'package:omnis/core/event_bus.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/service_registry.dart';
-import 'package:omnis/plugins/favorites_plugin.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A no-op stand-in for AudioEngine — FavoritesPlugin never touches
@@ -45,6 +45,12 @@ void main() {
     expect(plugin.isFavorite('t1'), isTrue);
 
     final freshInstance = FavoritesPlugin();
+    // A fresh PluginStorage starts cold (its own `_prefs` is null until
+    // something awaits it) even though it reads the same underlying
+    // SharedPreferences store as `plugin`'s — warm it explicitly before
+    // the synchronous check below, or it'd see the not-yet-loaded default
+    // instead of what `plugin` already persisted.
+    await freshInstance.storage.initialize();
     expect(freshInstance.isFavorite('t1'), isTrue);
 
     await freshInstance.toggleFavorite('t1');
@@ -72,7 +78,7 @@ void main() {
       'so an unrelated page can react without polling', () async {
     final plugin = FavoritesPlugin();
     final events = EventBus();
-    plugin.attach(PluginContext(
+    plugin.attach(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: ServiceRegistry(),
       events: events,
@@ -92,7 +98,7 @@ void main() {
   test('a no-op setFavorite (already in the requested state) does not emit', () async {
     final plugin = FavoritesPlugin();
     final events = EventBus();
-    plugin.attach(PluginContext(
+    plugin.attach(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: ServiceRegistry(),
       events: events,

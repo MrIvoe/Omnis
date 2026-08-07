@@ -1,10 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/lyrics_plugin.dart';
-import 'package:omnis/plugins/scrobble_plugin.dart';
-import 'package:omnis/plugins/smart_playlist_plugin.dart';
+import 'package:omnis_plugins/lyrics_plugin.dart';
+import 'package:omnis_plugins/scrobble_plugin.dart';
+import 'package:omnis_plugins/smart_playlist_plugin.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    // ScrobblePlugin now persists via its own PluginStorage (real
+    // SharedPreferences.getInstance(), not the null-safe "_prefs?."
+    // AppSettings used before) — every plugin-storage-touching test file
+    // needs this, per docs/PLUGIN_GUIDE.md's testing section.
+    SharedPreferences.setMockInitialValues({});
+  });
+
   test('smart playlist builds a mood-based queue', () {
     final plugin = SmartPlaylistPlugin();
     final tracks = [

@@ -6,70 +6,16 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart' show RepeatMode;
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis_plugin_api/hardware_eq_band.dart';
 import 'package:smtc_windows/smtc_windows.dart' hide RepeatMode;
 
-/// A single adjustable band on the platform's native equalizer.
-///
-/// Deliberately just_audio-agnostic in its public surface — no
-/// `AndroidEqualizerBand` type leaks out — so a plugin that wants real
-/// per-band control depends only on this, not on the audio backend.
-class HardwareEqBand {
-  /// Index of this band on the native equalizer.
-  final int index;
-
-  /// Approximate center frequency in Hz, as reported by the platform.
-  final double centerFrequencyHz;
-
-  /// Minimum gain the platform accepts, in decibels.
-  final double minDecibels;
-
-  /// Maximum gain the platform accepts, in decibels.
-  final double maxDecibels;
-
-  final Future<void> Function(double gain) _applyGain;
-  double _gain;
-
-  HardwareEqBand._({
-    required this.index,
-    required this.centerFrequencyHz,
-    required this.minDecibels,
-    required this.maxDecibels,
-    required double initialGain,
-    required Future<void> Function(double gain) applyGain,
-  })  : _gain = initialGain,
-        _applyGain = applyGain;
-
-  /// Test-only constructor — production bands only come from
-  /// [AudioEngine.hardwareEqBands], which reads real platform state.
-  @visibleForTesting
-  factory HardwareEqBand.forTesting({
-    required int index,
-    required double centerFrequencyHz,
-    double minDecibels = -15,
-    double maxDecibels = 15,
-    double initialGain = 0,
-    Future<void> Function(double gain)? applyGain,
-  }) {
-    return HardwareEqBand._(
-      index: index,
-      centerFrequencyHz: centerFrequencyHz,
-      minDecibels: minDecibels,
-      maxDecibels: maxDecibels,
-      initialGain: initialGain,
-      applyGain: applyGain ?? (_) async {},
-    );
-  }
-
-  /// Current gain in decibels.
-  double get gain => _gain;
-
-  /// Set this band's gain, clamped to the platform's supported range.
-  Future<void> setGain(double decibels) async {
-    final clamped = decibels.clamp(minDecibels, maxDecibels);
-    _gain = clamped;
-    await _applyGain(clamped);
-  }
-}
+// `HardwareEqBand` moved to `omnis_plugin_api` (see that package's
+// `hardware_eq_band.dart`) so `EqualizerPlugin` can name it without
+// depending on this file. Re-exported so every existing
+// `import 'package:omnis/core/audio_engine.dart' show HardwareEqBand` in
+// this app keeps working unchanged. `AudioEngine` below is still the only
+// thing that ever constructs a real instance, via `HardwareEqBand.fromPlatform`.
+export 'package:omnis_plugin_api/hardware_eq_band.dart' show HardwareEqBand;
 
 /// Core playback engine.
 ///
@@ -315,7 +261,7 @@ class AudioEngine {
       final params = await eq.parameters.timeout(const Duration(seconds: 5));
       _hardwareEqBands = [
         for (final band in params.bands)
-          HardwareEqBand._(
+          HardwareEqBand.fromPlatform(
             index: band.index,
             centerFrequencyHz: band.centerFrequency,
             minDecibels: params.minDecibels,

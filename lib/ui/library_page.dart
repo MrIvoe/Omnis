@@ -13,12 +13,14 @@ import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/favorites_plugin.dart';
-import 'package:omnis/plugins/metadata_enrichment_plugin.dart';
-import 'package:omnis/plugins/ringtone_plugin.dart';
-import 'package:omnis/plugins/tag_editor_plugin.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
+import 'package:omnis_plugins/ringtone_plugin.dart';
+import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis/ui/widgets/library_shimmer.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 import 'package:path/path.dart' as p;
 
@@ -933,6 +935,7 @@ class _LibraryPageState extends State<LibraryPage> {
       _toast('The Favorites plugin is disabled in Settings.');
       return;
     }
+    OmnisHaptics.selectionClick();
     await plugin.toggleFavorite(trackId);
     if (mounted) setState(() {});
   }
@@ -1330,7 +1333,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _buildBody(ThemeData theme, List<LibrarySection> sections) {
     return _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const LibraryShimmerList()
           : _error != null
               ? Center(
                   child: Padding(
@@ -1662,10 +1665,14 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
         ...section.tracks.map((track) {
           final selected = _selectedIds.contains(track.id);
+          final compact =
+              AppSettings.instance.libraryDensity == LibraryDensity.compact;
+          final artSize = compact ? 36.0 : 44.0;
           return ListTile(
+            dense: compact,
             leading: _selectionMode
                 ? CircleAvatar(
-                    radius: 22,
+                    radius: compact ? 18 : 22,
                     backgroundColor: selected
                         ? theme.colorScheme.primary
                         : theme.colorScheme.surfaceContainerHighest,
@@ -1680,9 +1687,9 @@ class _LibraryPageState extends State<LibraryPage> {
                     borderRadius: BorderRadius.circular(8),
                     child: TrackArtwork(
                       track: track,
-                      width: 44,
-                      height: 44,
-                      iconSize: 20,
+                      width: artSize,
+                      height: artSize,
+                      iconSize: compact ? 16 : 20,
                     ),
                   ),
             title:

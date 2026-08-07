@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/tag_editor_plugin.dart';
+import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 BaseTrack _track({
@@ -185,6 +185,11 @@ void main() {
       await plugin.markAutoTagged('t1');
 
       final freshInstance = TagEditorPlugin();
+      // A fresh PluginStorage starts cold (its own `_prefs` is null until
+      // something awaits it) even though it reads the same underlying
+      // SharedPreferences store as `plugin`'s — warm it explicitly before
+      // the synchronous check below.
+      await freshInstance.storage.initialize();
       expect(freshInstance.wasAutoTagged('t1'), isTrue);
     });
 

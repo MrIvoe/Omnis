@@ -1,0 +1,25 @@
+name: omnis_plugin_api
+description: >
+  Dependency-free contracts shared between the Omnis app and its plugins —
+  BaseTrack, MusicPlugin, PluginContext, PluginStorage, EventBus,
+  ServiceRegistry, and the capability interfaces under lib/plugin_api/.
+  Depends on nothing from either the Omnis app or the Omnis-Plugins
+  package, so both can depend on this without a dependency cycle.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:

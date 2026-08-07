@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/ui/theme/omnis_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -47,7 +48,11 @@ void main() {
     final reloaded = AppSettings.instance;
     expect(reloaded.themePreset, AppThemePreset.midnight);
 
-    final theme = reloaded.themeData(Brightness.dark);
+    final theme = OmnisTheme.build(
+      brightness: Brightness.dark,
+      preset: reloaded.themePreset,
+      accentColor: reloaded.accentColor,
+    );
     expect(theme.cardTheme.color, isNotNull);
     expect(theme.navigationBarTheme.backgroundColor, isNotNull);
   });

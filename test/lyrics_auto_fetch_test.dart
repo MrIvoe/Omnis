@@ -10,7 +10,7 @@ import 'package:omnis/core/event_bus.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/lyrics_plugin.dart';
+import 'package:omnis_plugins/lyrics_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeEngine implements AudioEngine {
@@ -191,7 +191,7 @@ void main() {
       final plugin = LyricsPlugin(client: client);
       final writer = _FakeTagWriter();
       final services = ServiceRegistry()..register(IFileTagWriter, writer);
-      plugin.attach(PluginContext(
+      plugin.attach(OmnisPluginContext(
         audioEngine: _FakeEngine(),
         services: services,
         events: EventBus(),
@@ -212,7 +212,7 @@ void main() {
       final plugin = LyricsPlugin(client: client);
       final writer = _FakeTagWriter();
       final services = ServiceRegistry()..register(IFileTagWriter, writer);
-      plugin.attach(PluginContext(
+      plugin.attach(OmnisPluginContext(
         audioEngine: _FakeEngine(),
         services: services,
         events: EventBus(),

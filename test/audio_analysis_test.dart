@@ -7,7 +7,7 @@ import 'package:http/testing.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/plugin_api/audio_analysis_result.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/audio_analysis_plugin.dart';
+import 'package:omnis_plugins/audio_analysis_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

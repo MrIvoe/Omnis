@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/queue_preset_plugin.dart';
+import 'package:omnis_plugins/queue_preset_plugin.dart';
 
 void main() {
   BaseTrack track({

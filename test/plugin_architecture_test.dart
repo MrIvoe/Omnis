@@ -8,12 +8,12 @@ import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manager.dart';
-import 'package:omnis/plugins/bundled_plugins.dart';
-import 'package:omnis/plugins/equalizer_plugin.dart';
-import 'package:omnis/plugins/lyrics_plugin.dart';
-import 'package:omnis/plugins/replay_gain_plugin.dart';
-import 'package:omnis/plugins/scrobble_plugin.dart';
-import 'package:omnis/plugins/sleep_timer_plugin.dart';
+import 'package:omnis_plugins/bundled_plugins.dart';
+import 'package:omnis_plugins/equalizer_plugin.dart';
+import 'package:omnis_plugins/lyrics_plugin.dart';
+import 'package:omnis_plugins/replay_gain_plugin.dart';
+import 'package:omnis_plugins/scrobble_plugin.dart';
+import 'package:omnis_plugins/sleep_timer_plugin.dart';
 import 'package:omnis/ui/now_playing_page.dart' show TapZoneAction, tapZoneAction;
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -193,7 +193,7 @@ void main() {
   group('PluginContext wiring', () {
     test('attachContext reaches plugins registered before and after it', () {
       final engine = _FakeEngine();
-      final context = PluginContext(
+      final context = OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),
@@ -215,7 +215,7 @@ void main() {
     test('equalizer bands reach the engine as a gain contribution', () async {
       final engine = _FakeEngine();
       final manager = PluginManager()
-        ..attachContext(PluginContext(
+        ..attachContext(OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),
@@ -237,7 +237,7 @@ void main() {
         () async {
       final engine = _FakeEngine();
       final manager = PluginManager()
-        ..attachContext(PluginContext(
+        ..attachContext(OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),
@@ -256,7 +256,7 @@ void main() {
     test('sleep timer pauses through the context when it fires', () async {
       final engine = _FakeEngine();
       final manager = PluginManager()
-        ..attachContext(PluginContext(
+        ..attachContext(OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),
@@ -438,7 +438,7 @@ void main() {
           HardwareEqBand.forTesting(index: 1, centerFrequencyHz: 1000);
       final engine = _HardwareEqFakeEngine([bandA, bandB]);
       final manager = PluginManager()
-        ..attachContext(PluginContext(
+        ..attachContext(OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),
@@ -456,21 +456,36 @@ void main() {
       expect(bandA.gain, 6.0);
       await equalizer.persistHardwareBands();
 
-      final saved = AppSettings.instance.equalizerHardwareBands;
-      expect(saved['0'], 6.0);
+      // EqualizerPlugin now persists via its own PluginStorage, not
+      // AppSettings — reset the shared fake band directly to prove the
+      // restoration step below actually re-reads the persisted value
+      // rather than just observing a gain that was never touched.
+      await bandA.setGain(0.0);
+      expect(bandA.gain, 0.0);
 
       // A fresh plugin against the same (still-loaded) bands restores the
-      // persisted gain instead of coming back flat.
+      // persisted gain instead of coming back flat. Driven directly
+      // (not via PluginManager.register) because PluginManager silently
+      // no-ops registering a second plugin with an id already in use —
+      // `restored` shares the 'equalizer' id with the plugin registered
+      // above, so manager.byId('equalizer') would just resolve back to
+      // the original, already-initialized instance instead of this one.
       final restored = EqualizerPlugin();
-      manager.register(restored);
-      await manager.initPlugin(manager.byId('equalizer')!);
+      restored.attach(OmnisPluginContext(
+        audioEngine: engine,
+        services: ServiceRegistry(),
+        events: EventBus(),
+      ));
+      await restored.storage.initialize();
+      await restored.initialize();
+      expect(bandA.gain, 6.0);
     });
 
     test('falls back to the virtual model when there is no hardware EQ',
         () async {
       final engine = _HardwareEqFakeEngine(const []);
       final manager = PluginManager()
-        ..attachContext(PluginContext(
+        ..attachContext(OmnisPluginContext(
         audioEngine: engine,
         services: ServiceRegistry(),
         events: EventBus(),

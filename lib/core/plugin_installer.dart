@@ -61,8 +61,15 @@ class PluginInstaller {
   /// Installs a plugin from a GitHub URL.
   ///
   /// Supported inputs:
-  ///  - `https://github.com/user/repo`
-  ///  - `https://github.com/user/repo/tree/branch`
+  ///  - `https://github.com/user/repo` (manifest at the repo root)
+  ///  - `https://github.com/user/repo/tree/branch` (manifest at the repo
+  ///    root, on a non-default branch)
+  ///  - `https://github.com/user/repo/tree/branch/some/subfolder` (a
+  ///    monorepo-style catalog — e.g. this project's own
+  ///    `MrIvoe/Omnis-Plugins` — with the manifest inside `subfolder`
+  ///    rather than at the repo root; the whole repo is still downloaded
+  ///    as one zip since that's all GitHub's zip endpoint offers, but only
+  ///    `subfolder`'s contents are extracted and validated)
   ///  - `https://github.com/user/repo/archive/refs/heads/main.zip`
   ///  - any direct `.zip` URL
   Future<InstalledPlugin> installFromUrl(String url) async {
@@ -76,7 +83,7 @@ class PluginInstaller {
 
     // Download
     try {
-      final resp = await _client.get(resolved);
+      final resp = await _client.get(resolved.downloadUri);
       if (resp.statusCode != 200) {
         throw PluginInstallException(
             'Download failed (HTTP ${resp.statusCode})');
@@ -96,9 +103,11 @@ class PluginInstaller {
 
     // Find the top-level folder name inside the zip (github wraps in one).
     final topLevel = _findTopLevel(files);
+    final subPath = resolved.subPath;
 
     final targetDir = Directory(
-      p.join((await _pluginsRoot()).path, _targetDirName(topLevel, url)),
+      p.join((await _pluginsRoot()).path,
+          _targetDirName(topLevel, url, subPath)),
     );
     if (await targetDir.exists()) {
       // Reinstall: clear old files.
@@ -110,8 +119,21 @@ class PluginInstaller {
     for (final file in files) {
       if (file.isFile) {
         // Remove the top-level prefix from the stored path.
-        final rel = _stripTopLevel(file.name, topLevel);
+        var rel = _stripTopLevel(file.name, topLevel);
         if (rel.isEmpty) continue;
+
+        // A catalog install (`.../tree/branch/subfolder`) only wants
+        // `subfolder`'s files, extracted as if they were the whole repo —
+        // otherwise every other plugin living alongside it in the same
+        // catalog repo would get downloaded and written to disk for
+        // nothing, and the manifest would end up one directory deeper
+        // than `listInstalled()`/`uninstall()` expect.
+        if (subPath != null) {
+          final prefix = '$subPath/';
+          if (!rel.startsWith(prefix)) continue;
+          rel = rel.substring(prefix.length);
+          if (rel.isEmpty) continue;
+        }
 
         // --- Zip-slip guard -------------------------------------------------
         // Plugins are downloaded from arbitrary, untrusted GitHub URLs, so a
@@ -148,7 +170,9 @@ class PluginInstaller {
     final manifestFile = File(p.join(targetDir.path, 'omnis_plugin.yaml'));
     if (!await manifestFile.exists()) {
       throw PluginInstallException(
-          'Plugin is missing omnis_plugin.yaml manifest.');
+          subPath == null
+              ? 'Plugin is missing omnis_plugin.yaml manifest.'
+              : 'No omnis_plugin.yaml found in "$subPath".');
     }
     final manifestText = await manifestFile.readAsString();
     final manifest = PluginManifest.parse(manifestText, sourceUrl: url);
@@ -221,30 +245,38 @@ class PluginInstaller {
     }
   }
 
-  /// Resolves a user-friendly GitHub URL into a direct zip download URL.
-  static Uri _resolveDownloadUrl(String input) {
+  /// Resolves a user-friendly GitHub URL into a direct zip download URL,
+  /// plus (for a `.../tree/branch/subfolder` catalog link) the subfolder
+  /// within the extracted zip that actually holds the plugin.
+  static ({Uri downloadUri, String? subPath}) _resolveDownloadUrl(
+      String input) {
     var url = input.trim();
     if (url.isEmpty) {
       throw PluginInstallException('URL is empty.');
     }
 
-    // https://github.com/user/repo/tree/branch → branch zip
+    // https://github.com/user/repo/tree/branch[/subfolder/...] → branch
+    // zip, with an optional subfolder for a monorepo-style catalog.
     final treeMatch =
-        RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/tree/(.+)$')
+        RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.+))?$')
             .firstMatch(url);
     if (treeMatch != null) {
       final user = treeMatch.group(1)!;
       final repo = treeMatch.group(2)!;
       final branch = treeMatch.group(3)!;
-      return Uri.parse(
-        'https://codeload.github.com/$user/$repo/zip/refs/heads/$branch',
+      final subPath = treeMatch.group(4);
+      return (
+        downloadUri: Uri.parse(
+          'https://codeload.github.com/$user/$repo/zip/refs/heads/$branch',
+        ),
+        subPath: subPath,
       );
     }
 
     // https://github.com/user/repo/archive/refs/heads/main.zip → direct
     final archiveMatch = RegExp(r'^(https?://.*\.zip)$').firstMatch(url);
     if (archiveMatch != null) {
-      return Uri.parse(url);
+      return (downloadUri: Uri.parse(url), subPath: null);
     }
 
     // https://github.com/user/repo → default branch zip
@@ -253,8 +285,11 @@ class PluginInstaller {
     if (bareMatch != null) {
       final user = bareMatch.group(1)!;
       final repo = bareMatch.group(2)!;
-      return Uri.parse(
-          'https://codeload.github.com/$user/$repo/zip/refs/heads/main');
+      return (
+        downloadUri: Uri.parse(
+            'https://codeload.github.com/$user/$repo/zip/refs/heads/main'),
+        subPath: null,
+      );
     }
 
     // Maybe a raw plugin.dart URL? Not supported yet.
@@ -293,8 +328,13 @@ class PluginInstaller {
   ///
   /// Prefers the archive's wrapper directory (`repo-main`) so reinstalling
   /// the same plugin replaces it instead of piling up copies. Falls back to
-  /// the source URL when the zip has no wrapper.
-  static String _targetDirName(String? topLevel, String url) {
+  /// the source URL when the zip has no wrapper. [subPath] is folded in too
+  /// — without it, installing two different plugins out of the same
+  /// catalog repo (e.g. `Omnis-Plugins/sample_logger` and
+  /// `Omnis-Plugins/some_other_plugin`) would both resolve to the same
+  /// `plugin_Omnis-Plugins-main` directory and silently overwrite one
+  /// another on install.
+  static String _targetDirName(String? topLevel, String url, String? subPath) {
     final raw = (topLevel != null && topLevel.isNotEmpty)
         ? topLevel
         : Uri.tryParse(url)
@@ -302,7 +342,8 @@ class PluginInstaller {
                 .where((s) => s.isNotEmpty)
                 .join('_') ??
             'unknown';
-    final safe = raw.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final combined = subPath == null || subPath.isEmpty ? raw : '${raw}_$subPath';
+    final safe = combined.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     return 'plugin_${safe.isEmpty ? 'unknown' : safe}';
   }
 

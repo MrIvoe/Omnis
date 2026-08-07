@@ -118,6 +118,27 @@ trusted update path. To sign with your own key:
    [Flutter's own signing guide](https://docs.flutter.dev/deployment/android#signing-the-app)
    for the exact Gradle snippet.
 
+## Plugin catalog
+
+Downloadable (non-bundled) plugins — the ones installed at runtime via
+Plugins → paste a URL, not compiled into the app — live in their own repo,
+[MrIvoe/Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
+(`C:\Users\MrIvo\Github\Omnis-Plugins` locally), split out from this repo
+so they version and publish independently of the app itself. Bundled
+plugins (`lib/plugins/`) are unaffected — this only concerns the
+`plugins_page.dart` install flow.
+
+`officialPluginCatalog` in `lib/ui/plugins_page.dart` is a hardcoded list
+of what's installable from that repo in one tap, since nothing here
+queries GitHub to discover new plugins automatically. **Before cutting a
+release build** (`flutter build apk --release` / `appbundle --release`),
+confirm that list still matches what's actually on the `main` branch of
+Omnis-Plugins — add a `CatalogPluginEntry` for anything pushed there since
+the last release, and remove/update any entry that was renamed or
+removed. A stale catalog entry fails loudly at install time (missing
+`omnis_plugin.yaml` → an error shown to the user), not silently, but it's
+still worth catching before shipping rather than after.
+
 ## The Essentia companion service
 
 Real BPM/key/mood audio analysis (`AudioAnalysisPlugin`) talks to a

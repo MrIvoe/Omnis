@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Shared building blocks every [PlayerLayout] composes differently.
@@ -41,12 +42,29 @@ class PlayerAlbumArt extends StatelessWidget {
             ),
           ],
         ),
-        child: TrackArtwork(
-          track: data.track,
-          width: size,
-          height: size,
-          borderRadius: BorderRadius.circular(24),
-          iconSize: iconSize,
+        // Keyed by track id so a track change swaps in a fresh
+        // `TrackArtwork` — a hard cut before this — via a fade+scale
+        // crossfade instead. Every bundled layout goes through
+        // `PlayerAlbumArt`, so this one change covers all six at once.
+        child: AnimatedSwitcher(
+          duration: OmnisMotion.durationFor(OmnisMotion.medium),
+          switchInCurve: OmnisMotion.standardCurve,
+          switchOutCurve: OmnisMotion.standardCurve,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween(begin: 0.94, end: 1.0).animate(animation),
+              child: child,
+            ),
+          ),
+          child: TrackArtwork(
+            key: ValueKey(data.track.id),
+            track: data.track,
+            width: size,
+            height: size,
+            borderRadius: BorderRadius.circular(24),
+            iconSize: iconSize,
+          ),
         ),
       ),
     );
@@ -136,6 +154,7 @@ class PlayerProgressBar extends StatelessWidget {
           value: value,
           max: max,
           onChanged: (v) => data.onSeek(Duration(milliseconds: v.round())),
+          onChangeEnd: (_) => OmnisHaptics.selectionClick(),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -152,7 +171,7 @@ class PlayerProgressBar extends StatelessWidget {
   }
 }
 
-class PlayerControlsRow extends StatelessWidget {
+class PlayerControlsRow extends StatefulWidget {
   final PlayerLayoutData data;
   final double iconSize;
   final double playIconSize;
@@ -167,7 +186,50 @@ class PlayerControlsRow extends StatelessWidget {
   });
 
   @override
+  State<PlayerControlsRow> createState() => _PlayerControlsRowState();
+}
+
+class _PlayerControlsRowState extends State<PlayerControlsRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _playPauseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _playPauseController = AnimationController(
+      vsync: this,
+      duration: OmnisMotion.fast,
+      value: widget.data.playing ? 1 : 0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(PlayerControlsRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.data.playing == oldWidget.data.playing) return;
+    // Duration is read fresh on every transition (not fixed at
+    // construction) so a mid-session change to "reduce motion" takes
+    // effect on the very next tap, not just after a widget rebuild.
+    _playPauseController.duration = OmnisMotion.durationFor(OmnisMotion.fast);
+    if (widget.data.playing) {
+      _playPauseController.forward();
+    } else {
+      _playPauseController.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _playPauseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final data = widget.data;
+    final iconSize = widget.iconSize;
+    final playIconSize = widget.playIconSize;
+    final color = widget.color;
     final theme = Theme.of(context);
     final layout = data.settings.buttonLayout;
     final compact = layout != ButtonLayout.standard;
@@ -187,6 +249,7 @@ class PlayerControlsRow extends StatelessWidget {
     }
 
     final shuffleRepeatSize = compact ? iconSize * 0.55 : iconSize * 0.65;
+    final playSize = compact ? playIconSize * 0.8 : playIconSize;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -207,12 +270,18 @@ class PlayerControlsRow extends StatelessWidget {
                 height: playIconSize - 8,
                 child: CircularProgressIndicator(color: color),
               )
-            : iconButton(
-                data.playing
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_fill,
+            // `AnimatedIcon` morphs the glyph itself (play triangle <->
+            // pause bars) instead of the old hard swap between two
+            // separate `Icons.*_circle_filled` icons.
+            : IconButton(
+                iconSize: playSize,
+                icon: AnimatedIcon(
+                  icon: AnimatedIcons.play_pause,
+                  progress: _playPauseController,
+                  size: playSize,
+                  color: color ?? theme.colorScheme.onSurface,
+                ),
                 onPressed: data.onPlayPause,
-                size: compact ? playIconSize * 0.8 : playIconSize,
               ),
         const SizedBox(width: 16),
         if (layout != ButtonLayout.minimal)
@@ -364,7 +433,10 @@ class PlayerSleepTimerRow extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             FilledButton.tonal(
-                onPressed: data.onStartSleepTimer,
+                onPressed: () {
+                  OmnisHaptics.mediumImpact();
+                  data.onStartSleepTimer();
+                },
                 child: const Text('Sleep timer')),
             const SizedBox(width: 8),
             OutlinedButton(

@@ -9,7 +9,8 @@ import 'package:omnis/plugin_api/play_record.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/favorites_plugin.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// The four always-present "smart" entries shown above the user's real
@@ -244,6 +245,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _reorderPlaylist(
       Playlist playlist, int oldIndex, int newIndex) async {
+    OmnisHaptics.selectionClick();
     final ids = List<String>.from(playlist.trackIds);
     if (newIndex > oldIndex) newIndex -= 1;
     final id = ids.removeAt(oldIndex);

@@ -5,8 +5,8 @@ import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/queue_preset_plugin.dart';
-import 'package:omnis/plugins/smart_playlist_plugin.dart';
+import 'package:omnis_plugins/queue_preset_plugin.dart';
+import 'package:omnis_plugins/smart_playlist_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// No-op stand-in for AudioEngine — neither plugin under test touches
@@ -46,7 +46,7 @@ void main() {
   test('both plugins register as IQueueBuilder, in the order they were '
       'registered with PluginManager', () async {
     final manager = PluginManager();
-    manager.attachContext(PluginContext(
+    manager.attachContext(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: manager.services,
       events: manager.events,
@@ -68,7 +68,7 @@ void main() {
       "builder's objective fallback — the whole reason registration order "
       'is meaningful for IQueueBuilder', () async {
     final manager = PluginManager();
-    manager.attachContext(PluginContext(
+    manager.attachContext(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: manager.services,
       events: manager.events,
@@ -99,7 +99,7 @@ void main() {
   test("QueuePresetPlugin's fallback still produces a queue when nothing "
       'has mood tags at all — the case a freshly scanned library hits', () async {
     final manager = PluginManager();
-    manager.attachContext(PluginContext(
+    manager.attachContext(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: manager.services,
       events: manager.events,
@@ -125,7 +125,7 @@ void main() {
   test('disabling SmartPlaylistPlugin removes it from IQueueBuilder without '
       "affecting QueuePresetPlugin's registration", () async {
     final manager = PluginManager();
-    manager.attachContext(PluginContext(
+    manager.attachContext(OmnisPluginContext(
       audioEngine: _FakeEngine(),
       services: manager.services,
       events: manager.events,

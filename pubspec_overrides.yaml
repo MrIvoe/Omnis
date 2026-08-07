@@ -1,0 +1,19 @@
+# Local-dev override: resolve omnis_plugins from the sibling Omnis-Plugins
+# checkout instead of fetching it from GitHub, so editing a plugin there
+# is picked up immediately without a commit+push round trip. A clean
+# clone of this repo (no override file present) resolves the git
+# dependency in pubspec.yaml instead — that's what CI and anyone else
+# cloning this repo actually gets.
+#
+# omnis_plugin_api is overridden here too, even though pubspec.yaml
+# already depends on it by path: without this, pub sees two different
+# *sources* for the same package across the graph — this app wants it by
+# path, but omnis_plugins' own (committed, git-sourced) pubspec.yaml
+# wants it by git — and refuses to resolve rather than guess which one
+# wins. A `dependency_overrides` entry is pub's documented way to force
+# one consistent source across the whole graph.
+dependency_overrides:
+  omnis_plugins:
+    path: ../Omnis-Plugins
+  omnis_plugin_api:
+    path: packages/omnis_plugin_api

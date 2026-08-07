@@ -7,6 +7,7 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
+import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// No-op stand-in — the Settings home page never touches playback
@@ -32,6 +33,7 @@ void main() {
         pluginManager: PluginManager(),
         sandbox: PluginSandbox(),
         layoutManager: LayoutManager(),
+        themeManager: ThemeManager(),
       ),
     ));
     await tester.pumpAndSettle();
@@ -57,6 +59,22 @@ void main() {
 
     // PluginsPage's own AppBar title, plus content only it renders.
     expect(find.text('Install a plugin'), findsOneWidget);
+    // "Plugin Health" now sits below the catalog + installer cards, past
+    // the default test viewport's sliver cache extent — a real
+    // Scrollable (not `.builder`, but still sliver-backed) only mounts
+    // elements near the visible region, so it must be scrolled into view
+    // before `find` can see it, the same as it would need a real scroll
+    // gesture on a small phone screen. `dragUntilVisible` (drag directly
+    // on the `ListView`) rather than `scrollUntilVisible` (find *the*
+    // `Scrollable`) — the URL `TextField` above it has its own nested
+    // `Scrollable` too (`EditableText` always has one), so "the
+    // `Scrollable` descendant of this `ListView`" isn't unique; dragging
+    // on the `ListView`'s own render box hits its scroll view directly.
+    await tester.dragUntilVisible(
+      find.text('Plugin Health'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
     expect(find.text('Plugin Health'), findsOneWidget);
   });
 

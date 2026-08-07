@@ -1,19 +1,24 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/equalizer_plugin.dart';
-import 'package:omnis/plugins/lyrics_plugin.dart';
-import 'package:omnis/plugins/shuffle_repeat_plugin.dart';
-import 'package:omnis/plugins/sleep_timer_plugin.dart';
-import 'package:omnis/plugins/visualizer_plugin.dart';
+import 'package:omnis_plugins/equalizer_plugin.dart';
+import 'package:omnis_plugins/lyrics_plugin.dart';
+import 'package:omnis_plugins/shuffle_repeat_plugin.dart';
+import 'package:omnis_plugins/sleep_timer_plugin.dart';
+import 'package:omnis_plugins/visualizer_plugin.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
+import 'package:omnis/ui/theme/omnis_colors.dart';
+import 'package:omnis/ui/widgets/now_playing_background.dart';
+import 'package:omnis/ui/widgets/track_artwork.dart' show ArtworkProvider;
 
 /// Which way a "Taps" gesture-mode tap should skip.
 enum TapZoneAction { previous, next }
@@ -393,11 +398,96 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     final layout = _resolveActiveLayout(context, settings);
     final body = layout.build(context, data);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Now Playing')),
-      body: layout.definesOwnGestures
-          ? body
-          : _wrapWithGestureMode(body, settings),
+    return _DynamicColorScope(
+      track: track,
+      enabled: settings.dynamicColorFromArtEnabled,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Now Playing')),
+        body: Stack(
+          children: [
+            Positioned.fill(child: NowPlayingBackground(track: track)),
+            layout.definesOwnGestures
+                ? body
+                : _wrapWithGestureMode(body, settings),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tints the ambient [ThemeData] from the current track's artwork
+/// (`DynamicColorExtractor`) when [enabled] — Android 12-style dynamic
+/// color, seeded from art instead of wallpaper. Renders [child] unchanged
+/// while disabled, while extraction is still in flight for a new track,
+/// or when extraction fails (no artwork, corrupt image) — a cosmetic
+/// feature must never block or alter Now Playing beyond its own color
+/// scheme.
+class _DynamicColorScope extends StatefulWidget {
+  final BaseTrack track;
+  final bool enabled;
+  final Widget child;
+
+  const _DynamicColorScope({
+    required this.track,
+    required this.enabled,
+    required this.child,
+  });
+
+  @override
+  State<_DynamicColorScope> createState() => _DynamicColorScopeState();
+}
+
+class _DynamicColorScopeState extends State<_DynamicColorScope> {
+  ColorScheme? _scheme;
+  String? _resolvedForKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeResolve();
+  }
+
+  @override
+  void didUpdateWidget(_DynamicColorScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _maybeResolve();
+  }
+
+  void _maybeResolve() {
+    if (!widget.enabled) {
+      if (_scheme != null) setState(() => _scheme = null);
+      return;
+    }
+    final brightness = Theme.of(context).brightness;
+    final key = '${widget.track.id}-${brightness.name}';
+    if (_resolvedForKey == key) return;
+    _resolvedForKey = key;
+    _resolve(brightness, key);
+  }
+
+  Future<void> _resolve(Brightness brightness, String key) async {
+    final bytes = await ArtworkProvider.forTrack(widget.track);
+    final scheme = await DynamicColorExtractor.forTrack(
+      trackId: widget.track.id,
+      artBytes: bytes,
+      brightness: brightness,
+    );
+    // The user may have switched tracks (or disabled the setting) again
+    // before this resolved — only apply it if it's still the most recent
+    // request in flight.
+    if (mounted && _resolvedForKey == key) {
+      setState(() => _scheme = scheme);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = _scheme;
+    if (scheme == null) return widget.child;
+    return Theme(
+      data: Theme.of(context).copyWith(colorScheme: scheme),
+      child: widget.child,
     );
   }
 }

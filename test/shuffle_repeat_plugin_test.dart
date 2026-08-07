@@ -3,7 +3,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
-import 'package:omnis/plugins/shuffle_repeat_plugin.dart';
+import 'package:omnis_plugins/shuffle_repeat_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Records shuffle/repeat traffic without a real audio engine.
@@ -30,7 +30,7 @@ class _FakeEngine implements AudioEngine {
 
 PluginManager _managerWith(_FakeEngine engine) {
   final manager = PluginManager();
-  manager.attachContext(PluginContext(
+  manager.attachContext(OmnisPluginContext(
     audioEngine: engine,
     services: manager.services,
     events: manager.events,

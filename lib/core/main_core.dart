@@ -5,7 +5,7 @@ import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
-import 'package:omnis/plugins/bundled_plugins.dart';
+import 'package:omnis_plugins/bundled_plugins.dart';
 
 /// MainCore is the entry point for the Omnis micro-kernel music engine.
 ///
@@ -14,10 +14,11 @@ import 'package:omnis/plugins/bundled_plugins.dart';
 ///  - the [PluginManager] (plugin crashes are sandboxed + health-logged)
 ///
 /// It deliberately knows **no concrete plugin**. The only plugin-side
-/// import is `createBundledPlugins()`, the registry in `lib/plugins/`, so
-/// adding or removing a feature never touches this file. Plugins reach
-/// playback through the [PluginContext] built here, and the UI binds to
-/// shared instances via `PluginManager.bundled<T>()`.
+/// import is `createBundledPlugins()`, the registry in the separate
+/// `omnis_plugins` package (github.com/MrIvoe/Omnis-Plugins), so adding
+/// or removing a feature never touches this file — or this repo at all.
+/// Plugins reach playback through the [PluginContext] built here, and the
+/// UI binds to shared instances via `PluginManager.bundled<T>()`.
 class MainCore {
   /// Audio engine instance.
   final AudioEngine _audioEngine;
@@ -67,7 +68,7 @@ class MainCore {
     };
 
     // Hand plugins their capability surface, then register the registry.
-    _pluginManager.attachContext(PluginContext(
+    _pluginManager.attachContext(OmnisPluginContext(
       audioEngine: _audioEngine,
       services: _pluginManager.services,
       events: _pluginManager.events,

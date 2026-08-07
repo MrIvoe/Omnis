@@ -6,9 +6,50 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
+
+/// The URL of Omnis's own plugin catalog repository — where downloadable
+/// (non-bundled) plugins now live, split out of this repo so they can be
+/// versioned and published independently of the app itself.
+const omnisPluginsRepoUrl = 'https://github.com/MrIvoe/Omnis-Plugins';
+
+/// One plugin published in [omnisPluginsRepoUrl], installable in a single
+/// tap via [PluginInstaller.installFromUrl]'s `tree/branch/subfolder`
+/// support — no URL to find or paste.
+class CatalogPluginEntry {
+  final String folder;
+  final String name;
+  final String description;
+  const CatalogPluginEntry(
+      {required this.folder, required this.name, required this.description});
+
+  /// A `tree/main/<folder>` link into [omnisPluginsRepoUrl], which
+  /// [PluginInstaller] resolves to "download the whole repo zip, but only
+  /// extract and validate `<folder>`" — see its doc comment.
+  String get installUrl => '$omnisPluginsRepoUrl/tree/main/$folder';
+}
+
+/// Plugins published on the `main` branch of [omnisPluginsRepoUrl] today.
+///
+/// **Add an entry here whenever a new plugin is pushed to that repo** —
+/// this list is the app's only way of knowing the catalog exists; nothing
+/// queries GitHub to discover plugins automatically (that would need the
+/// GitHub API and a rate-limit story this pass doesn't attempt). Before
+/// cutting a release build, confirm this still matches what's actually on
+/// `main` — see "Plugin catalog" in docs/BUILDING.md.
+const List<CatalogPluginEntry> officialPluginCatalog = [
+  CatalogPluginEntry(
+    folder: 'sample_logger',
+    name: 'Sample Logger',
+    description: 'Minimal example plugin — logs track starts and library '
+        'scans. Good starting point for writing your own.',
+  ),
+];
 
 /// Plugins screen.
 ///
+/// - Official catalog: one-tap install for anything published at
+///   [omnisPluginsRepoUrl], Omnis's own plugin repo.
 /// - "Insert link" field: paste a GitHub URL (or direct .zip) to install a
 ///   plugin → downloaded, extracted, validated, executed at runtime.
 /// - Installed plugin list with enable/disable/uninstall (hot-swap).
@@ -61,6 +102,14 @@ class _PluginsPageState extends State<PluginsPage> {
     super.dispose();
   }
 
+  /// Fills the URL field from [entry] and installs immediately — the
+  /// one-tap path for anything in [officialPluginCatalog], as opposed to
+  /// the user having to already know and paste a plugin's URL.
+  Future<void> _installFromCatalog(CatalogPluginEntry entry) async {
+    _urlController.text = entry.installUrl;
+    await _install();
+  }
+
   Future<void> _install() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
@@ -101,6 +150,7 @@ class _PluginsPageState extends State<PluginsPage> {
         sourceUrl: url,
       );
       if (mounted) {
+        OmnisHaptics.mediumImpact();
         setState(
             () => _installResult = 'Installed ${plugin.name} v${plugin.version}');
       }
@@ -199,6 +249,46 @@ class _PluginsPageState extends State<PluginsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // --- Official catalog ---
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.storefront, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('Omnis plugin catalog',
+                          style: theme.textTheme.titleMedium),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Install directly from Omnis\'s own plugin repository — '
+                    'no URL to find or paste.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  for (final entry in officialPluginCatalog)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.extension_outlined),
+                      title: Text(entry.name),
+                      subtitle: Text(entry.description),
+                      trailing: FilledButton.tonal(
+                        onPressed:
+                            _installing ? null : () => _installFromCatalog(entry),
+                        child: const Text('Install'),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // --- Installer ---
           Card(
             child: Padding(

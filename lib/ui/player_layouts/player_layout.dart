@@ -3,8 +3,8 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/equalizer_plugin.dart';
-import 'package:omnis/plugins/sleep_timer_plugin.dart';
+import 'package:omnis_plugins/equalizer_plugin.dart';
+import 'package:omnis_plugins/sleep_timer_plugin.dart';
 
 /// Which way a horizontal swipe should skip.
 enum SwipeSkipAction { previous, next }

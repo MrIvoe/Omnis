@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:omnis/plugins/visualizer_plugin.dart';
+import 'package:omnis_plugins/visualizer_plugin.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';

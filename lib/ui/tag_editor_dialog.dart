@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/tag_editor_plugin.dart';
+import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Manual tag editor: every field [TagEditorPlugin] can read or write for

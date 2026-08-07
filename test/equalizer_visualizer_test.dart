@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis/plugins/equalizer_plugin.dart';
-import 'package:omnis/plugins/visualizer_plugin.dart';
+import 'package:omnis_plugins/equalizer_plugin.dart';
+import 'package:omnis_plugins/visualizer_plugin.dart';
 
 void main() {
   test('equalizer plugin adjusts gain values', () {

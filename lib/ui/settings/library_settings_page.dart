@@ -72,6 +72,28 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
             ),
           ),
           const SizedBox(height: 16),
+          Text('Display', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            title: const Text('List density'),
+            subtitle: const Text(
+                'Compact fits more tracks on screen with shorter rows'),
+            trailing: DropdownButton<LibraryDensity>(
+              value: settings.libraryDensity,
+              items: const [
+                DropdownMenuItem(
+                    value: LibraryDensity.comfortable,
+                    child: Text('Comfortable')),
+                DropdownMenuItem(
+                    value: LibraryDensity.compact, child: Text('Compact')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => settings.libraryDensity = value);
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
           Text('Library cleanup & tagging', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(

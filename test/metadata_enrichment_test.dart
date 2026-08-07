@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/metadata_enrichment_plugin.dart';
+import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 BaseTrack _track({String artist = 'Ava', String title = 'Sunrise'}) =>

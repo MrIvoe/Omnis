@@ -502,18 +502,33 @@ generically — there's currently no `plugin_settings` support for
 declarative payloads beyond a read-only text/badge summary, since real
 form fields need a real `Widget`.
 
-See [`plugins/sample_logger/`](../plugins/sample_logger/) for a complete,
-working example — it's exercised by `test/plugin_system_test.dart`
-through the actual `dart_eval` interpreter, not just written and assumed
-to work.
+See [`sample_logger`](https://github.com/MrIvoe/Omnis-Plugins/tree/main/sample_logger)
+in the [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) catalog
+repo for a complete, working example — it's exercised by
+`test/plugin_system_test.dart` through the actual `dart_eval`
+interpreter, not just written and assumed to work. Downloadable plugins
+used to live in a `plugins/` folder in this repo; they've since moved to
+that dedicated repo so they can be versioned and published independently
+of the app (see "Plugin catalog" in [BUILDING.md](BUILDING.md)).
 
 ### Publishing one
 
-1. Push `plugin.dart` + `omnis_plugin.yaml` to any public GitHub repo
-   (they can sit at the repo root or any folder — the installer looks
-   for the manifest at the root of what it downloads).
-2. Share the repo URL. Anyone installs it via Plugins → paste the URL →
-   confirm the permission dialog → Install.
+1. Push `plugin.dart` + `omnis_plugin.yaml` to a public GitHub repo. Two
+   layouts both work:
+   - **Its own repo**, manifest at the root — share
+     `https://github.com/user/repo` and the installer downloads that
+     whole repo as the plugin.
+   - **A subfolder of a catalog repo** (how `Omnis-Plugins` itself is
+     laid out — one folder per plugin) — share
+     `https://github.com/user/repo/tree/branch/your-plugin-folder` and
+     the installer downloads the repo zip but only extracts and
+     validates that one folder, so it installs as just your plugin, not
+     the whole catalog.
+2. Share the URL. Anyone installs it via Plugins → paste the URL →
+   confirm the permission dialog → Install — or, for something merged
+   into `Omnis-Plugins` itself, add a `CatalogPluginEntry` to
+   `officialPluginCatalog` in `lib/ui/plugins_page.dart` so it shows up
+   as a one-tap install instead of requiring a pasted URL.
 3. New versions: bump `version` in the manifest, push, and users
    reinstall from the URL — there's no auto-update mechanism today.
 

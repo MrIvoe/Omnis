@@ -12,6 +12,7 @@ import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/settings_page.dart';
+import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 
 /// Home shell with navigation tabs.
 class HomePage extends StatefulWidget {
@@ -57,6 +58,7 @@ class _HomePageState extends State<HomePage> {
     try {
       await ensureCoreReady();
       await ensureLayoutManagerReady();
+      await ensureThemeManagerReady();
     } catch (e) {
       debugPrint('Omnis: failed to bootstrap core for HomePage: $e');
     } finally {
@@ -106,7 +108,8 @@ class _HomePageState extends State<HomePage> {
           engine: core.audioEngine,
           pluginManager: core.pluginManager,
           sandbox: core.sandbox,
-          layoutManager: locator<LayoutManager>()),
+          layoutManager: locator<LayoutManager>(),
+          themeManager: locator<ThemeManager>()),
     ];
 
     // Landscape and Car Mode both want the bottom nav out of the way of

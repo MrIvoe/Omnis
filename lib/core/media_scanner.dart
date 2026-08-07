@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/plugins/tag_editor_plugin.dart';
+import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Fast music scanner.

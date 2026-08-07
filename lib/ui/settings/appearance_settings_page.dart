@@ -9,6 +9,10 @@ import 'package:omnis/ui/player_layouts/declarative/layout_installer.dart'
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/settings/settings_widgets.dart';
+import 'package:omnis/ui/theme/declarative/theme_installer.dart'
+    show ThemeInstallException;
+import 'package:omnis/ui/theme/declarative/theme_manager.dart';
+import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
 
 class _ColorPickerDialog extends StatefulWidget {
   final Color initialColor;
@@ -201,14 +205,142 @@ class _LayoutImportCardState extends State<_LayoutImportCard> {
   }
 }
 
+/// "Import a theme" card: paste a direct link to a theme's YAML/JSON
+/// text, or pick a local file. Exactly the `_LayoutImportCard` pattern,
+/// applied to [ThemeManager] instead of `LayoutManager` — same reasoning
+/// for why no permission-confirmation step is needed (see
+/// `ThemeManifest`'s doc comment).
+class _ThemeImportCard extends StatefulWidget {
+  final ThemeManager themeManager;
+
+  const _ThemeImportCard({required this.themeManager});
+
+  @override
+  State<_ThemeImportCard> createState() => _ThemeImportCardState();
+}
+
+class _ThemeImportCardState extends State<_ThemeImportCard> {
+  final _urlController = TextEditingController();
+  bool _installing = false;
+  String? _error;
+  String? _result;
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _installFromUrl() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) {
+      setState(() => _error = 'Paste a link to a theme file first.');
+      return;
+    }
+    await _runInstall(() => widget.themeManager.installFromUrl(url));
+  }
+
+  Future<void> _installFromFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['yaml', 'yml', 'json'],
+    );
+    final path = result?.files.single.path;
+    if (path == null) return;
+    await _runInstall(() => widget.themeManager.installFromFile(path));
+  }
+
+  Future<void> _runInstall(
+    Future<ThemeManifest> Function() install,
+  ) async {
+    setState(() {
+      _installing = true;
+      _error = null;
+      _result = null;
+    });
+    try {
+      final theme = await install();
+      if (!mounted) return;
+      setState(() => _result = 'Imported "${theme.name}".');
+      _urlController.clear();
+    } on ThemeInstallException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Import failed: $e');
+    } finally {
+      if (mounted) setState(() => _installing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Import a theme', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _urlController,
+              decoration: const InputDecoration(
+                labelText: 'Link to a theme file',
+                hintText: 'A raw .yaml/.json URL — not a repo page',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.link),
+              ),
+              onSubmitted: (_) => _installFromUrl(),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ],
+            if (_result != null) ...[
+              const SizedBox(height: 8),
+              Text(_result!, style: TextStyle(color: theme.colorScheme.primary)),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _installing ? null : _installFromFile,
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Pick file'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _installing ? null : _installFromUrl,
+                  icon: _installing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download),
+                  label: Text(_installing ? 'Importing…' : 'Import'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Appearance & Layout: theme, colors, and the arrangement of the Now
 /// Playing screen — everything about how the app *looks*, as opposed to
 /// how it plays audio (Playback & Audio) or how you interact with it
 /// (Controls & Gestures).
 class AppearanceSettingsPage extends StatefulWidget {
   final LayoutManager layoutManager;
+  final ThemeManager themeManager;
 
-  const AppearanceSettingsPage({super.key, required this.layoutManager});
+  const AppearanceSettingsPage(
+      {super.key, required this.layoutManager, required this.themeManager});
 
   @override
   State<AppearanceSettingsPage> createState() =>
@@ -219,6 +351,8 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   late AppSettings _settings;
   List<PlayerLayout> _layouts = [];
   StreamSubscription<List<PlayerLayout>>? _layoutsSub;
+  List<ThemeManifest> _themes = [];
+  StreamSubscription<List<ThemeManifest>>? _themesSub;
 
   @override
   void initState() {
@@ -228,11 +362,16 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     _layoutsSub = widget.layoutManager.changes.listen((layouts) {
       if (mounted) setState(() => _layouts = layouts);
     });
+    _themes = widget.themeManager.allThemes;
+    _themesSub = widget.themeManager.changes.listen((themes) {
+      if (mounted) setState(() => _themes = themes);
+    });
   }
 
   @override
   void dispose() {
     _layoutsSub?.cancel();
+    _themesSub?.cancel();
     super.dispose();
   }
 
@@ -300,6 +439,55 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               },
             ),
           ),
+          const SizedBox(height: 16),
+          Text('Custom themes', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'An imported theme replaces the accent color and theme preset '
+            'above with its own full color/font/shape scheme. Select '
+            '"Built-in preset" to go back to those.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                RadioListTile<String?>(
+                  value: null,
+                  groupValue: settings.customThemeId,
+                  onChanged: (_) =>
+                      setState(() => settings.customThemeId = null),
+                  title: const Text('Built-in preset'),
+                  subtitle: const Text('Uses the theme preset and accent '
+                      'color set above'),
+                ),
+                for (final custom in _themes)
+                  RadioListTile<String?>(
+                    value: custom.id,
+                    groupValue: settings.customThemeId,
+                    onChanged: (_) =>
+                        setState(() => settings.customThemeId = custom.id),
+                    title: Text(custom.name),
+                    subtitle: Text('${custom.description}\nImported · '
+                        '${custom.author}'),
+                    isThreeLine: true,
+                    secondary: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Remove imported theme',
+                      onPressed: () async {
+                        if (settings.customThemeId == custom.id) {
+                          settings.customThemeId = null;
+                        }
+                        await widget.themeManager.uninstall(custom);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _ThemeImportCard(themeManager: widget.themeManager),
+          const SizedBox(height: 8),
           SliderListTile(
             title: 'Album art scale',
             value: settings.albumArtScale,
@@ -326,6 +514,63 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             subtitle: const Text('Highlight the current lyric line'),
             value: settings.karaokeMode,
             onChanged: (value) => setState(() => settings.karaokeMode = value),
+          ),
+          const SizedBox(height: 16),
+          Text('Motion & effects', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            title: const Text('Now Playing background'),
+            subtitle: const Text('What renders behind the controls'),
+            trailing: DropdownButton<NowPlayingBackgroundStyle>(
+              value: settings.nowPlayingBackgroundStyle,
+              items: const [
+                DropdownMenuItem(
+                    value: NowPlayingBackgroundStyle.solid,
+                    child: Text('Solid')),
+                DropdownMenuItem(
+                    value: NowPlayingBackgroundStyle.blurredArt,
+                    child: Text('Blurred art')),
+                DropdownMenuItem(
+                    value: NowPlayingBackgroundStyle.gradient,
+                    child: Text('Gradient')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => settings.nowPlayingBackgroundStyle = value);
+              },
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('Dynamic color from album art'),
+            subtitle: const Text(
+                'Tint Now Playing to match the current track\'s artwork'),
+            value: settings.dynamicColorFromArtEnabled,
+            onChanged: (value) =>
+                setState(() => settings.dynamicColorFromArtEnabled = value),
+          ),
+          SwitchListTile(
+            title: const Text('Haptic feedback'),
+            subtitle: const Text('A light tap for scrubbing, favoriting, '
+                'and reordering the queue'),
+            value: settings.hapticFeedbackEnabled,
+            onChanged: (value) =>
+                setState(() => settings.hapticFeedbackEnabled = value),
+          ),
+          SwitchListTile(
+            title: const Text('Reduce motion'),
+            subtitle: const Text(
+                'Skip or shorten animations throughout the app'),
+            value: settings.reduceMotionEnabled,
+            onChanged: (value) =>
+                setState(() => settings.reduceMotionEnabled = value),
+          ),
+          SwitchListTile(
+            title: const Text('Reduce transparency'),
+            subtitle: const Text(
+                'Turn off blur/backdrop effects, independent of motion'),
+            value: settings.reduceTransparencyEnabled,
+            onChanged: (value) =>
+                setState(() => settings.reduceTransparencyEnabled = value),
           ),
           const SizedBox(height: 16),
           Text('Player layout', style: theme.textTheme.titleMedium),
