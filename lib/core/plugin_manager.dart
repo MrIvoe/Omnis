@@ -17,8 +17,8 @@ import 'package:path/path.dart' as p;
 /// A plugin that is loaded at runtime.
 ///
 /// Two kinds of plugins are unified here:
-///  - [inProcess]: a [MusicPlugin] compiled into the app (everything under
-///    `lib/plugins/`).
+///  - [inProcess]: a [MusicPlugin] compiled into the app (the bundled
+///    plugins in the separate `omnis_plugins` package).
 ///  - [external]: a plugin downloaded from GitHub and executed with
 ///    dart_eval. Its hooks receive JSON Maps (serialised tracks).
 class ManagedPlugin {
@@ -133,11 +133,25 @@ class PluginManager {
     }
   }
 
-  /// Register an in-process [MusicPlugin] (a plugin from `lib/plugins/`).
+  /// Register an in-process [MusicPlugin] (from the `omnis_plugins`
+  /// package, or a plugin the caller constructed directly).
   void register(MusicPlugin plugin) {
     if (_plugins.any((p) => p.id == plugin.id)) return;
     final context = _context;
-    if (context != null) plugin.attach(context);
+    if (context != null) {
+      // attach() is a plugin-authored override — sandbox it like every
+      // other plugin hook, so a throwing attach() can't take registration
+      // (and therefore app boot) down with it.
+      _sandbox.runSync(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'attach',
+        operation: () {
+          plugin.attach(context);
+          return null;
+        },
+      );
+    }
     final managed = ManagedPlugin(
       id: plugin.id,
       name: plugin.name,
@@ -151,6 +165,30 @@ class PluginManager {
     );
     _plugins.add(managed);
     _emit();
+  }
+
+  /// Registers every plugin [factory] produces, without letting a
+  /// throwing factory — or a single throwing plugin constructor inside
+  /// it, since `factory` is typically a single list-literal expression
+  /// like `createBundledPlugins` — take the rest down with it.
+  ///
+  /// This is the coarse, always-on safety net: even a bundled-plugins
+  /// registry that changes shape later and reintroduces an unguarded
+  /// throw can't crash app boot through this call site. It complements,
+  /// rather than replaces, defensive construction inside `factory`
+  /// itself (see `createBundledPlugins`), which additionally keeps one
+  /// broken plugin from taking out the others in the same list.
+  void registerAll(List<MusicPlugin> Function() factory) {
+    final plugins = _sandbox.runSync(
+      pluginId: 'bundled',
+      pluginName: 'bundled plugins',
+      hook: 'construct',
+      operation: factory,
+    );
+    if (plugins == null) return;
+    for (final plugin in plugins) {
+      register(plugin);
+    }
   }
 
   /// Find a registered in-process plugin by type.

@@ -88,6 +88,32 @@ class PluginSandbox {
     }
   }
 
+  /// Synchronous counterpart to [run], for plugin-side code that can't be
+  /// awaited (a `MusicPlugin` constructor, or [MusicPlugin.attach]).
+  /// Returns the operation result, or `null` on failure.
+  T? runSync<T>({
+    required String pluginId,
+    required String pluginName,
+    required String hook,
+    required T? Function() operation,
+  }) {
+    try {
+      return operation();
+    } catch (e, st) {
+      _record(PluginHealthRecord(
+        pluginId: pluginId,
+        pluginName: pluginName,
+        hook: hook,
+        message: '$e',
+        stackTrace: '$st',
+        timestamp: DateTime.now(),
+        reason: 'Plugin "$pluginName" failed in $hook but the music '
+            'continues playing.',
+      ));
+      return null;
+    }
+  }
+
   /// Clear all health records (used by the dashboard's "Dismiss all").
   void clearHealth() {
     _records.clear();

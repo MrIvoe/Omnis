@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -28,6 +29,39 @@ class _CrashingPlugin extends MusicPlugin {
   @override
   Future<void> onTrackStart(BaseTrack track) async =>
       throw StateError('track boom');
+
+  @override
+  Future<void> onLibraryScan(String file) async {}
+
+  @override
+  dynamic uiSlot(String locationID) => null;
+
+  @override
+  Future<void> dispose() async {}
+}
+
+/// A plugin whose attach() throws — used to prove register() isolates a
+/// crashing attach() the same way initialize() is already isolated.
+class _AttachThrowsPlugin extends MusicPlugin {
+  @override
+  void attach(PluginContext context) => throw StateError('attach boom');
+
+  @override
+  String get id => 'attach_crashy';
+  @override
+  String get name => 'Attach Crashy';
+  @override
+  String get description => 'Always throws in attach()';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
 
   @override
   Future<void> onLibraryScan(String file) async {}
@@ -72,7 +106,57 @@ class _RecordingPlugin extends MusicPlugin {
   Future<void> dispose() async => calls.add('dispose');
 }
 
+/// A no-op stand-in for PluginContext — only used to give register() a
+/// non-null context so its attach()-guard path actually runs.
+class _FakeContext implements PluginContext {
+  @override
+  noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} not stubbed');
+}
+
 void main() {
+  group('PluginManager isolation', () {
+    test(
+        'registerAll skips a throwing factory instead of crashing, and '
+        'logs it to the health dashboard', () {
+      final manager = PluginManager();
+
+      manager.registerAll(() => throw StateError('registry boom'));
+
+      expect(manager.plugins, isEmpty);
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      final rec = manager.sandbox.healthRecords.first;
+      expect(rec.pluginId, 'bundled');
+      expect(rec.hook, 'construct');
+      expect(rec.message, contains('registry boom'));
+    });
+
+    test('registerAll registers every plugin a well-behaved factory returns',
+        () {
+      final manager = PluginManager();
+
+      manager.registerAll(() => [_RecordingPlugin(), _AttachThrowsPlugin()]);
+
+      expect(manager.plugins.map((p) => p.id),
+          containsAll(['recorder', 'attach_crashy']));
+    });
+
+    test(
+        'register() isolates a throwing attach() instead of letting it '
+        'abort registration', () {
+      final manager = PluginManager()..attachContext(_FakeContext());
+
+      manager.register(_AttachThrowsPlugin());
+
+      // The plugin still ends up registered — only attach() failed, not
+      // the whole registration — matching initPlugin()'s existing
+      // "a failing hook doesn't block the rest" behavior.
+      expect(manager.plugins.any((p) => p.id == 'attach_crashy'), isTrue);
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      expect(manager.sandbox.healthRecords.first.hook, 'attach');
+    });
+  });
+
   group('PluginSandbox', () {
     test('isolates a crashing plugin and records a health entry', () async {
       final sandbox = PluginSandbox();

@@ -73,9 +73,10 @@ class MainCore {
       services: _pluginManager.services,
       events: _pluginManager.events,
     ));
-    for (final plugin in createBundledPlugins()) {
-      _pluginManager.register(plugin);
-    }
+    // registerAll (not a plain loop over createBundledPlugins()) so a
+    // throwing bundled-plugins registry — a bad release of omnis_plugins,
+    // or a single plugin constructor that throws — can't crash app boot.
+    _pluginManager.registerAll(createBundledPlugins);
 
     // Initialize bundled plugins registered so far, then load any plugins
     // installed on disk from previous sessions.
