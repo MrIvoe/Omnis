@@ -10,9 +10,18 @@ dependencies:
   flutter:
     sdk: flutter
   # --- Shared, dependency-free contracts also used by omnis_plugins
-  #     (the bundled-plugin package) — see packages/omnis_plugin_api. ---
+  #     (the bundled-plugin package) — see packages/omnis_plugin_api.
+  #     Declared as a (self-referential) git dependency, not a local
+  #     path, at the exact url+path omnis_plugins' own pubspec.yaml uses
+  #     to reach it — that's what lets pub treat both edges as one
+  #     consistent source and resolve without any override. A plain
+  #     `path:` dependency here would make this app want the package by
+  #     path while omnis_plugins (fetched via git) wants it by git, and
+  #     pub refuses to resolve two different sources for one package. ---
   omnis_plugin_api:
-    path: packages/omnis_plugin_api
+    git:
+      url: https://github.com/MrIvoe/Omnis.git
+      path: packages/omnis_plugin_api
   # --- The bundled plugins themselves, published at
   #     github.com/MrIvoe/Omnis-Plugins. A clean checkout (no
   #     pubspec_overrides.yaml present) resolves straight from GitHub;
