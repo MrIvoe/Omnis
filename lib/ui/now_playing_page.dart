@@ -318,7 +318,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       sleepTimerPlugin: sleepTimer,
       lyricText: lyricText,
       crossfadeStatusText: crossfadeStatus,
-      shuffleEnabled: engine.shuffleEnabled,
+      // ShuffleRepeatPlugin re-orders the queue itself rather than
+      // setting the engine's own shuffle flag (see its class doc), so
+      // its state — not the engine's — is the source of truth whenever
+      // it's the one handling the toggle below.
+      shuffleEnabled: _shuffleRepeat?.shuffleEnabled ?? engine.shuffleEnabled,
       repeatMode: engine.repeatMode,
       loopAMarker: engine.loopAMarker,
       abRepeatRange: engine.abRepeatRange,
