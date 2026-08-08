@@ -23,20 +23,28 @@ import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 /// screen ever pushed it, so it was completely unreachable. The "Plugins"
 /// entry below is the fix.
 /// One individually-searchable setting — not a whole category, a single
-/// toggle/picker within one. [navigate] pushes that setting's *category*
-/// page (there's no per-widget deep link/scroll-to, so search gets you to
-/// the right page, not the exact pixel — see [_SettingsSearchResults]).
+/// toggle/picker within one. [navigate] pushes that setting's category
+/// page and, when [highlightField] is set, scrolls straight to that row
+/// and flashes it (see `settings_highlight.dart`) — search gets you to
+/// the exact control now, not just the right page.
 class _SearchableSetting {
   final String title;
   final String category;
   final IconData categoryIcon;
   final void Function(BuildContext context) navigate;
 
+  /// Matches the target page's own `highlightField` identifier for this
+  /// row (e.g. `'volume'`). `null` for the handful of entries that don't
+  /// point at a single fixed row — the Plugins category's search results,
+  /// where the destination is a dynamic list, not a static settings page.
+  final String? highlightField;
+
   const _SearchableSetting({
     required this.title,
     required this.category,
     required this.categoryIcon,
     required this.navigate,
+    this.highlightField,
   });
 }
 
@@ -70,26 +78,28 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
-  void _openAppearance(BuildContext context) =>
+  void _openAppearance(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => AppearanceSettingsPage(
             layoutManager: widget.layoutManager,
-            themeManager: widget.themeManager),
+            themeManager: widget.themeManager,
+            highlightField: highlightField),
       ));
 
-  void _openPlayback(BuildContext context) =>
+  void _openPlayback(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PlaybackSettingsPage(engine: widget.engine),
+        builder: (_) => PlaybackSettingsPage(
+            engine: widget.engine, highlightField: highlightField),
       ));
 
-  void _openControls(BuildContext context) =>
+  void _openControls(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => const ControlsSettingsPage(),
+        builder: (_) => ControlsSettingsPage(highlightField: highlightField),
       ));
 
-  void _openLibrary(BuildContext context) =>
+  void _openLibrary(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => const LibrarySettingsPage(),
+        builder: (_) => LibrarySettingsPage(highlightField: highlightField),
       ));
 
   void _openPlugins(BuildContext context) =>
@@ -112,132 +122,194 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'Theme mode',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'theme_mode',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'theme_mode')),
         _SearchableSetting(
             title: 'Accent color',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'accent_color',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'accent_color')),
         _SearchableSetting(
             title: 'Theme preset',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'theme_preset',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'theme_preset')),
         _SearchableSetting(
             title: 'Custom themes',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'custom_themes',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'custom_themes')),
         _SearchableSetting(
             title: 'Album art scale',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'album_art_scale',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'album_art_scale')),
         _SearchableSetting(
             title: 'Now Playing background',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'now_playing_background',
+            navigate: (c) => _openAppearance(c,
+                highlightField: 'now_playing_background')),
         _SearchableSetting(
             title: 'Dynamic color from album art',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'dynamic_color',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'dynamic_color')),
         _SearchableSetting(
             title: 'Haptic feedback',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'haptic_feedback',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'haptic_feedback')),
         _SearchableSetting(
             title: 'Reduce motion',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'reduce_motion',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'reduce_motion')),
         _SearchableSetting(
             title: 'Reduce transparency',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'reduce_transparency',
+            navigate: (c) => _openAppearance(c,
+                highlightField: 'reduce_transparency')),
         _SearchableSetting(
             title: 'Player layout',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'player_layout',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'player_layout')),
         _SearchableSetting(
             title: 'Karaoke mode',
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
-            navigate: _openAppearance),
+            highlightField: 'karaoke_mode',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'karaoke_mode')),
         _SearchableSetting(
             title: 'Gapless playback',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'gapless',
+            navigate: (c) => _openPlayback(c, highlightField: 'gapless')),
         _SearchableSetting(
             title: 'Crossfade',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'crossfade',
+            navigate: (c) => _openPlayback(c, highlightField: 'crossfade')),
+        _SearchableSetting(
+            title: 'Skip forward/backward',
+            category: 'Playback & Audio',
+            categoryIcon: Icons.tune,
+            highlightField: 'seek_increment',
+            navigate: (c) =>
+                _openPlayback(c, highlightField: 'seek_increment')),
         _SearchableSetting(
             title: 'Volume',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'volume',
+            navigate: (c) => _openPlayback(c, highlightField: 'volume')),
         _SearchableSetting(
             title: 'Playback speed',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'playback_speed',
+            navigate: (c) =>
+                _openPlayback(c, highlightField: 'playback_speed')),
         _SearchableSetting(
             title: 'Pitch',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'pitch',
+            navigate: (c) => _openPlayback(c, highlightField: 'pitch')),
         _SearchableSetting(
             title: 'Skip silence',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
-            navigate: _openPlayback),
+            highlightField: 'skip_silence',
+            navigate: (c) =>
+                _openPlayback(c, highlightField: 'skip_silence')),
         _SearchableSetting(
             title: 'Button layout',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
-            navigate: _openControls),
+            highlightField: 'button_layout',
+            navigate: (c) =>
+                _openControls(c, highlightField: 'button_layout')),
         _SearchableSetting(
             title: 'Gesture mode',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
-            navigate: _openControls),
+            highlightField: 'gesture_mode',
+            navigate: (c) =>
+                _openControls(c, highlightField: 'gesture_mode')),
         _SearchableSetting(
             title: 'Enable player gestures',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
-            navigate: _openControls),
+            highlightField: 'enable_gestures',
+            navigate: (c) =>
+                _openControls(c, highlightField: 'enable_gestures')),
         _SearchableSetting(
             title: 'Auto-hide bottom navigation',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
-            navigate: _openControls),
+            highlightField: 'auto_hide_nav',
+            navigate: (c) =>
+                _openControls(c, highlightField: 'auto_hide_nav')),
         _SearchableSetting(
             title: 'Library source',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
-            navigate: _openLibrary),
+            highlightField: 'library_source',
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'library_source')),
         _SearchableSetting(
             title: 'Folder for library scans',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
-            navigate: _openLibrary),
+            highlightField: 'library_folder',
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'library_folder')),
         _SearchableSetting(
             title: 'List density',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
-            navigate: _openLibrary),
+            highlightField: 'list_density',
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'list_density')),
+        _SearchableSetting(
+            title: 'Group Artists view by album artist',
+            category: 'Library',
+            categoryIcon: Icons.folder_outlined,
+            highlightField: 'group_by_album_artist',
+            navigate: (c) => _openLibrary(c,
+                highlightField: 'group_by_album_artist')),
         _SearchableSetting(
             title: 'Short-track threshold',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
-            navigate: _openLibrary),
+            highlightField: 'short_track_threshold',
+            navigate: (c) => _openLibrary(c,
+                highlightField: 'short_track_threshold')),
         _SearchableSetting(
             title: 'Install a plugin',
             category: 'Plugins',

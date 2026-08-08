@@ -88,4 +88,61 @@ void main() {
     expect(find.byType(PlaybackSettingsPage), findsOneWidget);
     expect(find.text('Crossfade'), findsOneWidget);
   });
+
+  group('search deep-links to the exact control', () {
+    testWidgets(
+        'searching "Volume" and tapping the result opens Playback & Audio '
+        'with that row as the highlight target, scrolled into view',
+        (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Volume');
+      await tester.pumpAndSettle();
+      // The search result card, not the eventual destination row (which
+      // doesn't exist until after navigating).
+      expect(find.widgetWithText(ListTile, 'Volume'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ListTile, 'Volume'));
+      await tester.pumpAndSettle();
+
+      final page =
+          tester.widget<PlaybackSettingsPage>(find.byType(PlaybackSettingsPage));
+      expect(page.highlightField, 'volume');
+      // scrollToAndFlashSetting's Scrollable.ensureVisible has resolved by
+      // now (pumpAndSettle waited out the post-frame callback + scroll +
+      // flash animation), so the row is actually on screen, not just
+      // theoretically present in the widget tree.
+      expect(find.widgetWithText(ListTile, 'Volume'), findsOneWidget);
+    });
+
+    testWidgets(
+        'searching "Crossfade" and tapping the result targets the '
+        'crossfade row specifically, not just the Playback page in general',
+        (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Crossfade');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Crossfade'));
+      await tester.pumpAndSettle();
+
+      final page =
+          tester.widget<PlaybackSettingsPage>(find.byType(PlaybackSettingsPage));
+      expect(page.highlightField, 'crossfade');
+    });
+
+    testWidgets(
+        'a search result with no fixed row to highlight (Plugins entries) '
+        'still navigates without a highlightField and without crashing',
+        (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Plugin catalog');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Plugin catalog'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Install a plugin'), findsOneWidget);
+    });
+  });
 }

@@ -13,6 +13,7 @@ import 'package:omnis/ui/theme/declarative/theme_installer.dart'
     show ThemeInstallException;
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/widgets/settings_highlight.dart';
 
 class _ColorPickerDialog extends StatefulWidget {
   final Color initialColor;
@@ -339,8 +340,16 @@ class AppearanceSettingsPage extends StatefulWidget {
   final LayoutManager layoutManager;
   final ThemeManager themeManager;
 
-  const AppearanceSettingsPage(
-      {super.key, required this.layoutManager, required this.themeManager});
+  /// Set when opened from `SettingsPage`'s search with a specific row in
+  /// mind — that row scrolls into view and flashes once this page mounts.
+  final String? highlightField;
+
+  const AppearanceSettingsPage({
+    super.key,
+    required this.layoutManager,
+    required this.themeManager,
+    this.highlightField,
+  });
 
   @override
   State<AppearanceSettingsPage> createState() =>
@@ -354,6 +363,24 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   List<ThemeManifest> _themes = [];
   StreamSubscription<List<ThemeManifest>>? _themesSub;
 
+  final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
+    for (final field in [
+      'theme_mode',
+      'accent_color',
+      'theme_preset',
+      'custom_themes',
+      'album_art_scale',
+      'now_playing_background',
+      'dynamic_color',
+      'haptic_feedback',
+      'reduce_motion',
+      'reduce_transparency',
+      'player_layout',
+      'karaoke_mode',
+    ])
+      field: GlobalKey<SettingsHighlightState>(),
+  };
+
   @override
   void initState() {
     super.initState();
@@ -366,6 +393,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     _themesSub = widget.themeManager.changes.listen((themes) {
       if (mounted) setState(() => _themes = themes);
     });
+    scrollToAndFlashSetting(_keys[widget.highlightField]);
   }
 
   @override
@@ -386,57 +414,69 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
         children: [
           Text('Theme', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          ListTile(
-            title: const Text('Theme'),
-            subtitle: const Text('Switch between light, dark, or system'),
-            trailing: DropdownButton<ThemeMode>(
-              value: settings.themeMode,
-              items: const [
-                DropdownMenuItem(
-                    value: ThemeMode.system, child: Text('System')),
-                DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-                DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => settings.themeMode = value);
+          SettingsHighlight(
+            key: _keys['theme_mode'],
+            child: ListTile(
+              title: const Text('Theme'),
+              subtitle: const Text('Switch between light, dark, or system'),
+              trailing: DropdownButton<ThemeMode>(
+                value: settings.themeMode,
+                items: const [
+                  DropdownMenuItem(
+                      value: ThemeMode.system, child: Text('System')),
+                  DropdownMenuItem(
+                      value: ThemeMode.light, child: Text('Light')),
+                  DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => settings.themeMode = value);
+                },
+              ),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['accent_color'],
+            child: ListTile(
+              title: const Text('Accent color'),
+              subtitle: const Text('Set the main app accent color'),
+              trailing: ColorIndicator(color: settings.accentColor),
+              onTap: () async {
+                final color = await showDialog<Color>(
+                  context: context,
+                  builder: (context) =>
+                      _ColorPickerDialog(initialColor: settings.accentColor),
+                );
+                if (color != null && mounted) {
+                  setState(() => settings.accentColor = color);
+                }
               },
             ),
           ),
-          ListTile(
-            title: const Text('Accent color'),
-            subtitle: const Text('Set the main app accent color'),
-            trailing: ColorIndicator(color: settings.accentColor),
-            onTap: () async {
-              final color = await showDialog<Color>(
-                context: context,
-                builder: (context) =>
-                    _ColorPickerDialog(initialColor: settings.accentColor),
-              );
-              if (color != null && mounted) {
-                setState(() => settings.accentColor = color);
-              }
-            },
-          ),
-          ListTile(
-            title: const Text('Theme preset'),
-            subtitle: const Text('Choose a more polished aesthetic palette'),
-            trailing: DropdownButton<AppThemePreset>(
-              value: settings.themePreset,
-              items: const [
-                DropdownMenuItem(
-                    value: AppThemePreset.classic, child: Text('Classic')),
-                DropdownMenuItem(
-                    value: AppThemePreset.midnight, child: Text('Midnight')),
-                DropdownMenuItem(
-                    value: AppThemePreset.aurora, child: Text('Aurora')),
-                DropdownMenuItem(
-                    value: AppThemePreset.sunset, child: Text('Sunset')),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => settings.themePreset = value);
-              },
+          SettingsHighlight(
+            key: _keys['theme_preset'],
+            child: ListTile(
+              title: const Text('Theme preset'),
+              subtitle:
+                  const Text('Choose a more polished aesthetic palette'),
+              trailing: DropdownButton<AppThemePreset>(
+                value: settings.themePreset,
+                items: const [
+                  DropdownMenuItem(
+                      value: AppThemePreset.classic, child: Text('Classic')),
+                  DropdownMenuItem(
+                      value: AppThemePreset.midnight,
+                      child: Text('Midnight')),
+                  DropdownMenuItem(
+                      value: AppThemePreset.aurora, child: Text('Aurora')),
+                  DropdownMenuItem(
+                      value: AppThemePreset.sunset, child: Text('Sunset')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => settings.themePreset = value);
+                },
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -449,54 +489,60 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                RadioListTile<String?>(
-                  value: null,
-                  groupValue: settings.customThemeId,
-                  onChanged: (_) =>
-                      setState(() => settings.customThemeId = null),
-                  title: const Text('Built-in preset'),
-                  subtitle: const Text('Uses the theme preset and accent '
-                      'color set above'),
-                ),
-                for (final custom in _themes)
+          SettingsHighlight(
+            key: _keys['custom_themes'],
+            child: Card(
+              child: Column(
+                children: [
                   RadioListTile<String?>(
-                    value: custom.id,
+                    value: null,
                     groupValue: settings.customThemeId,
                     onChanged: (_) =>
-                        setState(() => settings.customThemeId = custom.id),
-                    title: Text(custom.name),
-                    subtitle: Text('${custom.description}\nImported · '
-                        '${custom.author}'),
-                    isThreeLine: true,
-                    secondary: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      tooltip: 'Remove imported theme',
-                      onPressed: () async {
-                        if (settings.customThemeId == custom.id) {
-                          settings.customThemeId = null;
-                        }
-                        await widget.themeManager.uninstall(custom);
-                      },
-                    ),
+                        setState(() => settings.customThemeId = null),
+                    title: const Text('Built-in preset'),
+                    subtitle: const Text('Uses the theme preset and accent '
+                        'color set above'),
                   ),
-              ],
+                  for (final custom in _themes)
+                    RadioListTile<String?>(
+                      value: custom.id,
+                      groupValue: settings.customThemeId,
+                      onChanged: (_) =>
+                          setState(() => settings.customThemeId = custom.id),
+                      title: Text(custom.name),
+                      subtitle: Text('${custom.description}\nImported · '
+                          '${custom.author}'),
+                      isThreeLine: true,
+                      secondary: IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Remove imported theme',
+                        onPressed: () async {
+                          if (settings.customThemeId == custom.id) {
+                            settings.customThemeId = null;
+                          }
+                          await widget.themeManager.uninstall(custom);
+                        },
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
           _ThemeImportCard(themeManager: widget.themeManager),
           const SizedBox(height: 8),
-          SliderListTile(
-            title: 'Album art scale',
-            value: settings.albumArtScale,
-            min: 0.7,
-            max: 1.4,
-            divisions: 14,
-            label: settings.albumArtScale.toStringAsFixed(2),
-            onChanged: (value) =>
-                setState(() => settings.albumArtScale = value),
+          SettingsHighlight(
+            key: _keys['album_art_scale'],
+            child: SliderListTile(
+              title: 'Album art scale',
+              value: settings.albumArtScale,
+              min: 0.7,
+              max: 1.4,
+              divisions: 14,
+              label: settings.albumArtScale.toStringAsFixed(2),
+              onChanged: (value) =>
+                  setState(() => settings.albumArtScale = value),
+            ),
           ),
           SwitchListTile(
             title: const Text('Show album art'),
@@ -509,16 +555,22 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             value: settings.showLyrics,
             onChanged: (value) => setState(() => settings.showLyrics = value),
           ),
-          SwitchListTile(
-            title: const Text('Karaoke mode'),
-            subtitle: const Text('Highlight the current lyric line'),
-            value: settings.karaokeMode,
-            onChanged: (value) => setState(() => settings.karaokeMode = value),
+          SettingsHighlight(
+            key: _keys['karaoke_mode'],
+            child: SwitchListTile(
+              title: const Text('Karaoke mode'),
+              subtitle: const Text('Highlight the current lyric line'),
+              value: settings.karaokeMode,
+              onChanged: (value) =>
+                  setState(() => settings.karaokeMode = value),
+            ),
           ),
           const SizedBox(height: 16),
           Text('Motion & effects', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          ListTile(
+          SettingsHighlight(
+            key: _keys['now_playing_background'],
+            child: ListTile(
             title: const Text('Now Playing background'),
             subtitle: const Text('What renders behind the controls'),
             trailing: DropdownButton<NowPlayingBackgroundStyle>(
@@ -539,38 +591,51 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 setState(() => settings.nowPlayingBackgroundStyle = value);
               },
             ),
+            ),
           ),
-          SwitchListTile(
-            title: const Text('Dynamic color from album art'),
-            subtitle: const Text(
-                'Tint Now Playing to match the current track\'s artwork'),
-            value: settings.dynamicColorFromArtEnabled,
-            onChanged: (value) =>
-                setState(() => settings.dynamicColorFromArtEnabled = value),
+          SettingsHighlight(
+            key: _keys['dynamic_color'],
+            child: SwitchListTile(
+              title: const Text('Dynamic color from album art'),
+              subtitle: const Text(
+                  'Tint Now Playing to match the current track\'s artwork'),
+              value: settings.dynamicColorFromArtEnabled,
+              onChanged: (value) => setState(
+                  () => settings.dynamicColorFromArtEnabled = value),
+            ),
           ),
-          SwitchListTile(
-            title: const Text('Haptic feedback'),
-            subtitle: const Text('A light tap for scrubbing, favoriting, '
-                'and reordering the queue'),
-            value: settings.hapticFeedbackEnabled,
-            onChanged: (value) =>
-                setState(() => settings.hapticFeedbackEnabled = value),
+          SettingsHighlight(
+            key: _keys['haptic_feedback'],
+            child: SwitchListTile(
+              title: const Text('Haptic feedback'),
+              subtitle: const Text('A light tap for scrubbing, favoriting, '
+                  'and reordering the queue'),
+              value: settings.hapticFeedbackEnabled,
+              onChanged: (value) =>
+                  setState(() => settings.hapticFeedbackEnabled = value),
+            ),
           ),
-          SwitchListTile(
-            title: const Text('Reduce motion'),
-            subtitle: const Text(
-                'Skip or shorten animations throughout the app'),
-            value: settings.reduceMotionEnabled,
-            onChanged: (value) =>
-                setState(() => settings.reduceMotionEnabled = value),
+          SettingsHighlight(
+            key: _keys['reduce_motion'],
+            child: SwitchListTile(
+              title: const Text('Reduce motion'),
+              subtitle: const Text(
+                  'Skip or shorten animations throughout the app'),
+              value: settings.reduceMotionEnabled,
+              onChanged: (value) =>
+                  setState(() => settings.reduceMotionEnabled = value),
+            ),
           ),
-          SwitchListTile(
-            title: const Text('Reduce transparency'),
-            subtitle: const Text(
-                'Turn off blur/backdrop effects, independent of motion'),
-            value: settings.reduceTransparencyEnabled,
-            onChanged: (value) =>
-                setState(() => settings.reduceTransparencyEnabled = value),
+          SettingsHighlight(
+            key: _keys['reduce_transparency'],
+            child: SwitchListTile(
+              title: const Text('Reduce transparency'),
+              subtitle: const Text(
+                  'Turn off blur/backdrop effects, independent of motion'),
+              value: settings.reduceTransparencyEnabled,
+              onChanged: (value) => setState(
+                  () => settings.reduceTransparencyEnabled = value),
+            ),
           ),
           const SizedBox(height: 16),
           Text('Player layout', style: theme.textTheme.titleMedium),
@@ -583,39 +648,42 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
-          Card(
-            child: Column(
-              children: [
-                for (final layout in _layouts)
-                  RadioListTile<String>(
-                    value: layout.id,
-                    groupValue: settings.playerLayoutId,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => settings.playerLayoutId = value);
-                    },
-                    title: Text(layout.name),
-                    subtitle: Text(
-                      layout is DeclarativeLayout
-                          ? '${layout.description}\nImported · '
-                              '${layout.manifest.author}'
-                          : layout.description,
+          SettingsHighlight(
+            key: _keys['player_layout'],
+            child: Card(
+              child: Column(
+                children: [
+                  for (final layout in _layouts)
+                    RadioListTile<String>(
+                      value: layout.id,
+                      groupValue: settings.playerLayoutId,
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => settings.playerLayoutId = value);
+                      },
+                      title: Text(layout.name),
+                      subtitle: Text(
+                        layout is DeclarativeLayout
+                            ? '${layout.description}\nImported · '
+                                '${layout.manifest.author}'
+                            : layout.description,
+                      ),
+                      isThreeLine: layout is DeclarativeLayout,
+                      secondary: layout is DeclarativeLayout
+                          ? IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Remove imported layout',
+                              onPressed: () async {
+                                if (settings.playerLayoutId == layout.id) {
+                                  settings.playerLayoutId = 'standard';
+                                }
+                                await widget.layoutManager.uninstall(layout);
+                              },
+                            )
+                          : Icon(layout.icon),
                     ),
-                    isThreeLine: layout is DeclarativeLayout,
-                    secondary: layout is DeclarativeLayout
-                        ? IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            tooltip: 'Remove imported layout',
-                            onPressed: () async {
-                              if (settings.playerLayoutId == layout.id) {
-                                settings.playerLayoutId = 'standard';
-                              }
-                              await widget.layoutManager.uninstall(layout);
-                            },
-                          )
-                        : Icon(layout.icon),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
