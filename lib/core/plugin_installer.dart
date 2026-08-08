@@ -115,7 +115,17 @@ class PluginInstaller {
     }
     await targetDir.create(recursive: true);
 
-    final targetRoot = p.canonicalize(targetDir.path);
+    // `p.normalize`, not `p.canonicalize`, deliberately: targetDir.path is
+    // built entirely from our own trusted segments (_pluginsRoot() +
+    // _targetDirName()), never from the untrusted zip content, so there's
+    // nothing here that needs symlink/`..` resolution. canonicalize also
+    // lowercases the path on Windows (case-folds the drive letter and
+    // every segment) while normalize below preserves case — comparing a
+    // canonicalized root against a merely-normalized candidate meant this
+    // check failed for every entry, safe or not, on any case-preserving
+    // filesystem (Windows, and macOS's default HFS+/APFS mode), rejecting
+    // every install as a false-positive "path traversal attempt."
+    final targetRoot = p.normalize(targetDir.path);
     for (final file in files) {
       if (file.isFile) {
         // Remove the top-level prefix from the stored path.
