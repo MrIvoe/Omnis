@@ -14,11 +14,27 @@ import 'package:path_provider/path_provider.dart';
 /// On desktop it falls back to a recursive filesystem walk (which is fast
 /// enough because desktop storage is usually a dedicated Music folder).
 class MediaScanner {
-  MediaScanner._();
+  MediaScanner._({Stream<FileSystemEntity> Function(Directory)? lister})
+      : _lister =
+            lister ?? ((dir) => dir.list(recursive: true, followLinks: false));
 
   static final MediaScanner instance = MediaScanner._();
 
+  /// Constructs an independent instance with an injectable directory
+  /// lister, bypassing [instance]'s singleton — the same
+  /// constructor-injection pattern `MetadataEnrichmentPlugin(client: ...)`
+  /// uses for its `http.Client`. Lets a test simulate a stream that
+  /// errors partway through without needing a real unreadable directory
+  /// (permission semantics differ too much across platforms/CI to fake
+  /// that reliably any other way).
+  @visibleForTesting
+  factory MediaScanner.forTesting({
+    required Stream<FileSystemEntity> Function(Directory) lister,
+  }) =>
+      MediaScanner._(lister: lister);
+
   final OnAudioQuery _audioQuery = OnAudioQuery();
+  final Stream<FileSystemEntity> Function(Directory) _lister;
 
   /// Scan the user's music library as fast as possible.
   ///
@@ -125,22 +141,33 @@ class MediaScanner {
 
     final tagEditor = TagEditorPlugin();
     final files = <File>[];
-    try {
-      await for (final entity
-          in root.list(recursive: true, followLinks: false)) {
-        if (files.length >= limit) break;
-        final fileName = entity.uri.pathSegments.isNotEmpty
-            ? entity.uri.pathSegments.last
-            : '';
-        if (entity is File &&
-            fileName.isNotEmpty &&
-            !fileName.startsWith('.') &&
-            extensions.contains(entity.path.split('.').last.toLowerCase())) {
-          files.add(entity);
-        }
+    // A blanket try/catch around the whole `await for` below used to mean
+    // one bad entry (permission denied, a broken symlink, removable
+    // storage unmounting mid-scan) threw out of the loop entirely —
+    // everything the walk hadn't reached yet was silently never seen, no
+    // crash, no signal, just a truncated library. `handleError` catches
+    // the error *as a stream event* instead, which lets `await for` keep
+    // consuming whatever the stream still has to offer after it, rather
+    // than propagating the error into (and terminating) the loop.
+    var skippedCount = 0;
+    await for (final entity in _lister(root).handleError((Object error) {
+      skippedCount++;
+      debugPrint('Omnis: skipped an unreadable path during library scan: $error');
+    })) {
+      if (files.length >= limit) break;
+      final fileName = entity.uri.pathSegments.isNotEmpty
+          ? entity.uri.pathSegments.last
+          : '';
+      if (entity is File &&
+          fileName.isNotEmpty &&
+          !fileName.startsWith('.') &&
+          extensions.contains(entity.path.split('.').last.toLowerCase())) {
+        files.add(entity);
       }
-    } catch (_) {
-      // Unreadable directories should not kill the scan.
+    }
+    if (skippedCount > 0) {
+      debugPrint(
+          'Omnis: library scan completed with $skippedCount skipped path(s).');
     }
 
     // Reading and ID3-decoding each file used to happen one at a time —
