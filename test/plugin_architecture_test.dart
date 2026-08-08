@@ -263,6 +263,11 @@ void main() {
       ));
       final timer = SleepTimerPlugin();
       manager.register(timer);
+      // This test is about the pause reaching the real engine through
+      // PluginContext, not fade timing (that's sleep_timer_plugin_test.dart's
+      // job) — disable the fade so it isolates that concern.
+      await timer.storage.initialize();
+      await timer.setFadeSeconds(0);
 
       timer.startTimer(const Duration(milliseconds: 30));
       expect(timer.isActive, isTrue);
