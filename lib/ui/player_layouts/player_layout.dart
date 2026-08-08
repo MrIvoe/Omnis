@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:just_waveform/just_waveform.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -74,6 +75,13 @@ class PlayerLayoutData {
   final Duration? loopAMarker;
   final (Duration a, Duration b)? abRepeatRange;
 
+  /// Cached peak data for [track], when available — see
+  /// `lib/core/waveform_store.dart`. `null` covers every case a layout
+  /// must treat the same way (still computing, streaming track, no
+  /// native support on this platform): fall back to the plain
+  /// [PlayerProgressBar] slider rather than distinguishing why.
+  final Waveform? waveform;
+
   final VoidCallback onPlayPause;
   final VoidCallback onNext;
   final VoidCallback onPrevious;
@@ -105,6 +113,7 @@ class PlayerLayoutData {
     required this.repeatMode,
     required this.loopAMarker,
     required this.abRepeatRange,
+    this.waveform,
     required this.onPlayPause,
     required this.onNext,
     required this.onPrevious,

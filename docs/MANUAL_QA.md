@@ -43,6 +43,27 @@ against a real Bluetooth device.
 5. Deny the Bluetooth permission prompt and confirm the plugin degrades
    quietly.
 
+## Waveform seek bar — real peak rendering
+
+`WaveformStore`/`WaveformSeekBar` are covered by unit/widget tests against
+synthetic data (no platform channel is registered in `flutter test`), but
+the actual `just_waveform` native extraction — Android/iOS/macOS only, no
+Windows/Linux/web — has never run against a real audio file.
+
+1. Play a local track (`TrackType.local`) on a supported device. Open Now
+   Playing and confirm the seek bar eventually renders real peaks instead
+   of the plain slider — the first play of a track will show the plain
+   slider briefly while extraction runs, then switch over.
+2. Drag across the waveform and confirm it seeks smoothly, matching the
+   plain slider's `onSeek`/haptic-on-release feel.
+3. Re-open the same track later and confirm the waveform appears
+   immediately (served from the on-disk cache, no re-extraction delay).
+4. Play a Spotify/YouTube (streaming) track and confirm the plain slider
+   is used the whole time — no attempt to extract, no crash.
+5. On a platform `just_waveform` doesn't support (Windows/desktop),
+   confirm every track — local or streaming — just uses the plain slider,
+   with no error surfaced to the user.
+
 ## After this checklist
 
 If either plugin behaves differently from its doc comment's caveat

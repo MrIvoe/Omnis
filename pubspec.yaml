@@ -65,6 +65,11 @@ dependencies:
   set_ringtone: ^1.0.0
   google_fonts: ^6.3.0
   palette_generator: ^0.3.3+7
+  # --- Waveform seek bar (Now Playing). Android/iOS/macOS only — no
+  #     Windows/Linux/web support, so every call site must degrade to the
+  #     plain slider rather than assume this succeeds. See
+  #     lib/core/waveform_store.dart's doc comment. ---
+  just_waveform: ^0.0.7
 
 dev_dependencies:
   flutter_test:

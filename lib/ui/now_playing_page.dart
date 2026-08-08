@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_waveform/just_waveform.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/waveform_store.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/equalizer_plugin.dart';
 import 'package:omnis_plugins/lyrics_plugin.dart';
@@ -94,12 +96,23 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   Duration? _duration;
   late AppSettings _settings;
 
+  final WaveformStore _waveformStore = WaveformStore();
+  Waveform? _waveform;
+  String? _waveformTrackId;
+
   @override
   void initState() {
     super.initState();
     _settings = AppSettings.instance;
     _settings.addListener(_refresh);
-    _trackSub = engine.trackStream.listen((_) {
+    final initialTrack = engine.currentTrack;
+    if (initialTrack != null) _loadWaveform(initialTrack);
+    _trackSub = engine.trackStream.listen((track) {
+      // Runs synchronously up to its first `await`, so `_waveform` is
+      // already cleared for the new track by the time this setState
+      // rebuilds — otherwise the old track's shape would flash briefly
+      // before the fetch for the new one completes.
+      if (track != null) _loadWaveform(track);
       if (mounted) setState(() {});
     });
     _stateSub = engine.playerStateStream.listen((state) {
@@ -141,6 +154,22 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  /// Fetches/computes peak data for [track] (see `WaveformStore`'s doc
+  /// comment for every way this can legitimately resolve to `null` —
+  /// streaming track, unsupported platform, still computing). Guards
+  /// against a track change racing an in-flight fetch: if [track] is no
+  /// longer the current one by the time this resolves, its result is
+  /// discarded rather than clobbering whatever the newer track already
+  /// loaded.
+  Future<void> _loadWaveform(BaseTrack track) async {
+    if (_waveformTrackId == track.id) return;
+    _waveformTrackId = track.id;
+    _waveform = null;
+    final waveform = await _waveformStore.waveformFor(track);
+    if (!mounted || _waveformTrackId != track.id) return;
+    setState(() => _waveform = waveform);
   }
 
   void _toast(String message) {
@@ -326,6 +355,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       repeatMode: engine.repeatMode,
       loopAMarker: engine.loopAMarker,
       abRepeatRange: engine.abRepeatRange,
+      waveform: _waveformTrackId == track.id ? _waveform : null,
       onToggleShuffle: () async {
         final plugin = _shuffleRepeat;
         if (plugin != null) {
