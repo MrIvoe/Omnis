@@ -29,41 +29,49 @@ class PlayerAlbumArt extends StatelessWidget {
     }
     return Transform.scale(
       scale: data.settings.albumArtScale,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: theme.colorScheme.shadow.withValues(alpha: 0.15),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        // Keyed by track id so a track change swaps in a fresh
-        // `TrackArtwork` — a hard cut before this — via a fade+scale
-        // crossfade instead. Every bundled layout goes through
-        // `PlayerAlbumArt`, so this one change covers all six at once.
-        child: AnimatedSwitcher(
-          duration: OmnisMotion.durationFor(OmnisMotion.medium),
-          switchInCurve: OmnisMotion.standardCurve,
-          switchOutCurve: OmnisMotion.standardCurve,
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween(begin: 0.94, end: 1.0).animate(animation),
-              child: child,
-            ),
-          ),
-          child: TrackArtwork(
-            key: ValueKey(data.track.id),
-            track: data.track,
-            width: size,
-            height: size,
+      // Matches MiniPlayerBar's own Hero tag on this exact string — the
+      // shared-element flight from the mini-player to this, the full
+      // Now Playing screen, when reached via the real pushed route
+      // MiniPlayerBar uses (not the old bottom-nav-tab embedding, which
+      // has no route boundary for Hero to animate across).
+      child: Hero(
+        tag: 'now_playing_art',
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            iconSize: iconSize,
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.shadow.withValues(alpha: 0.15),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          // Keyed by track id so a track change swaps in a fresh
+          // `TrackArtwork` — a hard cut before this — via a fade+scale
+          // crossfade instead. Every bundled layout goes through
+          // `PlayerAlbumArt`, so this one change covers all six at once.
+          child: AnimatedSwitcher(
+            duration: OmnisMotion.durationFor(OmnisMotion.medium),
+            switchInCurve: OmnisMotion.standardCurve,
+            switchOutCurve: OmnisMotion.standardCurve,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween(begin: 0.94, end: 1.0).animate(animation),
+                child: child,
+              ),
+            ),
+            child: TrackArtwork(
+              key: ValueKey(data.track.id),
+              track: data.track,
+              width: size,
+              height: size,
+              borderRadius: BorderRadius.circular(24),
+              iconSize: iconSize,
+            ),
           ),
         ),
       ),

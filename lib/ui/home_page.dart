@@ -13,8 +13,17 @@ import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
+import 'package:omnis/ui/widgets/mini_player_bar.dart';
 
 /// Home shell with navigation tabs.
+///
+/// "Now Playing" used to be one of these tabs — an `IndexedStack` swap
+/// with no route boundary, which meant there was nowhere for a real
+/// `Hero` shared-element transition to animate across. It's now reached
+/// through [MiniPlayerBar] (a persistent bar above the bottom nav,
+/// visible whenever a track is loaded) via a genuine `Navigator.push`,
+/// which is what makes the album-art `Hero` between the mini-player and
+/// the full screen possible at all.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -96,13 +105,18 @@ class _HomePageState extends State<HomePage> {
     final settings = AppSettings.instance;
 
     final pages = <Widget>[
-      const NowPlayingPage(),
       LibraryPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       PlaylistPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       _MoodsPage(
         engine: core.audioEngine,
         pluginManager: core.pluginManager,
-        onPlaybackStarted: () => setState(() => _selectedIndex = 0),
+        // Previously switched to the "Now Playing" tab; that tab no
+        // longer exists (see this class's doc comment), so this pushes
+        // the real route instead — same destination, now with the Hero
+        // transition MiniPlayerBar's own tap uses too.
+        onPlaybackStarted: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const NowPlayingPage()),
+        ),
       ),
       SettingsPage(
           engine: core.audioEngine,
@@ -133,10 +147,6 @@ class _HomePageState extends State<HomePage> {
       elevation: 0,
       onDestinationSelected: (i) => setState(() => _selectedIndex = i),
       destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.graphic_eq),
-          label: 'Now playing',
-        ),
         NavigationDestination(
           icon: Icon(Icons.library_music),
           label: 'Library',
@@ -195,7 +205,15 @@ class _HomePageState extends State<HomePage> {
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeInOut,
         alignment: Alignment.topCenter,
-        child: navVisible ? navBar : const SizedBox(width: double.infinity),
+        child: navVisible
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MiniPlayerBar(engine: core.audioEngine),
+                  navBar,
+                ],
+              )
+            : const SizedBox(width: double.infinity),
       ),
     );
   }
