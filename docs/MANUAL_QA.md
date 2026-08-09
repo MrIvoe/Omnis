@@ -89,6 +89,30 @@ Windows/Linux/web — has never run against a real audio file.
    confirm every track — local or streaming — just uses the plain slider,
    with no error surfaced to the user.
 
+## Visualizer — real spectrum capture
+
+Replaced a hardcoded demo array with real capture via the `audify`
+package (Android `Visualizer` API / iOS `AVAudioEngine`). Its degrade
+paths (unsupported platform, permission denied, a native-call failure)
+are unit-tested via `platformSupportOverride`, but real capture — and the
+permission prompt itself — has never run on an actual device.
+
+1. Open Now Playing on a physical Android or iOS device and tap
+   "Activate visualizer." Confirm a microphone-permission prompt appears
+   with a clear reason, not just the bare OS default wording.
+2. Grant it. Confirm the bars visibly react to the actual music playing —
+   quiet passages look different from a loud chorus — not the old fixed
+   idle bounce.
+3. Leave Now Playing (back button, or switch tabs) and confirm capture
+   stops — no persistent microphone-in-use indicator lingering after you
+   leave the screen.
+4. Deny the permission prompt and confirm the app shows a clear message
+   and the bars stay flat, rather than crashing or silently reverting to
+   the old fake animation.
+5. On a platform `audify` doesn't support (Windows/desktop), confirm
+   activating the visualizer degrades to a clear message with flat bars,
+   no crash.
+
 ## After this checklist
 
 If either plugin behaves differently from its doc comment's caveat

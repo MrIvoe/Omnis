@@ -149,6 +149,11 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     _durationSub?.cancel();
     _pluginsSub?.cancel();
     _layoutsSub?.cancel();
+    // Real spectrum capture (microphone-permission-gated, on Android/iOS)
+    // must not keep running after this page closes — the user only ever
+    // asked for it while looking at Now Playing.
+    // ignore: unawaited_futures
+    _visualizerEmitter?.deactivate();
     super.dispose();
   }
 
@@ -412,10 +417,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
             },
       onActivateVisualizer: visualizerEmitter == null
           ? () {}
-          : () {
-              visualizerEmitter
-                  .emitLevels([0.2, 0.5, 0.7, 0.3, 0.8, 0.4, 0.6, 0.3]);
-              _toast('Visualizer activated.');
+          : () async {
+              if (visualizerEmitter.isCapturing) return;
+              await visualizerEmitter.activate();
+              if (!mounted) return;
+              _toast(visualizerEmitter.lastError ??
+                  'Visualizer activated.');
             },
       onStartSleepTimer: sleepTimer == null
           ? () {}

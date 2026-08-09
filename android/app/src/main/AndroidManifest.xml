@@ -4,6 +4,23 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- VisualizerPlugin's real spectrum capture (audify, via Android's
+         Visualizer API) requires this even though it taps system audio
+         output, not the microphone — an OS-level requirement, not a
+         choice this app makes. Requested at runtime only when the
+         visualizer is actually opened (VisualizerPlugin.activate()),
+         never at startup. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- audify (VisualizerPlugin) declares minSdkVersion 24; this app
+         deliberately keeps minSdkVersion 21 (Flutter's default) so it
+         still installs on Android 5.0-6.0 devices — VisualizerPlugin
+         checks the real device's SDK level itself at activation time
+         and degrades with a clear message below API 24 (see its own
+         doc comment), so forcing the manifest merge here is safe: the
+         plugin's code, not the manifest, is what actually keeps a pre-24
+         device from calling into audify's native side. -->
+    <uses-sdk tools:overrideLibrary="id.nabilfaris.audify"/>
     <!-- Storage read access for the library scanner. Requested at runtime
          by on_audio_query's own checkAndRequest() — see
          MediaScanner._scanAndroid — not through OmnisPermissions. -->
