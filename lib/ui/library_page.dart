@@ -296,24 +296,46 @@ class _LibraryPageState extends State<LibraryPage> {
 
       // Scan fast using the platform-optimized scanner.
       // On Android this queries the OS MediaStore (pre-indexed, instant).
-      // A scan can take a while on a large library — long enough that the
-      // user may well have navigated away before it resolves, so every
+      // On the filesystem-walk path (desktop/iOS), passing the
+      // already-known tracks lets the scanner skip re-reading tags for
+      // files that haven't changed since the last scan — see
+      // MediaScanner.scanLibrary's doc comment. A scan can still take a
+      // while on a large, mostly-new library — long enough that the user
+      // may well have navigated away before it resolves, so every
       // setState below has to check mounted first.
-      final scanned = await MediaScanner.instance.scanLibrary();
+      final scanned =
+          await MediaScanner.instance.scanLibrary(knownTracks: _tracks);
       if (!mounted) return;
       if (scanned.isEmpty) {
         setState(() =>
             _error = 'No audio files found. Try picking a folder in Settings.');
         return;
       }
-      // Dedupe by id: scanLibrary() always rescans everything from
-      // scratch (it's not incremental), so without this, pressing "Add
-      // audio files" a second time duplicated every track already in
-      // _tracks.
+      // Dedupe by id: scanned may re-report tracks already in _tracks
+      // (the whole point of the incremental scan is that it still finds
+      // them, just without re-parsing their tags) — without this,
+      // pressing "Add audio files" a second time duplicated every track
+      // already known.
       final existingIds = _tracks.map((t) => t.id).toSet();
-      final newTracks =
-          scanned.where((t) => !existingIds.contains(t.id)).toList();
-      setState(() => _tracks = [..._tracks, ...newTracks]);
+      final newTracks = scanned
+          .where((t) => !existingIds.contains(t.id))
+          // The scanner only ever supplies dateAdded from real MediaStore
+          // data (Android) — on the filesystem-walk path it's left null,
+          // so a genuinely new track gets "now" as the best available
+          // signal of when the user actually added it.
+          .map((t) => t.dateAdded == null
+              ? t.copyWith(dateAdded: DateTime.now())
+              : t)
+          .toList();
+      // A previously-known local track whose file no longer exists on
+      // disk shouldn't stay in the library forever — scoped to this
+      // explicit rescan action (not run automatically on every app open)
+      // so pruning stays predictable and bounded.
+      final stillPresent = _tracks.where((t) {
+        if (t.type != TrackType.local || t.localPath == null) return true;
+        return File(t.localPath!).existsSync();
+      }).toList();
+      setState(() => _tracks = [...stillPresent, ...newTracks]);
       // Persist so the library survives app restarts. Deliberately does
       // NOT touch the playback queue or start playback — scanning/adding
       // to the library is a data operation, not a "play something"

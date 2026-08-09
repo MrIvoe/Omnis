@@ -71,6 +71,20 @@ class BaseTrack {
   /// year is known.
   final DateTime? releaseDate;
 
+  /// When this track was first added to the user's library — not the
+  /// release date. Real data on Android (MediaStore's own `date_added`);
+  /// stamped by the scanner's caller on desktop/iOS, where there's no
+  /// reliable native equivalent. `null` for a track scanned before this
+  /// field existed.
+  final DateTime? dateAdded;
+
+  /// The local file's mtime as of the last scan that read its tags.
+  /// `null` for a non-local track, or a local one scanned before this
+  /// field existed. Lets a future scan skip re-reading a file's tags
+  /// when this still matches the file's current mtime — see
+  /// `MediaScanner._scanFilesystem`.
+  final DateTime? fileModifiedAt;
+
   /// Constructor
   BaseTrack({
     required this.id,
@@ -95,6 +109,8 @@ class BaseTrack {
     this.albumArtist,
     this.releaseType,
     this.releaseDate,
+    this.dateAdded,
+    this.fileModifiedAt,
   });
 
   /// Create a copy of this track with updated values
@@ -121,6 +137,8 @@ class BaseTrack {
     String? albumArtist,
     ReleaseType? releaseType,
     DateTime? releaseDate,
+    DateTime? dateAdded,
+    DateTime? fileModifiedAt,
   }) {
     return BaseTrack(
       id: id ?? this.id,
@@ -145,6 +163,8 @@ class BaseTrack {
       albumArtist: albumArtist ?? this.albumArtist,
       releaseType: releaseType ?? this.releaseType,
       releaseDate: releaseDate ?? this.releaseDate,
+      dateAdded: dateAdded ?? this.dateAdded,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
     );
   }
 
@@ -173,6 +193,8 @@ class BaseTrack {
       'albumArtist': albumArtist,
       'releaseType': releaseType?.name,
       'releaseDate': releaseDate?.toIso8601String(),
+      'dateAdded': dateAdded?.toIso8601String(),
+      'fileModifiedAt': fileModifiedAt?.toIso8601String(),
     };
   }
 
@@ -212,6 +234,12 @@ class BaseTrack {
       releaseDate: json['releaseDate'] != null
           ? DateTime.tryParse(json['releaseDate'] as String)
           : null,
+      dateAdded: json['dateAdded'] != null
+          ? DateTime.tryParse(json['dateAdded'] as String)
+          : null,
+      fileModifiedAt: json['fileModifiedAt'] != null
+          ? DateTime.tryParse(json['fileModifiedAt'] as String)
+          : null,
     );
   }
 
@@ -241,7 +269,9 @@ class BaseTrack {
         other.replayGain == replayGain &&
         other.albumArtist == albumArtist &&
         other.releaseType == releaseType &&
-        other.releaseDate == releaseDate;
+        other.releaseDate == releaseDate &&
+        other.dateAdded == dateAdded &&
+        other.fileModifiedAt == fileModifiedAt;
   }
 
   @override
@@ -272,6 +302,8 @@ class BaseTrack {
       albumArtist,
       releaseType,
       releaseDate,
+      dateAdded,
+      fileModifiedAt,
     ]);
   }
 }

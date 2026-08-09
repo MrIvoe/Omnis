@@ -38,8 +38,18 @@ class MediaScanner {
 
   /// Scan the user's music library as fast as possible.
   ///
+  /// [knownTracks] is the caller's already-persisted library (if any) —
+  /// on the filesystem-walk path (desktop/iOS), a file whose path and
+  /// mtime still match an entry here is reused as-is instead of having
+  /// its tags re-read, which is what makes a repeat scan of a large,
+  /// mostly-unchanged library fast. The Android path ignores it (the
+  /// MediaStore query is already effectively instant either way).
+  ///
   /// Returns tracks sorted by title. Queries are capped at [limit] tracks.
-  Future<List<BaseTrack>> scanLibrary({int limit = 1000}) async {
+  Future<List<BaseTrack>> scanLibrary({
+    int limit = 1000,
+    List<BaseTrack> knownTracks = const [],
+  }) async {
     // This used to only be checked at the library_page.dart call site,
     // which meant the guard only held because there was exactly one
     // caller. Enforcing it here means any future caller (auto-refresh, a
@@ -50,7 +60,7 @@ class MediaScanner {
     }
     final tracks = (!kIsWeb && Platform.isAndroid)
         ? await _scanAndroid(limit: limit)
-        : await _scanFilesystem(limit: limit);
+        : await _scanFilesystem(limit: limit, knownTracks: knownTracks);
     // The doc comment above has always promised "sorted by title" but
     // neither scan path actually sorted before returning.
     tracks.sort(
@@ -97,6 +107,11 @@ class MediaScanner {
         // Store the MediaStore artwork ID so the AlbumArt widget can
         // load the cover via on_audio_query's QueryArtworkWidget.
         coverArt: 'mediastore://${song.id}',
+        // Real "date added to this device" from the OS's own index — free,
+        // no bookkeeping needed the way the filesystem-walk path requires.
+        dateAdded: song.dateAdded != null
+            ? DateTime.fromMillisecondsSinceEpoch(song.dateAdded! * 1000)
+            : null,
       ));
     }
     return tracks;
@@ -113,7 +128,10 @@ class MediaScanner {
   /// bulk scan would slow it down and bloat the persisted library JSON for
   /// no benefit — `TrackArtwork` reads artwork lazily, per-file, only for
   /// what's actually on screen.
-  Future<List<BaseTrack>> _scanFilesystem({required int limit}) async {
+  Future<List<BaseTrack>> _scanFilesystem({
+    required int limit,
+    List<BaseTrack> knownTracks = const [],
+  }) async {
     final settings = AppSettings.instance;
     Directory? root;
     if (settings.librarySource == LibrarySource.dedicatedFolder) {
@@ -180,22 +198,49 @@ class MediaScanner {
     // caps how many files are open at once rather than firing all of
     // them at the OS simultaneously for a very large library.
     const batchSize = 32;
+    final knownByPath = <String, BaseTrack>{
+      for (final t in knownTracks)
+        if (t.localPath != null) t.localPath!: t,
+    };
     final tracks = <BaseTrack>[];
     for (var i = 0; i < files.length; i += batchSize) {
       final batch = files.skip(i).take(batchSize);
       final results = await Future.wait(
-        batch.map((file) => _trackFromFile(file, tagEditor)),
+        batch.map((file) => _trackForFile(file, tagEditor, knownByPath)),
       );
       tracks.addAll(results);
     }
     return tracks;
   }
 
+  /// A cheap mtime stat, compared against [knownByPath]'s cached entry for
+  /// this same path — an unchanged file reuses its previous scan's
+  /// [BaseTrack] outright, skipping the expensive ID3 tag decode entirely.
+  /// This is what makes a repeat scan of a large, mostly-unchanged library
+  /// fast: only new or actually-modified files pay [_trackFromFile]'s
+  /// cost.
+  Future<BaseTrack> _trackForFile(
+    File file,
+    TagEditorPlugin tagEditor,
+    Map<String, BaseTrack> knownByPath,
+  ) async {
+    final mtime = await file.lastModified();
+    final known = knownByPath[file.path];
+    if (known != null && known.fileModifiedAt == mtime) {
+      return known;
+    }
+    return _trackFromFile(file, tagEditor, mtime: mtime);
+  }
+
   /// Builds a [BaseTrack] for one local file, preferring real embedded
   /// tags over filename-derived guesses wherever a tag is actually
   /// present. A completely untagged file still falls back to the filename
   /// (title) and "Unknown Artist"/"Unknown Album", same as before.
-  Future<BaseTrack> _trackFromFile(File file, TagEditorPlugin tagEditor) async {
+  Future<BaseTrack> _trackFromFile(
+    File file,
+    TagEditorPlugin tagEditor, {
+    required DateTime mtime,
+  }) async {
     final fallbackTitle = file.uri.pathSegments.isNotEmpty
         ? file.uri.pathSegments.last.replaceAll(RegExp(r'\.[^.]+$'), '')
         : 'Unknown';
@@ -248,6 +293,7 @@ class MediaScanner {
       albumArtist: (rawAlbumArtist != null && rawAlbumArtist.isNotEmpty)
           ? rawAlbumArtist
           : null,
+      fileModifiedAt: mtime,
     );
   }
 
