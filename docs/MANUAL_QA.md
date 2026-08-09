@@ -43,6 +43,31 @@ against a real Bluetooth device.
 5. Deny the Bluetooth permission prompt and confirm the plugin degrades
    quietly.
 
+## Media notification / lock-screen controls — Android
+
+Fixed a real bug: `AndroidManifest.xml` was missing the `<service>`/
+`<receiver>` declarations `audio_service` requires (its own bundled
+manifest doesn't merge these in automatically), and `MainActivity` didn't
+extend `AudioServiceActivity`. `flutter build apk --debug` succeeding
+only proves the app compiles with the new manifest/activity — it says
+nothing about whether the notification actually appears at runtime.
+
+1. Play a local track on a physical device or emulator. Confirm a media
+   notification appears (and, on Android 13+, that the earlier
+   `POST_NOTIFICATIONS` prompt is what's gating it, not this fix).
+2. From the notification, tap play/pause, skip next/previous, and confirm
+   each one takes effect immediately in the app.
+3. Lock the screen. Confirm the same controls appear on the lock screen
+   and still work.
+4. Press a wired/Bluetooth headset's media button (or a car stereo's
+   button) and confirm it also plays/pauses — this is what
+   `MediaButtonReceiver` specifically covers, separate from the
+   notification's own on-screen buttons.
+5. Swipe the app away from Recents while playing. Confirm playback and
+   the notification survive (this is what extending `AudioServiceActivity`
+   — reusing the background-persistent Flutter engine — specifically
+   fixes over a plain `FlutterActivity`).
+
 ## Waveform seek bar — real peak rendering
 
 `WaveformStore`/`WaveformSeekBar` are covered by unit/widget tests against
