@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/permissions.dart';
+import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
@@ -27,6 +32,19 @@ class MainCore {
   final PluginManager _pluginManager;
 
   bool _disposed = false;
+
+  // Play-history position tracking (Continue Listening) — the engine only
+  // exposes position/duration as streams, not a synchronous getter, so
+  // the latest values are cached here and read back when a pause or
+  // track-change moment actually calls for a position write. Cheap,
+  // low-frequency writes only (pause, track change) — never per tick.
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration?>? _durationSub;
+  StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<BaseTrack?>? _trackForHistorySub;
+  Duration _lastPosition = Duration.zero;
+  Duration _lastDuration = Duration.zero;
+  BaseTrack? _trackBeingTracked;
 
   /// Constructor.
   MainCore()
@@ -60,12 +78,46 @@ class MainCore {
     await _audioEngine.setPitch(settings.pitch);
     await _audioEngine.setSkipSilenceEnabled(settings.skipSilenceEnabled);
 
-    // Wire the engine's track-started callback to the plugin hooks.
+    // Wire the engine's track-started callback to the plugin hooks and to
+    // play-history tracking (Home dashboard's Recently/Most Played) — the
+    // latter is core, not plugin-dependent, so it's recorded directly
+    // here rather than through the plugin manager.
     _audioEngine.onTrackStarted = (track) {
       // Ignore failures: the plugin manager sandboxes every call.
       // ignore: unawaited_futures
       _pluginManager.onTrackStart(track);
+      // ignore: unawaited_futures
+      PlayHistoryStore.instance.recordPlay(track);
     };
+
+    // Continue Listening position tracking. Cheap, low-frequency writes
+    // only: on pause, and when the track changes (recording the position
+    // of whichever track playback is moving away from) — never per
+    // position tick.
+    _positionSub = _audioEngine.positionStream.listen((pos) {
+      _lastPosition = pos;
+    });
+    _durationSub = _audioEngine.durationStream.listen((dur) {
+      _lastDuration = dur ?? Duration.zero;
+    });
+    _trackBeingTracked = _audioEngine.currentTrack;
+    _playerStateSub = _audioEngine.playerStateStream.listen((state) {
+      if (state.playing) return;
+      final track = _audioEngine.currentTrack;
+      if (track == null) return;
+      // ignore: unawaited_futures
+      PlayHistoryStore.instance
+          .recordPosition(track.id, _lastPosition, _lastDuration);
+    });
+    _trackForHistorySub = _audioEngine.trackStream.listen((track) {
+      final previous = _trackBeingTracked;
+      if (previous != null) {
+        // ignore: unawaited_futures
+        PlayHistoryStore.instance
+            .recordPosition(previous.id, _lastPosition, _lastDuration);
+      }
+      _trackBeingTracked = track;
+    });
 
     // Hand plugins their capability surface, then register the registry.
     _pluginManager.attachContext(OmnisPluginContext(
@@ -91,6 +143,10 @@ class MainCore {
     if (_disposed) return;
     _disposed = true;
     debugPrint('Disposing Omnis Core...');
+    await _positionSub?.cancel();
+    await _durationSub?.cancel();
+    await _playerStateSub?.cancel();
+    await _trackForHistorySub?.cancel();
     await _pluginManager.dispose();
     await _audioEngine.dispose();
     debugPrint('Omnis Core disposed successfully');

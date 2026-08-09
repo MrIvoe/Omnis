@@ -7,6 +7,7 @@ import 'package:omnis/core/library_store.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/ui/home_dashboard_page.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
@@ -105,6 +106,8 @@ class _HomePageState extends State<HomePage> {
     final settings = AppSettings.instance;
 
     final pages = <Widget>[
+      HomeDashboardPage(
+          engine: core.audioEngine, pluginManager: core.pluginManager),
       LibraryPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       PlaylistPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       _MoodsPage(
@@ -147,6 +150,10 @@ class _HomePageState extends State<HomePage> {
       elevation: 0,
       onDestinationSelected: (i) => setState(() => _selectedIndex = i),
       destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.home),
+          label: 'Home',
+        ),
         NavigationDestination(
           icon: Icon(Icons.library_music),
           label: 'Library',
