@@ -139,6 +139,24 @@ abstract class IVisualizerProvider {
   Stream<List<double>> get levels;
 }
 
+/// Looks up a representative photo for an artist by name.
+///
+/// Registered under this interface, not a concrete plugin type, so a
+/// future alternate source (a different image API, a locally-curated set)
+/// could replace or join `ArtistImagePlugin` without a caller changing.
+/// Returns a URL rather than raw image bytes — the provider's job is
+/// finding the photo, not fetching/decoding/caching it; callers (e.g.
+/// `ArtistAvatar`) decide how to actually load it.
+abstract class IArtistImageProvider {
+  /// Whether this provider can usefully run right now.
+  bool get isAvailable;
+
+  /// Looks up a photo URL for [artistName]. Returns `null` when nothing is
+  /// found, the lookup fails, or this provider is unavailable — never
+  /// throws.
+  Future<String?> imageUrlFor(String artistName);
+}
+
 /// Reports which output device (if any) is currently connected.
 ///
 /// Implemented by `BluetoothPlaybackPlugin`. Exists so another plugin
