@@ -113,6 +113,38 @@ permission prompt itself — has never run on an actual device.
    activating the visualizer degrades to a clear message with flat bars,
    no crash.
 
+## Startup / tab-switch responsiveness — large libraries
+
+`LibraryPage._loadPersistedLibrary()` used to call `engine.setQueue(saved)`
+with the *entire* persisted library on every app boot, before the user had
+asked to play anything. Confirmed via a live, instrumented run on an Android
+emulator with a synthetic 3000-track library that this single call —
+`AudioEngine._rebuildQueueSource()` building a native `ConcatenatingAudioSource`
+with thousands of `MediaSource` children in one platform-channel round trip —
+took 40+ seconds, and left the native player working through invalid/missing
+file entries (`ExoPlayerImplInternal`/`FileNotFoundException` spam) for many
+seconds afterward, degrading UI responsiveness including plain bottom-nav tab
+switches well past that. The fix removes that eager `setQueue` call entirely;
+every real play action (tapping a track, a mood, a Home section) already sets
+its own queue explicitly at the moment of the action, so nothing depends on
+the queue being pre-populated at boot.
+
+This can't be fully proven by `flutter analyze`/`flutter test`/a debug build
+alone — it's a live timing characteristic, not a logic branch.
+
+1. With a library of at least a few thousand tracks (real or synthetic),
+   launch the app fresh and confirm it reaches the last-used tab without a
+   long unresponsive stretch, and without `ExoPlayerImplInternal` /
+   `FileNotFoundException` spam in `adb logcat`.
+2. Switch between bottom-nav tabs (Home/Library/Playlist/Moods/Settings)
+   repeatedly right after launch. Each switch should render immediately —
+   check the actual screen content (e.g. via `adb exec-out screencap`), not
+   just elapsed wall-clock time from a log line, since `debugPrint` output
+   can lag behind the real frame under heavy startup log volume and make a
+   genuinely fast switch look slow in logcat alone.
+3. Play a track from Library, then background/foreground the app and switch
+   tabs again — confirm no regression now that the queue *has* been set.
+
 ## After this checklist
 
 If either plugin behaves differently from its doc comment's caveat

@@ -273,13 +273,27 @@ class _LibraryPageState extends State<LibraryPage> {
 
   /// Load the previously-scanned library from disk so the user doesn't
   /// have to rescan (and re-grant permission) on every app launch.
+  ///
+  /// Deliberately does not also call `engine.setQueue(saved)` here —
+  /// confirmed by live, on-device measurement that it used to (see
+  /// docs/MANUAL_QA.md's performance section): every real "play" action
+  /// already sets its own queue explicitly at the moment of the action
+  /// (tapping a track, a mood, a section — see `_playTrack`,
+  /// `_MoodsPage._playMood`, etc.), so nothing depends on the queue being
+  /// pre-populated at boot. Eagerly loading the *entire* library — every
+  /// track, however large — into `just_audio`'s native
+  /// `ConcatenatingAudioSource` before the user has asked to play
+  /// anything was measured taking upwards of 40 seconds for a
+  /// few-thousand-track library, and left the native player working
+  /// through it in the background for many seconds afterward, degrading
+  /// UI responsiveness (including plain bottom-nav tab switches) well
+  /// past that. Matches the same "a data operation must not touch
+  /// playback" principle `_pickAndAdd`'s own doc comment already
+  /// established for library scans.
   Future<void> _loadPersistedLibrary() async {
     final saved = await LibraryRepository.instance.load();
     if (!mounted) return;
     setState(() => _tracks = saved);
-    if (saved.isNotEmpty) {
-      await widget.engine.setQueue(saved);
-    }
   }
 
   Future<void> _pickAndAdd() async {
