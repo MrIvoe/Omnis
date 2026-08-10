@@ -198,4 +198,51 @@ void main() {
 
     expect(freshEngine.repeat, RepeatMode.all);
   });
+
+  group('cyclePlayMode', () {
+    test('cycles off -> repeat all -> repeat one -> shuffle -> off',
+        () async {
+      final engine = _FakeEngine()
+        ..queueTracks = [_track('1'), _track('2'), _track('3')];
+      final manager = _managerWith(engine);
+      final plugin = ShuffleRepeatPlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+
+      await plugin.cyclePlayMode();
+      expect(engine.repeat, RepeatMode.all);
+      expect(plugin.shuffleEnabled, isFalse);
+
+      await plugin.cyclePlayMode();
+      expect(engine.repeat, RepeatMode.one);
+      expect(plugin.shuffleEnabled, isFalse);
+
+      await plugin.cyclePlayMode();
+      expect(engine.repeat, RepeatMode.off,
+          reason: 'entering shuffle must clear repeat — the two were '
+              'never meant to combine');
+      expect(plugin.shuffleEnabled, isTrue);
+
+      await plugin.cyclePlayMode();
+      expect(engine.repeat, RepeatMode.off);
+      expect(plugin.shuffleEnabled, isFalse);
+    });
+
+    test('starting from shuffle-on (independently toggled) clears shuffle '
+        'first rather than also touching repeat', () async {
+      final engine = _FakeEngine()
+        ..queueTracks = [_track('1'), _track('2'), _track('3')];
+      final manager = _managerWith(engine);
+      final plugin = ShuffleRepeatPlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+
+      await plugin.toggleShuffle();
+      expect(plugin.shuffleEnabled, isTrue);
+
+      await plugin.cyclePlayMode();
+      expect(plugin.shuffleEnabled, isFalse);
+      expect(engine.repeat, RepeatMode.off);
+    });
+  });
 }

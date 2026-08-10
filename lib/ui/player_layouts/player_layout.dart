@@ -91,8 +91,12 @@ class PlayerLayoutData {
   final VoidCallback onActivateVisualizer;
   final VoidCallback onStartSleepTimer;
   final VoidCallback? onCancelSleepTimer;
-  final VoidCallback onToggleShuffle;
-  final VoidCallback onCycleRepeat;
+
+  /// Advances the combined shuffle/repeat play-mode cycle: off -> repeat
+  /// all -> repeat one -> shuffle -> off. Replaces separate shuffle and
+  /// repeat toggles with a single control (see
+  /// `ShuffleRepeatPlugin.cyclePlayMode`).
+  final VoidCallback onCyclePlayMode;
   final VoidCallback onCycleAbRepeat;
 
   const PlayerLayoutData({
@@ -123,8 +127,7 @@ class PlayerLayoutData {
     required this.onActivateVisualizer,
     required this.onStartSleepTimer,
     this.onCancelSleepTimer,
-    required this.onToggleShuffle,
-    required this.onCycleRepeat,
+    required this.onCyclePlayMode,
     required this.onCycleAbRepeat,
   });
 

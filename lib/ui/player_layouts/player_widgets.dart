@@ -289,14 +289,37 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
       OmnisHaptics.selectionClick();
     }
 
+    // Single combined play-mode icon, replacing separate shuffle and
+    // repeat toggles: off -> repeat all -> repeat one -> shuffle -> off
+    // (see `ShuffleRepeatPlugin.cyclePlayMode`). Shuffle takes priority in
+    // the glyph choice since the two states are mutually exclusive by the
+    // time this renders.
+    final playModeIcon = data.shuffleEnabled
+        ? Icons.shuffle
+        : data.repeatMode == RepeatMode.one
+            ? Icons.repeat_one
+            : Icons.repeat;
+    final playModeActive =
+        data.shuffleEnabled || data.repeatMode != RepeatMode.off;
+    final playModeTooltip = data.shuffleEnabled
+        ? 'Shuffle'
+        : switch (data.repeatMode) {
+            RepeatMode.all => 'Repeat all',
+            RepeatMode.one => 'Repeat one',
+            RepeatMode.off => 'Sequential',
+          };
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (layout == ButtonLayout.standard)
-          iconButton(Icons.shuffle,
-              onPressed: data.onToggleShuffle,
-              size: shuffleRepeatSize,
-              iconColor: data.shuffleEnabled ? activeColor : inactiveColor),
+          Tooltip(
+            message: playModeTooltip,
+            child: iconButton(playModeIcon,
+                onPressed: data.onCyclePlayMode,
+                size: shuffleRepeatSize,
+                iconColor: playModeActive ? activeColor : inactiveColor),
+          ),
         if (layout != ButtonLayout.minimal)
           iconButton(Icons.skip_previous,
               onPressed: data.onPrevious,
@@ -338,15 +361,6 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
           iconButton(Icons.skip_next,
               onPressed: data.onNext,
               size: compact ? iconSize * 0.8 : iconSize),
-        if (layout == ButtonLayout.standard)
-          iconButton(
-              data.repeatMode == RepeatMode.one
-                  ? Icons.repeat_one
-                  : Icons.repeat,
-              onPressed: data.onCycleRepeat,
-              size: shuffleRepeatSize,
-              iconColor:
-                  data.repeatMode != RepeatMode.off ? activeColor : inactiveColor),
       ],
     );
   }
@@ -467,6 +481,10 @@ class PlayerAbRepeatButton extends StatelessWidget {
   }
 }
 
+/// Compact sleep-timer control: a single icon (badged with the remaining
+/// time when a timer is running) that opens a dropdown menu instead of the
+/// old always-visible two-button row + status line, which took up a full
+/// row of Now Playing even when no timer was active.
 class PlayerSleepTimerRow extends StatelessWidget {
   final PlayerLayoutData data;
 
@@ -477,36 +495,52 @@ class PlayerSleepTimerRow extends StatelessWidget {
     final timer = data.sleepTimerPlugin;
     if (timer == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FilledButton.tonal(
-                onPressed: () {
-                  OmnisHaptics.mediumImpact();
-                  data.onStartSleepTimer();
-                },
-                child: const Text('Sleep timer')),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: timer.isActive ? data.onCancelSleepTimer : null,
-              child: const Text('Cancel'),
-            ),
-          ],
+    final active = timer.isActive;
+    final icon = Icon(
+      active ? Icons.bedtime : Icons.bedtime_outlined,
+      color: active ? theme.colorScheme.primary : null,
+    );
+
+    return PopupMenuButton<_SleepTimerAction>(
+      tooltip: active
+          ? 'Sleep timer — pausing in '
+              '${data.formatDuration(timer.remaining ?? Duration.zero)}'
+          : 'Sleep timer',
+      icon: active
+          ? Badge(
+              label: Text(
+                data.formatDuration(timer.remaining ?? Duration.zero),
+              ),
+              alignment: Alignment.bottomRight,
+              offset: const Offset(4, 4),
+              child: icon,
+            )
+          : icon,
+      onSelected: (action) {
+        switch (action) {
+          case _SleepTimerAction.startOrChange:
+            OmnisHaptics.mediumImpact();
+            data.onStartSleepTimer();
+          case _SleepTimerAction.cancel:
+            data.onCancelSleepTimer?.call();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _SleepTimerAction.startOrChange,
+          child: Text(active ? 'Change duration' : 'Start sleep timer'),
         ),
-        if (timer.isActive)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Pausing in ${data.formatDuration(timer.remaining ?? Duration.zero)}',
-              style: theme.textTheme.bodySmall,
-            ),
+        if (active)
+          const PopupMenuItem(
+            value: _SleepTimerAction.cancel,
+            child: Text('Cancel timer'),
           ),
       ],
     );
   }
 }
+
+enum _SleepTimerAction { startOrChange, cancel }
 
 class PlayerCrossfadeStatus extends StatelessWidget {
   final PlayerLayoutData data;

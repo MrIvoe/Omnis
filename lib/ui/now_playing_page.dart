@@ -361,26 +361,29 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       loopAMarker: engine.loopAMarker,
       abRepeatRange: engine.abRepeatRange,
       waveform: _waveformTrackId == track.id ? _waveform : null,
-      onToggleShuffle: () async {
+      onCyclePlayMode: () async {
         final plugin = _shuffleRepeat;
         if (plugin != null) {
-          await plugin.toggleShuffle();
+          await plugin.cyclePlayMode();
         } else {
-          await engine.setShuffleEnabled(!engine.shuffleEnabled);
-        }
-        if (mounted) setState(() {});
-      },
-      onCycleRepeat: () async {
-        final plugin = _shuffleRepeat;
-        if (plugin != null) {
-          await plugin.cycleRepeat();
-        } else {
-          final next = switch (engine.repeatMode) {
-            RepeatMode.off => RepeatMode.all,
-            RepeatMode.all => RepeatMode.one,
-            RepeatMode.one => RepeatMode.off,
-          };
-          await engine.setRepeatMode(next);
+          // No ShuffleRepeatPlugin registered — fall back to the same
+          // off -> repeat all -> repeat one -> shuffle -> off cycle driven
+          // straight off the engine's own flags.
+          if (engine.shuffleEnabled) {
+            await engine.setShuffleEnabled(false);
+          } else {
+            final next = switch (engine.repeatMode) {
+              RepeatMode.off => RepeatMode.all,
+              RepeatMode.all => RepeatMode.one,
+              RepeatMode.one => null,
+            };
+            if (next != null) {
+              await engine.setRepeatMode(next);
+            } else {
+              await engine.setRepeatMode(RepeatMode.off);
+              await engine.setShuffleEnabled(true);
+            }
+          }
         }
         if (mounted) setState(() {});
       },

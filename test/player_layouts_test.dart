@@ -43,8 +43,7 @@ PlayerLayoutData _dataFor(AppSettings settings) => PlayerLayoutData(
       onEditLyrics: () {},
       onActivateVisualizer: () {},
       onStartSleepTimer: () {},
-      onToggleShuffle: () {},
-      onCycleRepeat: () {},
+      onCyclePlayMode: () {},
       onCycleAbRepeat: () {},
     );
 
