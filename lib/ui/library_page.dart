@@ -20,6 +20,7 @@ import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis/ui/widgets/artist_avatar.dart';
 import 'package:omnis/ui/widgets/library_shimmer.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 import 'package:path/path.dart' as p;
@@ -408,6 +409,13 @@ class _LibraryPageState extends State<LibraryPage> {
   /// always `MetadataEnrichmentPlugin`).
   IMetadataProvider? get _metadataProvider =>
       widget.pluginManager.services.get<IMetadataProvider>();
+
+  /// Looked up by interface, not concrete plugin type — see
+  /// `_metadataProvider`. `null` when the Artist Photos plugin is disabled
+  /// or not registered; every artist row just falls back to the generic
+  /// person icon in that case (see `ArtistAvatar`).
+  IArtistImageProvider? get _artistImageProvider =>
+      widget.pluginManager.services.get<IArtistImageProvider>();
 
   /// `hasAnyCredential` is a detail specific to this particular provider's
   /// credential model (a Last.fm key, a Discogs token) — a hypothetical
@@ -1732,10 +1740,22 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _buildSection(LibrarySection section, {required int depth}) {
     final theme = Theme.of(context);
+    // Only the top-level row of an Artists-view section is actually an
+    // artist name — deeper levels there are albums/tracks, and every
+    // other view mode's top level (album/genre/folder) isn't an artist
+    // at all, so this only ever fires exactly where a photo makes sense.
+    final isArtistRow = depth == 0 && _viewMode == LibraryViewMode.artists;
 
     if (section.children.isNotEmpty) {
       return ExpansionTile(
         tilePadding: EdgeInsets.only(left: 16 + depth * 12, right: 16),
+        leading: isArtistRow
+            ? ArtistAvatar(
+                artistName: section.title,
+                imageProvider: _artistImageProvider,
+                radius: 18,
+              )
+            : null,
         title: Text(section.title, style: theme.textTheme.titleMedium),
         children: section.children
             .map((child) => _buildSection(child, depth: depth + 1))
@@ -1749,7 +1769,19 @@ class _LibraryPageState extends State<LibraryPage> {
         if (section.title.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(left: 16 + depth * 12, top: 8, bottom: 4),
-            child: Text(section.title, style: theme.textTheme.titleSmall),
+            child: isArtistRow
+                ? Row(
+                    children: [
+                      ArtistAvatar(
+                        artistName: section.title,
+                        imageProvider: _artistImageProvider,
+                        radius: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(section.title, style: theme.textTheme.titleSmall),
+                    ],
+                  )
+                : Text(section.title, style: theme.textTheme.titleSmall),
           ),
         ...section.tracks.map((track) {
           final selected = _selectedIds.contains(track.id);
