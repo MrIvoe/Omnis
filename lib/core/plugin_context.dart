@@ -1,6 +1,6 @@
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
-import 'package:omnis/core/library_store.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis_plugin_api/base_track.dart';
@@ -17,7 +17,7 @@ export 'package:omnis_plugin_api/plugin_context.dart' show PluginContext;
 /// file. It's now an interface in `omnis_plugin_api` so `omnis_plugins`
 /// (the bundled-plugin package) can depend on it without depending on
 /// this app — this class is where that interface actually meets the real
-/// `AudioEngine`/`AppSettings`/`OmnisPermissions`/`LibraryStore`/
+/// `AudioEngine`/`AppSettings`/`OmnisPermissions`/`LibraryRepository`/
 /// `PlaylistStore` singletons. `MainCore` builds exactly one of these and
 /// hands it to every registered plugin via `PluginManager`/`attach`.
 ///
@@ -236,7 +236,7 @@ class OmnisPluginContext implements PluginContext {
   // --- Library / playlist read access ---
 
   @override
-  Future<List<BaseTrack>> loadLibraryTracks() => LibraryStore.instance.load();
+  Future<List<BaseTrack>> loadLibraryTracks() => LibraryRepository.instance.load();
 
   @override
   Future<List<Playlist>> loadPlaylists() => PlaylistStore.instance.load();

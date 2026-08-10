@@ -7,6 +7,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_store.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/play_history_store.dart';
@@ -89,6 +90,13 @@ void main() {
     // clearing explicitly is what actually gives each test a clean slate.
     await LibraryStore.instance.clear();
     await PlayHistoryStore.instance.clear();
+    // HomeDashboardPage now reads through LibraryRepository, which caches
+    // in memory after its first load() for the whole process (same
+    // reasoning as the two stores above, one layer up) — resetting it
+    // here is what makes each test's direct LibraryStore.instance.save()
+    // fixture actually visible to the page instead of a previous test's
+    // cached copy.
+    LibraryRepository.instance.resetForTesting();
   });
 
   // Every test below wraps its body in tester.runAsync(): HomeDashboardPage

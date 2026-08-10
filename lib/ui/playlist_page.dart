@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/plugin_api/events.dart';
-import 'package:omnis/core/library_store.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/plugin_api/play_record.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -91,6 +91,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _favoriteSub = widget.pluginManager.events.on<FavoriteChangedEvent>().listen((_) {
       if (mounted) setState(() {});
     });
+    // A tag edit, scan, or delete on the Library page previously left
+    // _libraryTracks stale here indefinitely — nothing reloaded it after
+    // the first initState call, since this page (like Home) stays alive
+    // in HomePage's IndexedStack rather than being rebuilt. _load() is
+    // cheap now that LibraryRepository caches in memory, so reloading on
+    // every save elsewhere is fine.
+    LibraryRepository.instance.addListener(_load);
   }
 
   @override
@@ -98,12 +105,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _queueSub?.cancel();
     _trackSub?.cancel();
     _favoriteSub?.cancel();
+    LibraryRepository.instance.removeListener(_load);
     super.dispose();
   }
 
   Future<void> _load() async {
     final playlists = await PlaylistStore.instance.load();
-    final tracks = await LibraryStore.instance.load();
+    final tracks = await LibraryRepository.instance.load();
     if (!mounted) return;
     setState(() {
       _playlists = playlists;

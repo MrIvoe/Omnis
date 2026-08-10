@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/core/library_store.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/events.dart';
@@ -67,17 +67,24 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
         widget.pluginManager.events.on<FavoriteChangedEvent>().listen((_) {
       _load();
     });
+    // A scan, tag edit, or delete on the Library tab calls
+    // LibraryRepository.save(), which this page wouldn't otherwise hear
+    // about at all (it has no track-change or favorite-change reason to
+    // reload for those) — this is what actually makes those changes show
+    // up here without the user needing to leave and come back.
+    LibraryRepository.instance.addListener(_load);
   }
 
   @override
   void dispose() {
     _trackSub?.cancel();
     _favoriteSub?.cancel();
+    LibraryRepository.instance.removeListener(_load);
     super.dispose();
   }
 
   Future<void> _load() async {
-    final library = await LibraryStore.instance.load();
+    final library = await LibraryRepository.instance.load();
     final libraryById = {for (final t in library) t.id: t};
 
     List<BaseTrack> joinStats(List<TrackPlayStats> stats) => [

@@ -3,7 +3,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
-import 'package:omnis/core/library_store.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -275,7 +275,7 @@ class _MoodsPageState extends State<_MoodsPage> {
     if (_loading) return;
     setState(() => _loading = true);
     try {
-      final library = await LibraryStore.instance.load();
+      final library = await LibraryRepository.instance.load();
       if (library.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(

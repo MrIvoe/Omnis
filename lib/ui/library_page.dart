@@ -8,7 +8,7 @@ import 'package:omnis/plugin_api/audio_analysis_result.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/plugin_api/enrichment_result.dart';
-import 'package:omnis/core/library_store.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -274,7 +274,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// Load the previously-scanned library from disk so the user doesn't
   /// have to rescan (and re-grant permission) on every app launch.
   Future<void> _loadPersistedLibrary() async {
-    final saved = await LibraryStore.instance.load();
+    final saved = await LibraryRepository.instance.load();
     if (!mounted) return;
     setState(() => _tracks = saved);
     if (saved.isNotEmpty) {
@@ -341,7 +341,7 @@ class _LibraryPageState extends State<LibraryPage> {
       // to the library is a data operation, not a "play something"
       // action, and previously did both: every scan silently replaced
       // whatever queue was playing and started a random track.
-      await LibraryStore.instance.save(_tracks);
+      await LibraryRepository.instance.save(_tracks);
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not load audio files: $e');
     } finally {
@@ -421,7 +421,7 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
       _applyEnrichment(track, result);
-      await LibraryStore.instance.save(_tracks);
+      await LibraryRepository.instance.save(_tracks);
       _toast('Updated "${track.title}" from ${result.sourcesUsed.join(', ')}.');
     } finally {
       if (mounted) setState(() => _enrichingIds.remove(track.id));
@@ -522,7 +522,7 @@ class _LibraryPageState extends State<LibraryPage> {
       }
     }
 
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     doneNotifier.dispose();
     changedNotifier.dispose();
     if (mounted) {
@@ -607,7 +607,7 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
       _applyAnalysis(track, result);
-      await LibraryStore.instance.save(_tracks);
+      await LibraryRepository.instance.save(_tracks);
       final merged = _tracks.firstWhere((t) => t.id == track.id,
           orElse: () => track);
       await _writeAnalysisTagsToFile(merged);
@@ -719,7 +719,7 @@ class _LibraryPageState extends State<LibraryPage> {
       doneNotifier.value = done;
     }
 
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     doneNotifier.dispose();
     changedNotifier.dispose();
     if (mounted) {
@@ -841,7 +841,7 @@ class _LibraryPageState extends State<LibraryPage> {
       doneNotifier.value = done;
     }
 
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     doneNotifier.dispose();
     if (mounted) {
       Navigator.of(context, rootNavigator: false).pop();
@@ -931,7 +931,7 @@ class _LibraryPageState extends State<LibraryPage> {
       _tracks.removeWhere((t) => ids.contains(t.id));
       _selectedIds.removeAll(ids);
     });
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     await widget.engine.setQueue(_tracks);
     if (mounted) {
       _toast('Deleted ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}.');
@@ -1143,7 +1143,7 @@ class _LibraryPageState extends State<LibraryPage> {
           (tags.mood?.trim().isNotEmpty ?? false) ? tags.mood!.trim() : track.mood,
     );
     setState(() => _tracks[index] = updated);
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     _toast('Tags updated for "${updated.title}".');
   }
 
@@ -1276,7 +1276,7 @@ class _LibraryPageState extends State<LibraryPage> {
       doneNotifier.value = done;
     }
 
-    await LibraryStore.instance.save(_tracks);
+    await LibraryRepository.instance.save(_tracks);
     doneNotifier.dispose();
     changedNotifier.dispose();
     if (mounted) {
