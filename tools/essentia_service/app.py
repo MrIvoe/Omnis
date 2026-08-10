@@ -4,11 +4,12 @@ A thin HTTP wrapper around real, unmodified Essentia. POST an audio file
 to /analyze and get back BPM, musical key, and (if the TensorFlow
 auto-tagging models are present) mood/genre tags.
 
-Verification status: written from Essentia's own reference documentation,
-not run in the environment that wrote it (no Docker daemon, no Python
-interpreter, and Essentia itself only officially supports Linux/macOS —
-none of which the Windows coding session could exercise). Every algorithm
-call below was checked against Essentia's reference docs at write time:
+Verification status: built and run via Docker against a synthetic 440Hz
+test tone — /health reported {"essentia": true, "tagging_model": true},
+and /analyze returned a real BPM, correctly identified the tone's key as
+A minor, and produced plausible MusiCNN mood/genre tags. Every algorithm
+call below matches Essentia's reference docs, confirmed against the
+actual runtime output, not just checked at write time:
 
   - RhythmExtractor2013 outputs (bpm, ticks, confidence, estimates,
     bpmIntervals) and requires 44100 Hz input:
@@ -19,9 +20,15 @@ call below was checked against Essentia's reference docs at write time:
     exact model download URLs, from Essentia's own tutorial:
     https://essentia.upf.edu/tutorial_tensorflow_auto-tagging_classification_embeddings.html
 
-Build and run this once yourself and check the output on a track you know
-well before trusting it — the most likely thing to have drifted is
-RhythmExtractor2013's return signature across Essentia versions.
+One real bug was caught in this process (see requirements.txt's own
+comment): essentia and essentia-tensorflow share the same top-level
+`essentia` package namespace, and installing both unconditionally meant
+whichever landed on disk second silently won — always plain essentia in
+practice, so TensorflowPredictMusiCNN never existed at import time even
+with the model files present. Still worth sanity-checking output on a
+track you know well before trusting it across a real, varied library —
+a single test tone doesn't cover that — but the pipeline itself is
+confirmed real and working end-to-end.
 """
 
 import json

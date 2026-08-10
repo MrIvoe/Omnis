@@ -1,7 +1,7 @@
 # Omnis Essentia analysis service
 
 A small HTTP wrapper around real, unmodified [Essentia](https://essentia.upf.edu/)
-that gives the Omnis app real BPM/key/mood analysis. `lib/plugins/audio_analysis_plugin.dart`
+that gives the Omnis app real BPM/key/mood analysis. `Omnis-Plugins/lib/audio_analysis_plugin.dart`
 is the client that talks to this.
 
 ## Why this exists as a separate service
@@ -17,19 +17,32 @@ single source-editing pass. Running Essentia here, in its own normal
 Python environment, and having the app call it over HTTP is the practical
 way to get *real* Essentia results into the app today.
 
-## ⚠️ Verification status
+## ✅ Verification status
 
-**This has not been built or run.** The coding session that wrote it had
-network access and a CMake/MSVC/Android toolchain, but no running Docker
-daemon and no Python interpreter, and Essentia's own tutorials only
-support Linux/macOS in the first place — none of which this Windows
-session could exercise. This is a careful, from-the-docs implementation of
-Essentia's [own documented API](https://essentia.upf.edu/documentation.html)
-and [TensorFlow auto-tagging tutorial](https://essentia.upf.edu/tutorial_tensorflow_auto-tagging_classification_embeddings.html),
-not a tested artifact. **Build and run it once yourself and sanity-check
-the output on a track you know well before trusting it for your library.**
-The most likely thing to need adjusting is `RhythmExtractor2013`'s exact
-return signature, which has changed across Essentia versions.
+**Built, run, and verified end-to-end** via `docker build` + `docker run`
+against a synthetic 440Hz test tone: `/health` reported
+`{"essentia": true, "tagging_model": true}`, and `/analyze` returned a
+real BPM, correctly identified the tone's key as A minor, and produced
+plausible mood/genre tags (`instrumental`, `ambient`, ...) from the
+MusiCNN model. `RhythmExtractor2013`'s return signature (the thing most
+likely to have drifted across Essentia versions) is confirmed correct as
+written.
+
+One real bug was caught and fixed in this process:
+`requirements.txt` used to install *both* `essentia` and
+`essentia-tensorflow` unconditionally on Linux — they share the same
+top-level `essentia` package namespace, so whichever pip happened to
+install second silently overwrote the other's files. In practice that
+was always plain `essentia`, so `TensorflowPredictMusiCNN` never
+actually existed at import time even with the model files downloaded and
+`essentia-tensorflow` reporting a successful install — `/health` would
+have quietly reported `tagging_model: false` forever. The two are now
+mutually exclusive by platform marker.
+
+Still worth sanity-checking on a track you know well before trusting it
+for your whole library — a pure test tone isn't a substitute for real
+music across genres — but the pipeline itself, top to bottom, is real
+and working, not just carefully-researched.
 
 ## What it does
 

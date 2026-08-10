@@ -1,16 +1,26 @@
-# Core analysis (BPM/key) needs only this — no TensorFlow.
-essentia
-
+# essentia and essentia-tensorflow both install into the same top-level
+# `essentia` package namespace — installing both (as this file used to,
+# unconditionally) is a real conflict, not a harmless redundancy: pip
+# installs them in whatever order it resolves to, and whichever lands on
+# disk second silently overwrites the other's files. That's exactly what
+# happened the one time this was actually built and run: essentia
+# installed after essentia-tensorflow, so `essentia.standard` never
+# exposed `TensorflowPredictMusiCNN` even though it "succeeded" and every
+# model file was present — /health reported `tagging_model: false` for a
+# reason app.py's own HAS_TENSORFLOW_MODEL check couldn't distinguish
+# from "no models downloaded." These two lines are mutually exclusive by
+# platform marker specifically so only one of them is ever installed.
+#
 # essentia-tensorflow (which also provides everything `essentia` does,
 # plus TensorflowPredictMusiCNN for mood/genre tagging) is only published
 # as a prebuilt wheel for Linux + Python 3.5-3.7 per Essentia's own docs.
-# If that constraint doesn't match your environment, comment out the line
-# below, keep plain `essentia` above, and the service will run with
-# BPM/key only (mood/genres come back empty — see app.py's HAS_TENSORFLOW
-# flag). Building essentia-tensorflow from source for a newer Python is
-# covered in Essentia's own blog post, referenced from the tutorial this
-# service is based on.
+# Building it from source for a newer Python/other platform is covered in
+# Essentia's own blog post, referenced from the tutorial this service is
+# based on — outside that, plain `essentia` below is the fallback
+# (BPM/key only; mood/genres come back empty — see app.py's
+# HAS_TENSORFLOW_MODEL flag).
 essentia-tensorflow; sys_platform == "linux"
+essentia; sys_platform != "linux"
 
 fastapi
 uvicorn[standard]
