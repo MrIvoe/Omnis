@@ -558,6 +558,31 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Writes [track]'s current (already-merged) bpm/key/mood/genres into
+  /// the actual file's ID3 tags via [TagEditorPlugin] — deliberately the
+  /// track *after* [_applyAnalysis]'s merge, not the raw
+  /// [AudioAnalysisResult], so a value [_applyAnalysis] chose to leave
+  /// alone (because the file already had one) never gets clobbered here
+  /// either. Without this, "analyze" only ever updated Omnis's own
+  /// library JSON — the tags never actually made it into the song file,
+  /// so they wouldn't survive a rescan or show up in any other player.
+  /// Silent on failure (no tag editor plugin, no local file, or the
+  /// write itself fails): the values are already safely in Omnis's own
+  /// library regardless, so this is strictly an additional
+  /// make-it-portable step, never the thing a user is blocked on.
+  Future<void> _writeAnalysisTagsToFile(BaseTrack track) async {
+    final tagEditor = _tagEditorPlugin;
+    final path = track.localPath;
+    if (tagEditor == null || path == null) return;
+    await tagEditor.writeTags(
+      path,
+      bpm: track.bpm?.round().toString(),
+      initialKey: track.key,
+      mood: track.mood,
+      genre: track.genres.isEmpty ? null : track.genres.join(', '),
+    );
+  }
+
   Future<void> _analyzeSingle(BaseTrack track) async {
     final provider = _analysisProvider;
     if (provider == null) {
@@ -583,6 +608,9 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       _applyAnalysis(track, result);
       await LibraryStore.instance.save(_tracks);
+      final merged = _tracks.firstWhere((t) => t.id == track.id,
+          orElse: () => track);
+      await _writeAnalysisTagsToFile(merged);
       _toast('Analyzed "${track.title}".');
     } finally {
       if (mounted) setState(() => _analyzingIds.remove(track.id));
@@ -681,6 +709,9 @@ class _LibraryPageState extends State<LibraryPage> {
       final result = await provider.analyze(track);
       if (!result.isEmpty) {
         _applyAnalysis(track, result);
+        final merged =
+            _tracks.firstWhere((t) => t.id == track.id, orElse: () => track);
+        await _writeAnalysisTagsToFile(merged);
         changed++;
         changedNotifier.value = changed;
       }
