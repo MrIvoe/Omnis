@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
@@ -6,12 +8,25 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
+import 'package:omnis/ui/widgets/seek_position_visualizer.dart';
 import 'package:omnis_plugins/sleep_timer_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeLyricsProvider implements ILyricsProvider {
   @override
   String currentLyricFor(BaseTrack track, Duration position) => 'La la la';
+}
+
+class _FakeVisualizerProvider implements IVisualizerProvider {
+  final _controller = StreamController<List<double>>.broadcast();
+
+  @override
+  List<double> get latest => const [0, 0, 0, 0, 0, 0, 0];
+
+  @override
+  Stream<List<double>> get levels => _controller.stream;
+
+  void close() => _controller.close();
 }
 
 BaseTrack _track() => BaseTrack(
@@ -29,22 +44,26 @@ PlayerLayoutData _dataFor({
   RepeatMode repeatMode = RepeatMode.off,
   SleepTimerPlugin? sleepTimerPlugin,
   ILyricsProvider? lyricsPlugin,
+  IVisualizerProvider? visualizerPlugin,
   String? lyricText,
+  Duration? position,
+  Duration? duration,
+  ValueChanged<Duration>? onSeek,
   VoidCallback? onCyclePlayMode,
   VoidCallback? onStartSleepTimer,
   VoidCallback? onCancelSleepTimer,
 }) =>
     PlayerLayoutData(
       track: _track(),
-      position: const Duration(seconds: 30),
-      duration: const Duration(seconds: 180),
+      position: position ?? const Duration(seconds: 30),
+      duration: duration ?? const Duration(seconds: 180),
       playing: true,
       buffering: false,
       settings: AppSettings.instance,
       pluginManager: PluginManager(),
       lyricsPlugin: lyricsPlugin,
       equalizerPlugin: null,
-      visualizerPlugin: null,
+      visualizerPlugin: visualizerPlugin,
       sleepTimerPlugin: sleepTimerPlugin,
       lyricText: lyricText,
       crossfadeStatusText: null,
@@ -55,7 +74,7 @@ PlayerLayoutData _dataFor({
       onPlayPause: () {},
       onNext: () {},
       onPrevious: () {},
-      onSeek: (_) {},
+      onSeek: onSeek ?? (_) {},
       onOpenEqualizer: () {},
       onEditLyrics: () {},
       onActivateVisualizer: () {},
@@ -288,6 +307,60 @@ void main() {
 
       final text = tester.widget<Text>(find.text('La la la'));
       expect(text.style?.fontSize, 42);
+    });
+  });
+
+  group('PlayerProgressBar seek-position visualizer overlay', () {
+    testWidgets('no overlay when no visualizer plugin is available',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: PlayerProgressBar(data: _dataFor())),
+      ));
+      await tester.pump();
+
+      expect(find.byType(SeekPositionVisualizer), findsNothing);
+    });
+
+    testWidgets('overlays a SeekPositionVisualizer when a visualizer '
+        'plugin is available', (tester) async {
+      final provider = _FakeVisualizerProvider();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerProgressBar(
+            data: _dataFor(visualizerPlugin: provider),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.byType(SeekPositionVisualizer), findsOneWidget);
+      provider.close();
+    });
+
+    testWidgets(
+        'the overlay never blocks the seek gesture underneath it',
+        (tester) async {
+      final provider = _FakeVisualizerProvider();
+      Duration? sought;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerProgressBar(
+            data: _dataFor(
+              visualizerPlugin: provider,
+              onSeek: (d) => sought = d,
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      await tester.tap(find.byType(Slider));
+      await tester.pump();
+
+      expect(sought, isNotNull,
+          reason: 'IgnorePointer on the overlay must let the Slider '
+              'underneath still receive the tap');
+      provider.close();
     });
   });
 }

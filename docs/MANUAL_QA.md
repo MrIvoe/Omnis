@@ -112,6 +112,12 @@ permission prompt itself — has never run on an actual device.
 5. On a platform `audify` doesn't support (Windows/desktop), confirm
    activating the visualizer degrades to a clear message with flat bars,
    no crash.
+6. After activating, look at the seek bar itself (not just the separate
+   "Activate visualizer" bars row): a small cluster of live bars should
+   be pinned to the current playhead position, growing/shrinking with
+   the actual audio. Confirm it tracks the playhead as the track plays
+   and as you drag-seek, and that dragging the seek bar still works
+   normally — the overlay must never intercept the seek gesture.
 
 ## Startup / tab-switch responsiveness — large libraries
 

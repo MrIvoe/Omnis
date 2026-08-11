@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis/ui/widgets/seek_position_visualizer.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 import 'package:omnis/ui/widgets/waveform_seek_bar.dart';
 
@@ -158,27 +159,49 @@ class PlayerProgressBar extends StatelessWidget {
     }
 
     final waveform = data.waveform;
+    final progress = hasLength ? value / max : 0.0;
     return Column(
       children: [
-        // A waveform only exists for a local track once WaveformStore has
-        // finished extracting/loading it — every other case (streaming
-        // track, unsupported platform, still computing) falls back to the
-        // plain Slider rather than distinguishing why.
-        if (waveform != null)
-          WaveformSeekBar(
-            waveform: waveform,
-            position: data.position,
-            duration: total,
-            onSeek: data.onSeek,
-            onSeekEnd: () => OmnisHaptics.selectionClick(),
-          )
-        else
-          Slider(
-            value: value,
-            max: max,
-            onChanged: (v) => data.onSeek(Duration(milliseconds: v.round())),
-            onChangeEnd: (_) => OmnisHaptics.selectionClick(),
-          ),
+        Stack(
+          children: [
+            // A waveform only exists for a local track once WaveformStore
+            // has finished extracting/loading it — every other case
+            // (streaming track, unsupported platform, still computing)
+            // falls back to the plain Slider rather than distinguishing
+            // why.
+            if (waveform != null)
+              WaveformSeekBar(
+                waveform: waveform,
+                position: data.position,
+                duration: total,
+                onSeek: data.onSeek,
+                onSeekEnd: () => OmnisHaptics.selectionClick(),
+              )
+            else
+              Slider(
+                value: value,
+                max: max,
+                onChanged: (v) =>
+                    data.onSeek(Duration(milliseconds: v.round())),
+                onChangeEnd: (_) => OmnisHaptics.selectionClick(),
+              ),
+            // Overlaid, not stretched across the bar's history — live
+            // capture only ever has a reading for the current instant, so
+            // this pins a small live spectrum cluster to the playhead
+            // rather than pretending to visualize the whole track.
+            // IgnorePointer so it never steals the seek gesture from the
+            // widget underneath.
+            if (data.visualizerPlugin != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: SeekPositionVisualizer(
+                    provider: data.visualizerPlugin,
+                    progress: progress,
+                  ),
+                ),
+              ),
+          ],
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
