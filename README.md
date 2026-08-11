@@ -1,8 +1,3 @@
-diff --git a/README.md b/README.md
-index 87f06f0..8f65acf 100644
---- a/README.md
-+++ b/README.md
-@@ -1,5 +1,10 @@
  # Omnis
  
 +[![CI](https://github.com/MrIvoe/Omnis/actions/workflows/ci.yml/badge.svg)](https://github.com/MrIvoe/Omnis/actions/workflows/ci.yml)
