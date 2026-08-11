@@ -26,6 +26,16 @@ enum NowPlayingBackgroundStyle { solid, blurredArt, gradient }
 /// Row/tile spacing in library list and grid views.
 enum LibraryDensity { comfortable, compact }
 
+/// How large lyric text renders in [PlayerLyricsPanel] (the small lyric
+/// box available inside Standard/Top Controls/Landscape layouts).
+/// Deliberately mapped to existing `Theme.textTheme` styles rather than a
+/// raw font-size multiplier, so lyrics stay visually consistent with the
+/// rest of the screen at every step — [extraLarge] intentionally lands on
+/// the same `headlineSmall` style the dedicated Karaoke Gestures layout
+/// already uses for its full-screen lyrics, giving a taste of that
+/// treatment without switching layouts.
+enum LyricsTextSize { small, medium, large, extraLarge }
+
 class AppSettings extends ChangeNotifier {
   AppSettings._();
 
@@ -38,6 +48,7 @@ class AppSettings extends ChangeNotifier {
   static const _showAlbumArtKey = 'app_show_album_art';
   static const _showLyricsKey = 'app_show_lyrics';
   static const _karaokeModeKey = 'app_karaoke_mode';
+  static const _lyricsTextSizeKey = 'app_lyrics_text_size';
   static const _buttonLayoutKey = 'app_button_layout';
   static const _gestureModeKey = 'app_gesture_mode';
   static const _swipeGesturesKey = 'app_swipe_gestures';
@@ -202,6 +213,22 @@ class AppSettings extends ChangeNotifier {
   set karaokeMode(bool value) {
     _ensurePrefs();
     _prefs!.setBool(_karaokeModeKey, value);
+    notifyListeners();
+  }
+
+  LyricsTextSize get lyricsTextSize {
+    final value = _prefs?.getString(_lyricsTextSizeKey) ?? 'medium';
+    return switch (value) {
+      'small' => LyricsTextSize.small,
+      'large' => LyricsTextSize.large,
+      'extraLarge' => LyricsTextSize.extraLarge,
+      _ => LyricsTextSize.medium,
+    };
+  }
+
+  set lyricsTextSize(LyricsTextSize size) {
+    _ensurePrefs();
+    _prefs!.setString(_lyricsTextSizeKey, size.name);
     notifyListeners();
   }
 

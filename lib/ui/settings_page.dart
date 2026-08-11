@@ -203,6 +203,13 @@ class _SettingsPageState extends State<SettingsPage> {
             navigate: (c) =>
                 _openAppearance(c, highlightField: 'karaoke_mode')),
         _SearchableSetting(
+            title: 'Lyrics text size',
+            category: 'Appearance & Layout',
+            categoryIcon: Icons.palette_outlined,
+            highlightField: 'lyrics_text_size',
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'lyrics_text_size')),
+        _SearchableSetting(
             title: 'Gapless playback',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,

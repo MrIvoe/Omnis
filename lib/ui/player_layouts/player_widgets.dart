@@ -379,6 +379,19 @@ class PlayerLyricsPanel extends StatelessWidget {
 
   const PlayerLyricsPanel({super.key, required this.data, this.style});
 
+  /// Maps [LyricsTextSize] to an existing `Theme.textTheme` style rather
+  /// than a raw font-size multiplier, so lyrics stay visually consistent
+  /// with the rest of the screen at every step.
+  static TextStyle? _sizeStyle(ThemeData theme, LyricsTextSize size) {
+    final textTheme = theme.textTheme;
+    return switch (size) {
+      LyricsTextSize.small => textTheme.bodySmall,
+      LyricsTextSize.medium => textTheme.bodyMedium,
+      LyricsTextSize.large => textTheme.titleMedium,
+      LyricsTextSize.extraLarge => textTheme.headlineSmall,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -386,6 +399,9 @@ class PlayerLyricsPanel extends StatelessWidget {
     final text = plugin == null
         ? 'The Lyrics plugin is disabled — enable it in Settings.'
         : (data.lyricText ?? 'No lyrics added for this track yet.');
+    final effectiveStyle = style ??
+        _sizeStyle(theme, data.settings.lyricsTextSize) ??
+        theme.textTheme.bodyMedium;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -401,7 +417,7 @@ class PlayerLyricsPanel extends StatelessWidget {
               child: Text(
                 text,
                 textAlign: TextAlign.center,
-                style: style ?? theme.textTheme.bodyMedium,
+                style: effectiveStyle,
               ),
             ),
           ),

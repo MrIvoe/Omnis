@@ -377,6 +377,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
       'reduce_transparency',
       'player_layout',
       'karaoke_mode',
+      'lyrics_text_size',
     ])
       field: GlobalKey<SettingsHighlightState>(),
   };
@@ -563,6 +564,29 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               value: settings.karaokeMode,
               onChanged: (value) =>
                   setState(() => settings.karaokeMode = value),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['lyrics_text_size'],
+            child: ListTile(
+              title: const Text('Lyrics text size'),
+              subtitle: const Text(
+                  'How large lyrics render in the player screen'),
+              trailing: SegmentedButton<LyricsTextSize>(
+                segments: const [
+                  ButtonSegment(
+                      value: LyricsTextSize.small, label: Text('S')),
+                  ButtonSegment(
+                      value: LyricsTextSize.medium, label: Text('M')),
+                  ButtonSegment(
+                      value: LyricsTextSize.large, label: Text('L')),
+                  ButtonSegment(
+                      value: LyricsTextSize.extraLarge, label: Text('XL')),
+                ],
+                selected: {settings.lyricsTextSize},
+                onSelectionChanged: (value) =>
+                    setState(() => settings.lyricsTextSize = value.first),
+              ),
             ),
           ),
           const SizedBox(height: 16),

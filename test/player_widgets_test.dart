@@ -3,10 +3,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis_plugins/sleep_timer_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _FakeLyricsProvider implements ILyricsProvider {
+  @override
+  String currentLyricFor(BaseTrack track, Duration position) => 'La la la';
+}
 
 BaseTrack _track() => BaseTrack(
       id: 't1',
@@ -22,6 +28,8 @@ PlayerLayoutData _dataFor({
   bool shuffleEnabled = false,
   RepeatMode repeatMode = RepeatMode.off,
   SleepTimerPlugin? sleepTimerPlugin,
+  ILyricsProvider? lyricsPlugin,
+  String? lyricText,
   VoidCallback? onCyclePlayMode,
   VoidCallback? onStartSleepTimer,
   VoidCallback? onCancelSleepTimer,
@@ -34,11 +42,11 @@ PlayerLayoutData _dataFor({
       buffering: false,
       settings: AppSettings.instance,
       pluginManager: PluginManager(),
-      lyricsPlugin: null,
+      lyricsPlugin: lyricsPlugin,
       equalizerPlugin: null,
       visualizerPlugin: null,
       sleepTimerPlugin: sleepTimerPlugin,
-      lyricText: null,
+      lyricText: lyricText,
       crossfadeStatusText: null,
       shuffleEnabled: shuffleEnabled,
       repeatMode: repeatMode,
@@ -208,6 +216,78 @@ void main() {
       // by this fake callback, so stop it directly to leave no pending
       // Timer behind for the test framework's invariant check.
       plugin.stopTimer();
+    });
+  });
+
+  group('PlayerLyricsPanel text size setting', () {
+    testWidgets('renders at bodyMedium by default (medium)', (tester) async {
+      ThemeData? resolvedTheme;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) {
+            resolvedTheme = Theme.of(context);
+            return PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeLyricsProvider(),
+                lyricText: 'La la la',
+              ),
+            );
+          }),
+        ),
+      ));
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.text('La la la'));
+      expect(text.style?.fontSize, resolvedTheme!.textTheme.bodyMedium?.fontSize);
+    });
+
+    testWidgets('renders larger text as the setting is raised',
+        (tester) async {
+      AppSettings.instance.lyricsTextSize = LyricsTextSize.extraLarge;
+      ThemeData? resolvedTheme;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) {
+            resolvedTheme = Theme.of(context);
+            return PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeLyricsProvider(),
+                lyricText: 'La la la',
+              ),
+            );
+          }),
+        ),
+      ));
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.text('La la la'));
+      expect(
+          text.style?.fontSize, resolvedTheme!.textTheme.headlineSmall?.fontSize);
+      expect(
+        text.style!.fontSize!,
+        greaterThan(resolvedTheme!.textTheme.bodyMedium!.fontSize!),
+        reason: 'extraLarge must actually read larger than the default',
+      );
+    });
+
+    testWidgets('an explicit style override always wins over the setting',
+        (tester) async {
+      AppSettings.instance.lyricsTextSize = LyricsTextSize.extraLarge;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerLyricsPanel(
+            data: _dataFor(
+              lyricsPlugin: _FakeLyricsProvider(),
+              lyricText: 'La la la',
+            ),
+            style: const TextStyle(fontSize: 42),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.text('La la la'));
+      expect(text.style?.fontSize, 42);
     });
   });
 }

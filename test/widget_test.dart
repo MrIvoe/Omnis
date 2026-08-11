@@ -68,6 +68,19 @@ void main() {
     expect(AppSettings.instance.groupArtistsByAlbumArtist, isTrue);
   });
 
+  test('lyricsTextSize defaults to medium and persists across a fresh read',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.lyricsTextSize, LyricsTextSize.medium);
+
+    for (final size in LyricsTextSize.values) {
+      AppSettings.instance.lyricsTextSize = size;
+      expect(AppSettings.instance.lyricsTextSize, size);
+    }
+  });
+
   test('AppSettings persists theme presets and builds themed surfaces',
       () async {
     SharedPreferences.setMockInitialValues({});
