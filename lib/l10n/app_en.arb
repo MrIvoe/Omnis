@@ -1,0 +1,64 @@
+{
+  "@@locale": "en",
+  "appTitle": "Omnis Music Engine",
+  "@appTitle": {
+    "description": "The application title shown in the OS task switcher / window title."
+  },
+
+  "onboardingSkip": "Skip",
+  "@onboardingSkip": {
+    "description": "Button that dismisses the onboarding flow immediately, on any screen but the last."
+  },
+  "onboardingNext": "Next",
+  "@onboardingNext": {
+    "description": "Advances to the next onboarding screen."
+  },
+  "onboardingBack": "Back",
+  "@onboardingBack": {
+    "description": "Returns to the previous onboarding screen."
+  },
+  "onboardingGetStarted": "Get Started",
+  "@onboardingGetStarted": {
+    "description": "Final button on the last onboarding screen, which completes onboarding and opens the app."
+  },
+
+  "onboardingWelcomeTitle": "Welcome to Omnis",
+  "@onboardingWelcomeTitle": {
+    "description": "Title of the first onboarding screen."
+  },
+  "onboardingWelcomeBody": "Most music players are one fixed app. Omnis is built around a plugin system instead — nearly everything beyond the core player (lyrics, equalizer, visualizer, importers, and more) is a swappable plugin. Turn off what you don't need, and add capabilities the app didn't originally ship with.",
+  "@onboardingWelcomeBody": {
+    "description": "Body text explaining Omnis's plugin system on the first onboarding screen."
+  },
+
+  "onboardingPermissionsTitle": "A couple of permissions",
+  "@onboardingPermissionsTitle": {
+    "description": "Title of the permissions-context onboarding screen."
+  },
+  "onboardingPermissionsBody": "Omnis needs access to your device's media library to find and play your music — nothing leaves your device. It also asks for notification access so playback controls show up on your lock screen and notification shade. You'll see the real system prompts as you go; this is why they're there.",
+  "@onboardingPermissionsBody": {
+    "description": "Body text explaining why media access and notification permission are needed."
+  },
+  "onboardingPermissionsContinue": "Continue",
+  "@onboardingPermissionsContinue": {
+    "description": "Button on the permissions screen — advances and, along the way, triggers the real notification-permission request."
+  },
+
+  "onboardingTourTitle": "Find your way around",
+  "@onboardingTourTitle": {
+    "description": "Title of the app-tour onboarding screen."
+  },
+  "onboardingTourBody": "Home, Library, Playlist, Moods, and Settings sit along the bottom. If you're ever hunting for a specific setting, open Settings and just start typing — search jumps straight to the exact control.",
+  "@onboardingTourBody": {
+    "description": "Body text pointing out the bottom navigation and Settings search."
+  },
+
+  "onboardingReadyTitle": "You're all set",
+  "@onboardingReadyTitle": {
+    "description": "Title of the final onboarding screen."
+  },
+  "onboardingReadyBody": "That's everything. Add your music and start listening.",
+  "@onboardingReadyBody": {
+    "description": "Body text on the final onboarding screen."
+  }
+}

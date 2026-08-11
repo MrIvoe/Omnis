@@ -9,6 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Localization infrastructure (see l10n.yaml, lib/l10n/app_en.arb).
+  # Scaffolding only for now: task 4 wires it through the new Settings
+  # search and onboarding screens, since those cost nothing extra to
+  # build correctly from the start — retrofitting every existing
+  # screen's hardcoded strings is real, separate work for later.
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.19.0
   # --- Shared, dependency-free contracts also used by omnis_plugins
   #     (the bundled-plugin package) — see packages/omnis_plugin_api.
   #     Declared as a (self-referential) git dependency, not a local
@@ -96,3 +104,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
