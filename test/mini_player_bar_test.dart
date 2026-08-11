@@ -166,6 +166,49 @@ void main() {
     expect(find.text('Nothing playing — pick a track from the Library.'),
         findsOneWidget);
   });
+
+  testWidgets(
+      'with reduce motion on, the pushed route has a zero-duration '
+      'transition instead of the normal MaterialPageRoute animation',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+    AppSettings.instance.reduceMotionEnabled = true;
+    addTearDown(() => AppSettings.instance.reduceMotionEnabled = false);
+
+    final core = MainCore();
+    final layoutManager = LayoutManager();
+    locator.registerSingleton<MainCore>(core);
+    locator.registerSingleton<AudioEngine>(core.audioEngine);
+    locator.registerSingleton<LayoutManager>(layoutManager);
+    addTearDown(() async {
+      await locator.unregister<AudioEngine>();
+      await locator.unregister<MainCore>();
+      await locator.unregister<LayoutManager>();
+      await layoutManager.dispose();
+    });
+
+    final engine = _FakeEngine();
+    final observer = _RecordingRouteObserver();
+    await tester.pumpWidget(MaterialApp(
+      navigatorObservers: [observer],
+      home: Scaffold(body: MiniPlayerBar(engine: engine)),
+    ));
+    engine.setTrack(_track());
+    await tester.pump();
+
+    await tester.tap(find.text('Sunrise'));
+    // A single pump (not pumpAndSettle) is enough to prove the transition
+    // finished immediately — a real ~300ms MaterialPageRoute transition
+    // would still be mid-flight after just one frame.
+    await tester.pump();
+
+    final pushed = observer.pushedRoute;
+    expect(pushed, isNotNull);
+    expect(pushed!.transitionDuration, Duration.zero);
+    expect(find.text('Nothing playing — pick a track from the Library.'),
+        findsOneWidget);
+  });
 }
 
 class _RecordingNavigatorObserver extends NavigatorObserver {
@@ -174,5 +217,16 @@ class _RecordingNavigatorObserver extends NavigatorObserver {
   @override
   void didPush(Route route, Route? previousRoute) {
     if (previousRoute != null) pushedCount++;
+  }
+}
+
+class _RecordingRouteObserver extends NavigatorObserver {
+  TransitionRoute? pushedRoute;
+
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    if (previousRoute != null && route is TransitionRoute) {
+      pushedRoute = route;
+    }
   }
 }

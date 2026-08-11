@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/ui/now_playing_page.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Persistent bar shown above the bottom nav whenever a track is loaded.
@@ -59,6 +60,29 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
     super.dispose();
   }
 
+  /// A plain `MaterialPageRoute` normally — its default transition (and
+  /// the `now_playing_art` Hero flight riding along with it, since a
+  /// Hero's flight duration is driven by the enclosing route's own
+  /// transition) is left untouched. Only when reduce motion is on does
+  /// this swap to a zero-duration route instead: [OmnisMotion.durationFor]
+  /// returning [Duration.zero] is this app's established "jump straight
+  /// to the end state" signal for every other animation, and a Hero
+  /// flight follows the same rule — a zero-duration transition makes the
+  /// shared-element animation resolve instantly rather than at 1/10th
+  /// speed the way just shortening it would.
+  Route<void> _nowPlayingRoute() {
+    final duration = OmnisMotion.durationFor(OmnisMotion.medium);
+    if (duration == Duration.zero) {
+      return PageRouteBuilder<void>(
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const NowPlayingPage(),
+      );
+    }
+    return MaterialPageRoute<void>(builder: (_) => const NowPlayingPage());
+  }
+
   @override
   Widget build(BuildContext context) {
     final track = widget.engine.currentTrack;
@@ -76,9 +100,7 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const NowPlayingPage()),
-        ),
+        onTap: () => Navigator.of(context).push(_nowPlayingRoute()),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
