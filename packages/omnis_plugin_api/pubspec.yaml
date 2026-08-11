@@ -16,6 +16,12 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.2.3
+  # Backs PluginStorage's secure tier (setSecureString/getSecureString) —
+  # real OS-level secure storage (Android Keystore-backed
+  # EncryptedSharedPreferences, iOS/macOS Keychain) for actual credentials
+  # like OAuth tokens, as opposed to shared_preferences above, which is
+  # plain, unencrypted storage meant for ordinary UI/plugin state.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:

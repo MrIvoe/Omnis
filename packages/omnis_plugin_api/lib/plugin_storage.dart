@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Scoped, namespaced persistence for a single plugin.
@@ -32,6 +33,16 @@ class PluginStorage {
 
   SharedPreferences? _prefs;
 
+  /// Real OS-level secure storage (Android Keystore-backed
+  /// EncryptedSharedPreferences, iOS/macOS Keychain) — see
+  /// [setSecureString]/[getSecureString] below. A `const` instance is
+  /// fine to share across every [PluginStorage]: `FlutterSecureStorage`
+  /// itself holds no state, it's a thin wrapper that always delegates to
+  /// the single global `FlutterSecureStoragePlatform.instance`, and every
+  /// key here is already namespaced per plugin via [_k] the same as the
+  /// plain-storage keys are.
+  static const FlutterSecureStorage _secure = FlutterSecureStorage();
+
   String get _prefix => 'plugin_${pluginId}_';
 
   String _k(String key) => '$_prefix$key';
@@ -63,17 +74,48 @@ class PluginStorage {
   Future<void> setStringList(String key, List<String> value) async =>
       (await _ready()).setStringList(_k(key), value);
 
+  /// A separate, encrypted tier for actual credentials (OAuth access/
+  /// refresh tokens today) — as opposed to every getter/setter above,
+  /// which is plain, unencrypted `SharedPreferences`, fine for ordinary
+  /// UI/plugin state but not for something worth protecting if the
+  /// device is compromised or backed up insecurely.
+  ///
+  /// Unlike the plain getters, there's no synchronous companion: real
+  /// secure storage (Android Keystore, iOS/macOS Keychain) has no
+  /// synchronous read API to warm a cache from the way
+  /// `SharedPreferences.getInstance()` does. A caller that needs a
+  /// synchronous "is there a credential" check (e.g. driving a
+  /// Settings-page `build()`) is expected to keep its own small
+  /// in-memory cache warmed once during its plugin's `initialize()` hook
+  /// — see `SpotifyAuth.isConnected`/`warmUp()` for the pattern.
+  Future<void> setSecureString(String key, String value) =>
+      _secure.write(key: _k(key), value: value);
+
+  Future<String?> getSecureString(String key) => _secure.read(key: _k(key));
+
+  /// Removes a single secure key.
+  Future<void> removeSecure(String key) => _secure.delete(key: _k(key));
+
   /// Removes a single key.
   Future<void> remove(String key) async => (await _ready()).remove(_k(key));
 
-  /// Removes every key this plugin has written, without touching any
-  /// other plugin's keys or `AppSettings`' own — safe thanks to the
-  /// `plugin_<id>_` prefix every key above is written under.
+  /// Removes every key this plugin has written — both plain and secure —
+  /// without touching any other plugin's keys or `AppSettings`' own,
+  /// safe thanks to the `plugin_<id>_` prefix every key above is written
+  /// under.
   Future<void> clear() async {
     final prefs = await _ready();
     final keys = prefs.getKeys().where((k) => k.startsWith(_prefix)).toList();
     for (final key in keys) {
       await prefs.remove(key);
+    }
+
+    final secureKeys = (await _secure.readAll())
+        .keys
+        .where((k) => k.startsWith(_prefix))
+        .toList();
+    for (final key in secureKeys) {
+      await _secure.delete(key: key);
     }
   }
 }
