@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/l10n/generated/app_localizations.dart';
 import 'package:omnis/ui/home_page.dart';
+import 'package:omnis/ui/onboarding/onboarding_page.dart';
 import 'package:omnis/ui/theme/declarative/declarative_omnis_theme.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
@@ -109,7 +111,17 @@ class _OmnisAppState extends State<OmnisApp> {
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: settings.themeMode,
-      home: const HomePage(),
+      // Scaffolding only for now (English-only, see l10n.yaml/lib/l10n/) —
+      // wired through the new Settings search and onboarding screens,
+      // not retrofitted across the rest of the app yet.
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      // Evaluated once, at cold start — correct for a "gate the very
+      // first launch" flow. OnboardingPage's own finish action navigates
+      // onward via pushReplacement rather than relying on this rebuilding.
+      home: settings.hasCompletedOnboarding
+          ? const HomePage()
+          : const OnboardingPage(),
       debugShowCheckedModeBanner: false,
     );
   }

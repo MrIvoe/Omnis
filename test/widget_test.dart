@@ -81,6 +81,17 @@ void main() {
     }
   });
 
+  test('hasCompletedOnboarding defaults to false and persists once set',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.hasCompletedOnboarding, isFalse);
+
+    AppSettings.instance.hasCompletedOnboarding = true;
+    expect(AppSettings.instance.hasCompletedOnboarding, isTrue);
+  });
+
   test('AppSettings persists theme presets and builds themed surfaces',
       () async {
     SharedPreferences.setMockInitialValues({});

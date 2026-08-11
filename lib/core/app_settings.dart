@@ -41,6 +41,7 @@ class AppSettings extends ChangeNotifier {
 
   static final AppSettings instance = AppSettings._();
 
+  static const _hasCompletedOnboardingKey = 'app_has_completed_onboarding';
   static const _themeModeKey = 'app_theme_mode';
   static const _themePresetKey = 'app_theme_preset';
   static const _accentColorKey = 'app_accent_color';
@@ -99,6 +100,21 @@ class AppSettings extends ChangeNotifier {
     // stale one and state leaked between tests.
     _prefs = await SharedPreferences.getInstance();
     _initialized = true;
+    notifyListeners();
+  }
+
+  /// Whether the first-run onboarding flow (`lib/ui/onboarding/`) has been
+  /// completed. Gates `MaterialApp.home` in `main.dart` — `false` shows
+  /// `OnboardingPage` instead of `HomePage` on the very next launch after
+  /// a fresh install, and never again once the user finishes (or skips)
+  /// it.
+  bool get hasCompletedOnboarding {
+    return _prefs?.getBool(_hasCompletedOnboardingKey) ?? false;
+  }
+
+  set hasCompletedOnboarding(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_hasCompletedOnboardingKey, value);
     notifyListeners();
   }
 
