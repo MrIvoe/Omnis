@@ -175,6 +175,7 @@ class _PluginsPageState extends State<PluginsPage> {
   Future<bool> _confirmPermissions(PluginManifest manifest) async {
     if (!mounted) return false;
     final permissions = manifest.permissions;
+    final provides = manifest.provides;
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -212,6 +213,29 @@ class _PluginsPageState extends State<PluginsPage> {
                 style: TextStyle(fontStyle: FontStyle.italic),
               ),
             ],
+            // Separate from "wants access to" above — this is the reverse
+            // direction: what the plugin will *supply* to the app (other
+            // plugins/pages reading it through the normal service lookup),
+            // not what it needs from it.
+            if (provides.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(
+                'This plugin will provide:',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              for (final capability in provides)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.upload_outlined, size: 18),
+                      const SizedBox(width: 6),
+                      Text(_providesLabel(capability)),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
         actions: [
@@ -243,6 +267,18 @@ class _PluginsPageState extends State<PluginsPage> {
         return 'Events — can be notified when things like favorites change';
       default:
         return perm;
+    }
+  }
+
+  String _providesLabel(String capability) {
+    switch (capability) {
+      case 'lyrics':
+        return 'Lyrics — supplies lyric text for your tracks';
+      case 'queue_builder':
+        return 'Queue suggestions — can build a playback queue for a mood '
+            'or preset';
+      default:
+        return capability;
     }
   }
 

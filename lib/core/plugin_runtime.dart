@@ -188,25 +188,23 @@ class PluginRuntime {
   ///
   /// Throws [PluginRuntimeException] on interpreter failure, which callers
   /// wrap inside their sandbox.
-  /// Wrap a plain Dart value into a dart_eval `$Value` for `executeLib`.
-  static dynamic _wrap(dynamic value) {
-    if (value is $Value) return value;
-    if (value is String) return $String(value);
-    if (value is int) return $int(value);
-    if (value is double) return $double(value);
-    if (value is bool) return $bool(value);
-    if (value is Map) return $Map.wrap(value);
-    if (value is List) return $List.wrap(value);
-    return value;
-  }
-
   dynamic callHook(String hook, List<dynamic> args) {
     if (!hasHook(hook)) return null;
     try {
       final raw = _runtime.executeLib(
         'package:default/main.dart',
         hook,
-        args.map(_wrap).toList(),
+        // recursive: true is required, not cosmetic — a shallow wrap
+        // (the previous hand-rolled _wrap helper, `$Map.wrap(value)`
+        // with no recursion) leaves a Map argument's own nested Lists/
+        // Maps as plain unwrapped Dart values. That's fine for a value
+        // never touched by guest bytecode, but a guest hook that indexes
+        // into its own argument (`track['title']`) got `null` back
+        // instead of the real value — confirmed by hitting exactly that
+        // failure with the old shallow wrap before switching to
+        // Runtime.wrap(recursive: true), the same fix already applied to
+        // the return-value side of this method below.
+        args.map((v) => _runtime.wrap(v, recursive: true)).toList(),
       );
       // dart_eval 0.8.3's own $Future.$reified only shallow-unwraps its
       // settled value (`.$value`, not `.$reified`) — confirmed directly:

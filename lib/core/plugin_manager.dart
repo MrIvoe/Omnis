@@ -11,9 +11,11 @@ import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
+import 'package:omnis/core/plugin_sandbox_services.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/plugin_api/events.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:path/path.dart' as p;
 
 /// A plugin that is loaded at runtime.
@@ -58,6 +60,20 @@ class ManagedPlugin {
   /// Directory on disk (for external plugins).
   final String? directory;
 
+  /// This plugin's manifest-declared `provides:` capabilities (e.g.
+  /// `lyrics`, `queue_builder`) — empty for a bundled plugin, which
+  /// registers its own services directly rather than through this
+  /// manifest-gated path. See `PluginManager._registerProvidedServices`.
+  final List<String> provides;
+
+  /// Service adapters registered on this plugin's behalf, keyed by the
+  /// interface `Type` they're registered under — see
+  /// `PluginManager._registerProvidedServices`. Kept so
+  /// `_unregisterProvidedServices` can unregister the *exact* instance
+  /// that was registered (`ServiceRegistry.unregister` matches by
+  /// identity/`==`, and these adapters don't override `==`).
+  final Map<Type, Object> providedServices = {};
+
   ManagedPlugin({
     required this.id,
     required this.name,
@@ -70,6 +86,7 @@ class ManagedPlugin {
     this.enabled = true,
     this.initialized = false,
     this.directory,
+    this.provides = const [],
   });
 
   bool get isExternal => external != null;
@@ -292,7 +309,64 @@ class PluginManager {
         return null;
       },
     );
+    _registerProvidedServices(plugin);
   }
+
+  /// Registers a host-authored adapter (see `plugin_sandbox_services.dart`)
+  /// under `services` for each of [ManagedPlugin.provides] that this
+  /// external plugin both declared in its manifest *and* actually
+  /// implements the matching guest hook(s) for — a manifest claiming a
+  /// capability the plugin's own code never implements is silently
+  /// skipped, never registered half-broken. A fixed `switch` over the
+  /// small, reviewed `providedCapabilityHooks` catalog — never a
+  /// dynamically-resolved `Type`, since `ServiceRegistry` keys off the
+  /// compile-time generic and a sandboxed guest cannot produce one.
+  /// No-op for a bundled plugin (registers its own services directly) or
+  /// a plugin with nothing in `provides`.
+  void _registerProvidedServices(ManagedPlugin plugin) {
+    final runtime = plugin.external;
+    if (runtime == null || plugin.provides.isEmpty) return;
+    for (final capability in plugin.provides) {
+      if (plugin.providedServices.containsKey(_capabilityType(capability))) {
+        continue; // already registered (e.g. re-enabling)
+      }
+      final requiredHooks = providedCapabilityHooks[capability];
+      if (requiredHooks == null) continue;
+      if (!requiredHooks.every(runtime.hasHook)) continue;
+      switch (capability) {
+        case 'lyrics':
+          final adapter = SandboxedLyricsProvider(runtime);
+          services.register(ILyricsProvider, adapter);
+          plugin.providedServices[ILyricsProvider] = adapter;
+        case 'queue_builder':
+          final queries = SandboxedQueueBuilder.fetchSupportedQueries(runtime);
+          final adapter = SandboxedQueueBuilder(runtime, queries);
+          services.register(IQueueBuilder, adapter);
+          plugin.providedServices[IQueueBuilder] = adapter;
+      }
+    }
+  }
+
+  /// The reverse of [_registerProvidedServices] — unregisters every
+  /// adapter this plugin has registered, using the exact instances kept in
+  /// [ManagedPlugin.providedServices] (`ServiceRegistry.unregister` matches
+  /// by identity, and these adapters don't override `==`).
+  void _unregisterProvidedServices(ManagedPlugin plugin) {
+    for (final entry in plugin.providedServices.entries) {
+      services.unregister(entry.key, entry.value);
+    }
+    plugin.providedServices.clear();
+  }
+
+  /// Maps a `provides:` catalog key to the interface `Type` it registers
+  /// under — used only to check "did we already register this one" in
+  /// [_registerProvidedServices]; the actual registration above is a
+  /// fixed `switch`, not driven by this lookup.
+  Type? _capabilityType(String capability) => switch (capability) {
+        'lyrics' => ILyricsProvider,
+        'queue_builder' => IQueueBuilder,
+        _ => null,
+      };
 
   /// Install a plugin from a GitHub (or direct .zip) URL.
   ///
@@ -381,6 +455,7 @@ class PluginManager {
       external: runtime,
       directory: directory,
       enabled: !AppSettings.instance.isPluginDisabled(id),
+      provides: manifest.provides,
     );
 
     _plugins.removeWhere((p) => p.id == managed.id);
@@ -609,6 +684,7 @@ class PluginManager {
         return null;
       },
     );
+    _unregisterProvidedServices(plugin);
     _emit();
   }
 
@@ -639,6 +715,7 @@ class PluginManager {
           return null;
         },
       );
+      _registerProvidedServices(plugin);
     }
     _emit();
   }

@@ -8,8 +8,10 @@ import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/plugin_runtime.dart';
+import 'package:omnis/core/plugin_sandbox_services.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/plugin_api/events.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -348,6 +350,32 @@ permissions:
 
     test('returns null for invalid yaml', () {
       expect(PluginManifest.parse('not: [valid', sourceUrl: 'x'), isNull);
+    });
+
+    test('parses "provides" alongside "permissions" — the reverse '
+        'direction, what the plugin supplies rather than what it needs',
+        () {
+      const yaml = '''
+id: lyrics_provider
+name: Lyrics Provider
+version: 1.2.0
+author: Jane
+provides:
+  - lyrics
+''';
+      final m = PluginManifest.parse(yaml, sourceUrl: 'x');
+      expect(m!.provides, ['lyrics']);
+    });
+
+    test('"provides" defaults to empty when not declared', () {
+      const yaml = '''
+id: plain
+name: Plain
+version: 1.0.0
+author: Jane
+''';
+      final m = PluginManifest.parse(yaml, sourceUrl: 'x');
+      expect(m!.provides, isEmpty);
     });
   });
 
@@ -840,6 +868,278 @@ dynamic onTrackStart(dynamic track) => null;
         () => manager.callPluginHook('recorder', 'uiSlot', []),
         returnsNormally,
       );
+    });
+  });
+
+  group('SandboxedLyricsProvider / SandboxedQueueBuilder (unit)', () {
+    test('SandboxedLyricsProvider forwards to provideLyrics and returns '
+        'its result', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'lyrics_test',
+    'name': 'Lyrics Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) {
+  return 'La la la at \$positionMs ms for \${track['title']}';
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedLyricsProvider(runtime);
+      final track = BaseTrack(
+        id: 't1',
+        title: 'Sunrise',
+        artists: const ['Ava'],
+        album: 'Morning',
+        duration: 180,
+        type: TrackType.local,
+      );
+
+      final lyric =
+          provider.currentLyricFor(track, const Duration(seconds: 5));
+
+      expect(lyric, 'La la la at 5000 ms for Sunrise');
+    });
+
+    test('SandboxedLyricsProvider degrades to the safe default when the '
+        'hook throws or returns something unexpected', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'lyrics_broken',
+    'name': 'Lyrics Broken',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) {
+  throw 'boom';
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedLyricsProvider(runtime);
+      final track = BaseTrack(
+        id: 't1',
+        title: 'Sunrise',
+        artists: const ['Ava'],
+        album: 'Morning',
+        duration: 180,
+        type: TrackType.local,
+      );
+
+      final lyric = provider.currentLyricFor(track, Duration.zero);
+
+      expect(lyric, 'No lyrics added for this track yet.');
+    });
+
+    test('SandboxedQueueBuilder forwards to buildQueueFor and parses the '
+        'returned tracks', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'queue_test',
+    'name': 'Queue Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['queueBuilderSupportedQueries', 'buildQueueFor'],
+  };
+}
+
+dynamic queueBuilderSupportedQueries() {
+  return ['chill'];
+}
+
+dynamic buildQueueFor(dynamic tracks, dynamic query) {
+  return [
+    {
+      'id': 'picked',
+      'title': 'Picked Track',
+      'artists': ['Someone'],
+      'album': 'An Album',
+      'duration': 100,
+      'genres': [],
+      'type': 'local',
+    }
+  ];
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final queries = SandboxedQueueBuilder.fetchSupportedQueries(runtime);
+      final builder = SandboxedQueueBuilder(runtime, queries);
+
+      expect(builder.supportedQueries, ['chill']);
+      final result = builder.buildQueueFor(const [], 'chill');
+      expect(result, hasLength(1));
+      expect(result.single.title, 'Picked Track');
+    });
+
+    test('SandboxedQueueBuilder degrades to an empty list on failure', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'queue_broken',
+    'name': 'Queue Broken',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['queueBuilderSupportedQueries', 'buildQueueFor'],
+  };
+}
+
+dynamic queueBuilderSupportedQueries() {
+  return ['chill'];
+}
+
+dynamic buildQueueFor(dynamic tracks, dynamic query) {
+  throw 'boom';
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final builder = SandboxedQueueBuilder(runtime, const ['chill']);
+
+      expect(builder.buildQueueFor(const [], 'chill'), isEmpty);
+    });
+  });
+
+  group('PluginManager — service registration (provides:)', () {
+    test(
+        'a plugin declaring provides: [lyrics] with a matching hook is '
+        'registered under ILyricsProvider', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_provides_lyrics_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final pluginDir = Directory(p.join(tempRoot, 'lyrics_plugin'));
+      await pluginDir.create(recursive: true);
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: lyrics_plugin
+name: Lyrics Plugin
+description: Test
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+provides:
+  - lyrics
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'lyrics_plugin',
+    'name': 'Lyrics Plugin',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) => 'sandboxed lyric';
+''');
+
+      final manager = PluginManager();
+      await manager.installFromPath(pluginDir.path, sourceUrl: 'local');
+
+      final provider = manager.services.get<ILyricsProvider>();
+      expect(provider, isNotNull);
+      final track = BaseTrack(
+        id: 't1',
+        title: 'X',
+        artists: const ['Y'],
+        album: 'Z',
+        duration: 100,
+        type: TrackType.local,
+      );
+      expect(provider!.currentLyricFor(track, Duration.zero),
+          'sandboxed lyric');
+    });
+
+    test(
+        'a manifest claiming provides: [lyrics] without the matching hook '
+        'is never registered', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_provides_no_hook_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final pluginDir = Directory(p.join(tempRoot, 'fake_lyrics_plugin'));
+      await pluginDir.create(recursive: true);
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: fake_lyrics_plugin
+name: Fake Lyrics Plugin
+description: Test
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+provides:
+  - lyrics
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'fake_lyrics_plugin',
+    'name': 'Fake Lyrics Plugin',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [],
+  };
+}
+''');
+
+      final manager = PluginManager();
+      await manager.installFromPath(pluginDir.path, sourceUrl: 'local');
+
+      expect(manager.services.get<ILyricsProvider>(), isNull);
+    });
+
+    test('disabling the plugin unregisters its service; re-enabling '
+        're-registers it', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_provides_disable_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final pluginDir = Directory(p.join(tempRoot, 'toggle_lyrics_plugin'));
+      await pluginDir.create(recursive: true);
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: toggle_lyrics_plugin
+name: Toggle Lyrics Plugin
+description: Test
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+provides:
+  - lyrics
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'toggle_lyrics_plugin',
+    'name': 'Toggle Lyrics Plugin',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) => 'x';
+''');
+
+      final manager = PluginManager();
+      final managed =
+          await manager.installFromPath(pluginDir.path, sourceUrl: 'local');
+      expect(manager.services.get<ILyricsProvider>(), isNotNull);
+
+      await manager.disablePlugin(managed);
+      expect(manager.services.get<ILyricsProvider>(), isNull);
+
+      await manager.enablePlugin(managed);
+      expect(manager.services.get<ILyricsProvider>(), isNotNull);
     });
   });
 
