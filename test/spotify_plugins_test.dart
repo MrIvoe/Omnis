@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -23,8 +25,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// instance would leave this one's cache still pointing at nothing, and
 /// its synchronous getters would keep returning `null` regardless of
 /// what's actually persisted underneath.
+///
+/// Writes the access token through [PluginStorage.setSecureString], not
+/// the plain `setString` — access/refresh tokens live in secure storage
+/// now (see `SpotifyAuth`), and `TestFlutterSecureStoragePlatform` (set
+/// up in `setUp` below) is what actually backs it in this test process.
 Future<void> _seedValidToken(PluginStorage storage) async {
-  await storage.setString('spotify_access_token', 'valid-token');
+  await storage.setSecureString('spotify_access_token', 'valid-token');
   await storage.setInt(
     'spotify_expires_at_ms',
     DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch,
@@ -36,6 +43,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
     await AppSettings.instance.initialize();
   });
 
@@ -56,8 +64,8 @@ void main() {
     test('validAccessToken refreshes an expired token using the refresh '
         'token', () async {
       final storage = PluginStorage('spotify_refresh_test');
-      await storage.setString('spotify_access_token', 'expired-token');
-      await storage.setString('spotify_refresh_token', 'a-refresh-token');
+      await storage.setSecureString('spotify_access_token', 'expired-token');
+      await storage.setSecureString('spotify_refresh_token', 'a-refresh-token');
       await storage.setInt(
         'spotify_expires_at_ms',
         DateTime.now().subtract(const Duration(minutes: 5)).millisecondsSinceEpoch,
@@ -84,8 +92,8 @@ void main() {
 
     test('validAccessToken returns null when refresh fails', () async {
       final storage = PluginStorage('spotify_refresh_fail_test');
-      await storage.setString('spotify_access_token', 'expired-token');
-      await storage.setString('spotify_refresh_token', 'a-refresh-token');
+      await storage.setSecureString('spotify_access_token', 'expired-token');
+      await storage.setSecureString('spotify_refresh_token', 'a-refresh-token');
       await storage.setInt(
         'spotify_expires_at_ms',
         DateTime.now().subtract(const Duration(minutes: 5)).millisecondsSinceEpoch,
@@ -102,6 +110,10 @@ void main() {
       final storage = PluginStorage('spotify_disconnect_test');
       await _seedValidToken(storage);
       final auth = SpotifyAuth(storage: storage);
+      // isConnected is backed by an in-memory cache (secure storage has
+      // no synchronous read API) — warmUp() populates it the same way
+      // the owning plugin's initialize() hook would in the real app.
+      await auth.warmUp();
       expect(auth.isConnected, isTrue);
 
       await auth.disconnect();

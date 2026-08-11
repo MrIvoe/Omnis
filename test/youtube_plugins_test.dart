@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -11,9 +13,10 @@ import 'package:omnis_plugins/youtube_playback_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Seeds [storage] with a valid (non-expired) access token — see the
-/// identical helper/rationale in `test/spotify_plugins_test.dart`.
+/// identical helper/rationale in `test/spotify_plugins_test.dart`, including
+/// why this writes through [PluginStorage.setSecureString].
 Future<void> _seedValidToken(PluginStorage storage) async {
-  await storage.setString('youtube_access_token', 'valid-token');
+  await storage.setSecureString('youtube_access_token', 'valid-token');
   await storage.setInt(
     'youtube_expires_at_ms',
     DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch,
@@ -25,6 +28,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStoragePlatform.instance = TestFlutterSecureStoragePlatform({});
     await AppSettings.instance.initialize();
   });
 
@@ -45,8 +49,8 @@ void main() {
     test('validAccessToken refreshes an expired token, including the '
         'client secret when one is set', () async {
       final storage = PluginStorage('yt_refresh_test');
-      await storage.setString('youtube_access_token', 'expired-token');
-      await storage.setString('youtube_refresh_token', 'a-refresh-token');
+      await storage.setSecureString('youtube_access_token', 'expired-token');
+      await storage.setSecureString('youtube_refresh_token', 'a-refresh-token');
       await storage.setString('youtube_client_secret', 'shh');
       await storage.setInt(
         'youtube_expires_at_ms',
@@ -70,6 +74,10 @@ void main() {
       final storage = PluginStorage('yt_disconnect_test');
       await _seedValidToken(storage);
       final auth = YoutubeAuth(storage: storage);
+      // isConnected is backed by an in-memory cache (secure storage has
+      // no synchronous read API) — warmUp() populates it the same way
+      // the owning plugin's initialize() hook would in the real app.
+      await auth.warmUp();
       expect(auth.isConnected, isTrue);
 
       await auth.disconnect();
