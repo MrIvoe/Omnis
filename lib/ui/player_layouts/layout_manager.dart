@@ -59,6 +59,13 @@ class LayoutManager {
     return _validateAndPersist(text, sourceUrl: 'file://$path');
   }
 
+  /// Install a layout built in-memory rather than fetched/read from
+  /// somewhere — [LayoutEditorPage]'s save action, which already has the
+  /// manifest text (JSON, a valid YAML subset, same as any imported file)
+  /// without needing a round trip through a temp file.
+  Future<DeclarativeLayout> installFromText(String text) =>
+      _validateAndPersist(text, sourceUrl: 'local');
+
   /// Parses and validates [text] — including the reserved-id check —
   /// *before* anything is written to disk, so a rejected import never
   /// gets a chance to persist and resurrect itself on the next

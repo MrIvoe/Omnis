@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/player_layouts/declarative/declarative_layout.dart';
+import 'package:omnis/ui/player_layouts/declarative/layout_editor_page.dart';
 import 'package:omnis/ui/player_layouts/declarative/layout_installer.dart'
     show LayoutInstallException;
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
@@ -709,6 +710,20 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final saved = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      LayoutEditorPage(layoutManager: widget.layoutManager),
+                ),
+              );
+              if (saved == true && mounted) setState(() {});
+            },
+            icon: const Icon(Icons.design_services_outlined),
+            label: const Text('Design your own layout'),
           ),
           const SizedBox(height: 8),
           _LayoutImportCard(layoutManager: widget.layoutManager),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -390,6 +391,44 @@ root: { type: component, component: album_art }
       await manager.loadInstalled();
       expect(manager.resolve('does_not_exist').id,
           manager.allLayouts.first.id);
+    });
+
+    test(
+        'installFromText installs and persists an in-memory manifest — '
+        'the LayoutEditorPage save path, no file/URL round trip', () async {
+      final manager = LayoutManager();
+      await manager.loadInstalled();
+
+      final layout = await manager.installFromText(jsonEncode({
+        'id': 'custom_from_text',
+        'name': 'From Text',
+        'root': {'type': 'component', 'component': 'album_art'},
+      }));
+
+      expect(layout.id, 'custom_from_text');
+      expect(manager.allLayouts.any((l) => l.id == 'custom_from_text'), isTrue);
+
+      // Persisted for real, not just held in memory — a fresh manager
+      // loading from the same (faked) disk location sees it too.
+      final reloaded = LayoutManager();
+      await reloaded.loadInstalled();
+      expect(reloaded.allLayouts.any((l) => l.id == 'custom_from_text'),
+          isTrue);
+    });
+
+    test('installFromText rejects an id colliding with a bundled layout',
+        () async {
+      final manager = LayoutManager();
+      await manager.loadInstalled();
+
+      expect(
+        () => manager.installFromText(jsonEncode({
+          'id': 'standard',
+          'name': 'Fake Standard',
+          'root': {'type': 'component', 'component': 'album_art'},
+        })),
+        throwsA(isA<LayoutInstallException>()),
+      );
     });
   });
 }
