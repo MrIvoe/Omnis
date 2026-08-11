@@ -10,6 +10,7 @@ import 'package:omnis/ui/settings/controls_settings_page.dart';
 import 'package:omnis/ui/settings/library_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
+import 'package:omnis/ui/theme/omnis_spacing.dart';
 
 /// Settings home page: a category list, each entry pushing its own
 /// focused page, rather than one long scroll mixing theme, playback,
@@ -343,7 +344,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: OmnisSpacing.paddingMd,
         children: [
           TextField(
             controller: _searchController,
@@ -363,11 +364,12 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             onChanged: (value) => setState(() => _query = value),
           ),
-          const SizedBox(height: 12),
+          OmnisSpacing.gapMd,
           if (query.isNotEmpty) ...[
             if (matches.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                    vertical: OmnisSpacing.md),
                 child: Text('No settings match "$_query".',
                     style: Theme.of(context).textTheme.bodyMedium),
               )
@@ -416,7 +418,7 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: 'Install, enable/disable, and configure every plugin',
               onTap: () => _openPlugins(context),
             ),
-            const SizedBox(height: 8),
+            OmnisSpacing.gapSm,
             // A generic extension point: any plugin can inject something
             // directly onto the Settings home page via
             // `uiSlot('settings_page')`, without needing its own dedicated
