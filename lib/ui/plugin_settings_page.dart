@@ -96,8 +96,16 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                 child: CircularProgressIndicator(),
               ),
             )
-          else if (renderPluginSlotItem(context, _content)
-              case final Widget rendered)
+          else if (renderPluginSlotItem(
+                context,
+                _content,
+                // Already knows exactly which plugin this is — no
+                // '_pluginId' stamping/extraction needed the way the
+                // aggregate PluginSlotView requires.
+                onAction: (hook, args) => widget.pluginManager
+                    .callPluginHook(widget.plugin.id, hook, args)
+                    .then((_) => _load()),
+              ) case final Widget rendered)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),

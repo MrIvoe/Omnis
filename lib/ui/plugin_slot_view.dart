@@ -14,10 +14,16 @@ import 'package:omnis/core/plugin_manager.dart';
 /// Two kinds of payload are supported:
 ///  - A real Flutter [Widget] — only possible from bundled (in-process)
 ///    plugins, since they're compiled Dart and can import `package:flutter`.
-///  - A declarative `Map` describing a tiny widget (`{'type': 'text', ...}`
-///    or `{'type': 'badge', 'text': ..., 'icon': ...}`) — the only way a
+///  - A declarative `Map` describing a tiny widget (`{'type': 'text', ...}`,
+///    `{'type': 'badge', 'text': ..., 'icon': ...}`, `{'type': 'toggle',
+///    'text': ..., 'value': bool, 'hook': 'hookName'}`, or `{'type':
+///    'button', 'text': ..., 'hook': 'hookName'}`) — the only way a
 ///    *downloaded* plugin can contribute UI, since dart_eval plugins are
-///    sandboxed away from `dart:ui` and cannot construct real widgets.
+///    sandboxed away from `dart:ui` and cannot construct real widgets. The
+///    two interactive types call back into the plugin's own declared
+///    `hook` function via [PluginManager.callPluginHook] rather than
+///    returning a real Dart closure, which a sandboxed plugin cannot
+///    produce.
 ///
 /// Anything else (a bare String, null, garbage from a misbehaving plugin)
 /// is rendered defensively or skipped — a malformed value must never crash
@@ -78,7 +84,14 @@ class _PluginSlotViewState extends State<PluginSlotView> {
   Widget build(BuildContext context) {
     if (_items.isEmpty) return const SizedBox.shrink();
     final rendered = _items
-        .map((item) => renderPluginSlotItem(context, item))
+        .map((item) => renderPluginSlotItem(
+              context,
+              item,
+              onAction: item is Map && item['_pluginId'] is String
+                  ? (hook, args) => widget.pluginManager
+                      .callPluginHook(item['_pluginId'] as String, hook, args)
+                  : null,
+            ))
         .whereType<Widget>()
         .toList();
     if (rendered.isEmpty) return const SizedBox.shrink();
@@ -88,24 +101,45 @@ class _PluginSlotViewState extends State<PluginSlotView> {
   }
 }
 
+/// Fires an interactive `uiSlot` item's declared `hook` — e.g. a toggle's
+/// `onChanged` or a button's `onPressed` — with whatever arguments that
+/// interaction implies (a toggle passes its new value).
+typedef PluginSlotAction = void Function(String hook, List<dynamic> args);
+
 /// Renders a single `uiSlot()` payload: a real [Widget] (bundled plugins),
-/// a declarative `Map` (`{'type': 'text'|'badge', 'text': ..., 'icon': ...}`,
-/// the only way a `dart_eval`-sandboxed downloaded plugin can contribute
-/// UI), or a bare non-empty [String]. Anything else — `null`, garbage from
-/// a misbehaving plugin — renders as nothing rather than crashing the page
-/// it's injected into.
+/// a declarative `Map` (`{'type': 'text'|'badge'|'toggle'|'button', 'text':
+/// ..., ...}` — the only way a `dart_eval`-sandboxed downloaded plugin can
+/// contribute UI), or a bare non-empty [String]. Anything else — `null`,
+/// garbage from a misbehaving plugin — renders as nothing rather than
+/// crashing the page it's injected into.
+///
+/// [onAction], when the item is an interactive type (`toggle`/`button`),
+/// is called with the item's declared `hook` name and any arguments that
+/// interaction implies. `null` for a non-interactive item, a real [Widget]
+/// (which wires its own real closures directly, having no need for a
+/// hook-name indirection), or a caller that doesn't know which plugin
+/// produced this item (e.g. before `_pluginId` stamping existed).
 ///
 /// Shared by [PluginSlotView] (aggregates every enabled plugin at one
 /// location) and `PluginSettingsPage` (renders exactly one plugin's
-/// `'plugin_settings'` payload).
-Widget? renderPluginSlotItem(BuildContext context, dynamic item) {
+/// `'plugin_settings'` payload, which already knows its own plugin and
+/// wires [onAction] directly rather than through `_pluginId`).
+Widget? renderPluginSlotItem(
+  BuildContext context,
+  dynamic item, {
+  PluginSlotAction? onAction,
+}) {
   if (item is Widget) return item;
-  if (item is Map) return _renderDeclarative(context, item);
+  if (item is Map) return _renderDeclarative(context, item, onAction);
   if (item is String && item.trim().isNotEmpty) return Text(item);
   return null;
 }
 
-Widget? _renderDeclarative(BuildContext context, Map item) {
+Widget? _renderDeclarative(
+  BuildContext context,
+  Map item,
+  PluginSlotAction? onAction,
+) {
   final type = item['type']?.toString();
   final text = item['text']?.toString();
   if (text == null || text.isEmpty) return null;
@@ -139,6 +173,29 @@ Widget? _renderDeclarative(BuildContext context, Map item) {
             ),
           ],
         ),
+      );
+    case 'toggle':
+      final hook = item['hook']?.toString();
+      final value = item['value'];
+      if (hook == null || value is! bool) return null;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text, style: theme.textTheme.bodyMedium),
+          Switch(
+            value: value,
+            onChanged: onAction == null
+                ? null
+                : (newValue) => onAction(hook, [newValue]),
+          ),
+        ],
+      );
+    case 'button':
+      final hook = item['hook']?.toString();
+      if (hook == null) return null;
+      return OutlinedButton(
+        onPressed: onAction == null ? null : () => onAction(hook, const []),
+        child: Text(text),
       );
     default:
       return null;

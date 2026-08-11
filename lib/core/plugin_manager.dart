@@ -511,10 +511,54 @@ class PluginManager {
             locationID,
           ]),
         );
-        if (result != null) widgets.add(result);
+        if (result != null) {
+          // Stamped after the call returns, unconditionally — so a
+          // guest-supplied '_pluginId' key (if any) is always clobbered
+          // with the real one and can't be spoofed. Lets an interactive
+          // item (a 'button'/'toggle' PluginSlotView renders) call back
+          // into exactly the plugin that produced it, since the aggregate
+          // dispatch here otherwise loses that association.
+          if (result is Map) result['_pluginId'] = plugin.id;
+          widgets.add(result);
+        }
       }
     }
     return widgets;
+  }
+
+  /// Calls a named hook on exactly one external plugin by id, for a
+  /// `uiSlot` item's interactive callback (a 'button'/'toggle' payload's
+  /// `hook` field) — the guest-defined-function-by-name mechanism
+  /// [PluginRuntime.callHook] already provides. A no-op for a bundled
+  /// (in-process) plugin: those already return real [Widget]s from
+  /// `uiSlot()` with their own real closures wired directly, so there is
+  /// no hook-name indirection to call back into — Dart has no dynamic
+  /// dispatch mechanism to invoke an arbitrary named method on a compiled
+  /// [MusicPlugin] the way `callHook` does for interpreted guest code.
+  ///
+  /// Emits on [changes] once the call completes (success or sandboxed
+  /// failure alike) so every live `PluginSlotView` re-fetches and reflects
+  /// whatever the hook changed — coarse-grained, matching how `changes`
+  /// already fires on install/enable/disable rather than tracking
+  /// per-widget invalidation.
+  Future<void> callPluginHook(
+    String pluginId,
+    String hook,
+    List<dynamic> args,
+  ) async {
+    final plugin = byId(pluginId);
+    final external = plugin?.external;
+    if (external == null || !external.hasHook(hook)) return;
+    await _sandbox.run(
+      pluginId: plugin!.id,
+      pluginName: plugin.name,
+      hook: hook,
+      operation: () async {
+        external.callHook(hook, args);
+        return null;
+      },
+    );
+    _emit();
   }
 
   /// Calls [MusicPlugin.uiSlot] for exactly one [plugin], not the

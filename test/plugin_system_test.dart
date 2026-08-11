@@ -26,6 +26,48 @@ class _FakePathProvider extends PathProviderPlatform
   Future<String?> getApplicationDocumentsPath() async => tempDir;
 }
 
+/// Writes a minimal external-plugin directory (manifest + plugin.dart) for
+/// [PluginManager.installFromPath], with a caller-supplied set of declared
+/// permissions/hooks and hook-body source. Shared by every group below that
+/// needs a real, installed external plugin rather than a bare
+/// `PluginRuntime.create` call.
+Future<Directory> writeEventPlugin(
+  String tempRoot,
+  String dirName, {
+  required List<String> permissions,
+  required List<String> hooks,
+  required String extraSource,
+}) async {
+  final pluginDir = Directory(p.join(tempRoot, dirName));
+  await pluginDir.create(recursive: true);
+  final permYaml = permissions.map((perm) => '  - $perm').join('\n');
+  await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: $dirName
+name: $dirName
+description: Test plugin
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+permissions:
+$permYaml
+''');
+  final hooksLiteral = hooks.map((h) => "'$h'").join(', ');
+  await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': '$dirName',
+    'name': '$dirName',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [$hooksLiteral],
+  };
+}
+
+$extraSource
+''');
+  return pluginDir;
+}
+
 /// A plugin that always throws — used to prove the sandbox isolates crashes.
 class _CrashingPlugin extends MusicPlugin {
   @override
@@ -556,43 +598,6 @@ dynamic onTrackStart(dynamic track) {
   });
 
   group('PluginManager event forwarding', () {
-    Future<Directory> writeEventPlugin(
-      String tempRoot,
-      String dirName, {
-      required List<String> permissions,
-      required List<String> hooks,
-      required String extraSource,
-    }) async {
-      final pluginDir = Directory(p.join(tempRoot, dirName));
-      await pluginDir.create(recursive: true);
-      final permYaml = permissions.map((perm) => '  - $perm').join('\n');
-      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
-id: $dirName
-name: $dirName
-description: Test plugin
-version: 1.0.0
-author: Test
-entrypoint: plugin.dart
-permissions:
-$permYaml
-''');
-      final hooksLiteral = hooks.map((h) => "'$h'").join(', ');
-      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
-dynamic createPlugin(dynamic api) {
-  return {
-    'id': '$dirName',
-    'name': '$dirName',
-    'version': '1.0.0',
-    'author': 'Test',
-    'hooks': [$hooksLiteral],
-  };
-}
-
-$extraSource
-''');
-      return pluginDir;
-    }
-
     test(
         'emitting FavoriteChangedEvent forwards to an enabled external '
         'plugin that declared "events" permission and an onPluginEvent hook',
@@ -708,6 +713,131 @@ dynamic onTrackStart(dynamic track) => null;
 
       expect(
         () => manager.events.emit(const FavoriteChangedEvent('t', true)),
+        returnsNormally,
+      );
+    });
+  });
+
+  group('PluginManager.uiSlot — plugin id stamping', () {
+    test(
+        'an external plugin\'s Map result gets stamped with its real '
+        '_pluginId, clobbering any guest-supplied value', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_stamp_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'spoofer',
+        permissions: const [],
+        hooks: const ['uiSlot'],
+        extraSource: '''
+dynamic uiSlot(dynamic locationId) {
+  return {'type': 'button', 'text': 'Go', 'hook': 'h', '_pluginId': 'not-me'};
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      final items = await manager.uiSlot('now_playing_overlay');
+
+      expect(items, hasLength(1));
+      expect((items.single as Map)['_pluginId'], 'spoofer');
+    });
+  });
+
+  group('PluginManager.callPluginHook', () {
+    test('invokes the declared hook on the named external plugin and '
+        'emits on changes', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_call_hook_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'toggle_plugin',
+        permissions: const [],
+        hooks: const ['onToggle', 'getState'],
+        extraSource: '''
+class StateHolder {
+  dynamic value = false;
+}
+
+final state = StateHolder();
+
+dynamic onToggle(dynamic newValue) {
+  state.value = newValue;
+  return null;
+}
+
+dynamic getState(dynamic arg) {
+  return state.value;
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      var changeEvents = 0;
+      manager.changes.listen((_) => changeEvents++);
+
+      await manager.callPluginHook('toggle_plugin', 'onToggle', [true]);
+      // StreamController delivers to listeners via a microtask, not
+      // synchronously on .add() — give it a turn before checking.
+      await Future.delayed(Duration.zero);
+
+      final plugin = manager.byId('toggle_plugin')!;
+      expect(plugin.external!.callHook('getState', [null]), isTrue);
+      // At least one — install itself also emits, this just proves
+      // callPluginHook adds its own on top rather than being silent.
+      expect(changeEvents, greaterThan(0));
+    });
+
+    test('a hook the plugin never declared is silently skipped, not an '
+        'error', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_call_hook_missing_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'no_such_hook',
+        permissions: const [],
+        hooks: const ['onTrackStart'],
+        extraSource: '''
+dynamic onTrackStart(dynamic track) => null;
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(
+        () => manager.callPluginHook('no_such_hook', 'notDeclared', []),
+        returnsNormally,
+      );
+    });
+
+    test('an unknown plugin id is silently skipped, not an error', () async {
+      final manager = PluginManager();
+      expect(
+        () => manager.callPluginHook('does_not_exist', 'anyHook', []),
+        returnsNormally,
+      );
+    });
+
+    test('is a no-op for a bundled (in-process) plugin — no dynamic '
+        'dispatch mechanism exists for one', () async {
+      final manager = PluginManager();
+      manager.register(_RecordingPlugin());
+
+      expect(
+        () => manager.callPluginHook('recorder', 'uiSlot', []),
         returnsNormally,
       );
     });
