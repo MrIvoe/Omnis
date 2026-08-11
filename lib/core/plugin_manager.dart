@@ -10,8 +10,10 @@ import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_runtime.dart';
+import 'package:omnis/core/plugin_sandbox_bridge.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/service_registry.dart';
+import 'package:omnis/plugin_api/events.dart';
 import 'package:path/path.dart' as p;
 
 /// A plugin that is loaded at runtime.
@@ -108,7 +110,46 @@ class PluginManager {
 
   PluginManager({PluginInstaller? installer, PluginSandbox? sandbox})
       : _installer = installer ?? PluginInstaller(),
-        _sandbox = sandbox ?? PluginSandbox();
+        _sandbox = sandbox ?? PluginSandbox() {
+    _wireEventForwarding();
+  }
+
+  /// Forwards well-known app events to every enabled external plugin that
+  /// declared `events` permission and a matching `onPluginEvent` hook —
+  /// the "subscribe-only" half of the sandbox bridge (a plugin *emitting*
+  /// its own events stays out of scope for now). Deliberately a small,
+  /// explicit mapping of one known event type to one JSON shape, not a
+  /// generic serializer — `FavoriteChangedEvent` is the only event type
+  /// this app emits today (see its own doc comment in
+  /// `packages/omnis_plugin_api/lib/events.dart`); adding a second means
+  /// one more `on<T>().listen(...)` here, not new plumbing.
+  void _wireEventForwarding() {
+    events.on<FavoriteChangedEvent>().listen((event) {
+      _forwardEvent({
+        'type': 'FavoriteChanged',
+        'trackId': event.trackId,
+        'isFavorite': event.isFavorite,
+      });
+    });
+  }
+
+  void _forwardEvent(Map<String, dynamic> json) {
+    for (final plugin in _enabled()) {
+      final external = plugin.external;
+      if (external == null) continue;
+      if (!external.hasPermission(EventsPermission.domain)) continue;
+      if (!external.hasHook('onPluginEvent')) continue;
+      _sandbox.run(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'onPluginEvent',
+        operation: () async {
+          external.callHook('onPluginEvent', [json]);
+          return null;
+        },
+      );
+    }
+  }
 
   /// The sandbox used for all plugin calls.
   PluginSandbox get sandbox => _sandbox;

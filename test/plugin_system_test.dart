@@ -2,13 +2,29 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/plugin_api/events.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+
+/// Fake path_provider, same pattern as library_repository_test.dart — needed
+/// because the sandbox-bridged loadLibraryTracks() reads through the real
+/// LibraryRepository singleton.
+class _FakePathProvider extends PathProviderPlatform
+    with MockPlatformInterfaceMixin {
+  final String tempDir;
+  _FakePathProvider(this.tempDir);
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => tempDir;
+}
 
 /// A plugin that always throws — used to prove the sandbox isolates crashes.
 class _CrashingPlugin extends MusicPlugin {
@@ -372,6 +388,106 @@ dynamic onLibraryScan(dynamic file) {
       final elsewhere = runtime.callHook('uiSlot', ['settings_page']);
       expect(elsewhere, isNull);
     });
+
+    group('sandbox bridge — loadLibraryTracks', () {
+      late String tempDir;
+
+      setUp(() async {
+        tempDir =
+            (await Directory.systemTemp.createTemp('omnis_plugin_bridge_test'))
+                .path;
+        PathProviderPlatform.instance = _FakePathProvider(tempDir);
+        LibraryRepository.instance.resetForTesting();
+      });
+
+      test(
+          'a plugin granted "library" permission can await '
+          'loadLibraryTracks() and see real, current library data',
+          () async {
+        await LibraryRepository.instance.save([
+          BaseTrack(
+            id: 't1',
+            title: 'Sunrise',
+            artists: const ['Ava'],
+            album: 'Morning',
+            duration: 180,
+            type: TrackType.local,
+          ),
+        ]);
+
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'library_reader',
+    'name': 'Library Reader',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  final tracks = await loadLibraryTracks();
+  return {'count': tracks.length, 'firstTitle': tracks[0]['title']};
+}
+''';
+        final runtime = PluginRuntime.create(source, declaredPermissions: [
+          'library',
+        ]);
+
+        final raw = runtime.callHook('onTrackStart', [
+          {'title': 'irrelevant'}
+        ]);
+        final result = raw is Future ? await raw : raw;
+
+        expect(result, isA<Map>());
+        expect((result as Map)['count'], 1);
+        expect(result['firstTitle'], 'Sunrise');
+      });
+
+      test(
+          'a plugin that did NOT declare "library" permission fails loud '
+          "(callHook throws) rather than getting silent empty data — the "
+          'permission check happens synchronously inside the bridge call, '
+          'before the guest\'s own try/catch around the await ever runs, so '
+          'this surfaces through PluginManager\'s existing sandbox/health '
+          'path exactly like any other hook failure, not as a value the '
+          'plugin can quietly swallow', () async {
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'no_permission_reader',
+    'name': 'No Permission Reader',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  final tracks = await loadLibraryTracks();
+  return tracks.length;
+}
+''';
+        // No declaredPermissions at all — 'library' not granted.
+        final runtime = PluginRuntime.create(source);
+
+        expect(
+          () => runtime.callHook('onTrackStart', [
+            {'title': 'irrelevant'}
+          ]),
+          throwsA(isA<PluginRuntimeException>().having(
+            (e) => e.message,
+            'message',
+            contains("Permission 'omnis.library' denied"),
+          )),
+        );
+      });
+    });
   });
 
   group('In-process plugins (MusicPlugin)', () {
@@ -436,6 +552,164 @@ dynamic onTrackStart(dynamic track) {
       expect(managed.id, 'hello_world');
       expect(manager.plugins.any((plugin) => plugin.id == 'hello_world'), isTrue);
       expect(manager.plugins.singleWhere((plugin) => plugin.id == 'hello_world').enabled, isTrue);
+    });
+  });
+
+  group('PluginManager event forwarding', () {
+    Future<Directory> writeEventPlugin(
+      String tempRoot,
+      String dirName, {
+      required List<String> permissions,
+      required List<String> hooks,
+      required String extraSource,
+    }) async {
+      final pluginDir = Directory(p.join(tempRoot, dirName));
+      await pluginDir.create(recursive: true);
+      final permYaml = permissions.map((perm) => '  - $perm').join('\n');
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: $dirName
+name: $dirName
+description: Test plugin
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+permissions:
+$permYaml
+''');
+      final hooksLiteral = hooks.map((h) => "'$h'").join(', ');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': '$dirName',
+    'name': '$dirName',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [$hooksLiteral],
+  };
+}
+
+$extraSource
+''');
+      return pluginDir;
+    }
+
+    test(
+        'emitting FavoriteChangedEvent forwards to an enabled external '
+        'plugin that declared "events" permission and an onPluginEvent hook',
+        () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_event_fwd_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'event_listener',
+        permissions: ['events'],
+        hooks: ['onPluginEvent', 'getLastEvent'],
+        extraSource: '''
+class EventHolder {
+  dynamic value;
+}
+
+final holder = EventHolder();
+
+dynamic onPluginEvent(dynamic event) {
+  holder.value = event;
+  return null;
+}
+
+dynamic getLastEvent(dynamic arg) {
+  return holder.value;
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      manager.events.emit(const FavoriteChangedEvent('track42', true));
+      // The listener fires asynchronously off the event stream — this is
+      // a plain test() (no fake-async binding), so a real microtask/event
+      // turn is enough to let it actually run.
+      await Future.delayed(Duration.zero);
+
+      final plugin = manager.byId('event_listener')!;
+      final received = plugin.external!.callHook('getLastEvent', [null]);
+
+      expect(received, isA<Map>());
+      expect((received as Map)['type'], 'FavoriteChanged');
+      expect(received['trackId'], 'track42');
+      expect(received['isFavorite'], isTrue);
+    });
+
+    test(
+        'a plugin that did NOT declare "events" permission never receives '
+        'forwarded events, even with a matching onPluginEvent hook',
+        () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_event_fwd_denied_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'no_events_permission',
+        permissions: [],
+        hooks: ['onPluginEvent', 'getLastEvent'],
+        extraSource: '''
+class EventHolder {
+  dynamic value;
+}
+
+final holder = EventHolder();
+
+dynamic onPluginEvent(dynamic event) {
+  holder.value = event;
+  return null;
+}
+
+dynamic getLastEvent(dynamic arg) {
+  return holder.value;
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      manager.events.emit(const FavoriteChangedEvent('track42', true));
+      await Future.delayed(Duration.zero);
+
+      final plugin = manager.byId('no_events_permission')!;
+      final received = plugin.external!.callHook('getLastEvent', [null]);
+
+      expect(received, isNull);
+    });
+
+    test('a plugin without an onPluginEvent hook is skipped without error',
+        () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_event_fwd_no_hook_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'no_hook',
+        permissions: ['events'],
+        hooks: ['onTrackStart'],
+        extraSource: '''
+dynamic onTrackStart(dynamic track) => null;
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(
+        () => manager.events.emit(const FavoriteChangedEvent('t', true)),
+        returnsNormally,
+      );
     });
   });
 

@@ -2,6 +2,7 @@ import 'package:dart_eval/dart_eval.dart';
 import 'package:dart_eval/dart_eval_bridge.dart';
 import 'package:dart_eval/dart_eval_security.dart';
 import 'package:dart_eval/stdlib/core.dart';
+import 'package:omnis/core/plugin_sandbox_bridge.dart';
 
 /// Compilation/interpreter error thrown by [PluginRuntime].
 class PluginRuntimeException implements Exception {
@@ -49,6 +50,14 @@ class PluginRuntimeException implements Exception {
 ///
 /// Hooks receive JSON-serialisable values (Maps, Strings, numbers), so a
 /// crashing plugin can never take the music player down.
+///
+/// ## Bridged host capabilities
+///
+/// A plugin that declared `library` in its manifest's `permissions:` can
+/// also `import 'package:omnis/sandbox_api.dart';` and call real host
+/// functions — see [PluginSandboxBridge] for what's bridged and why this
+/// (not a JSON-only side channel) is the mechanism for giving a downloaded
+/// plugin real capability without making it a bundled, compiled-in plugin.
 class PluginRuntime {
   final Map<String, dynamic> _metadata;
   final Runtime _runtime;
@@ -80,15 +89,30 @@ class PluginRuntime {
     Map<dynamic, dynamic> metadata;
     Runtime runtime;
     try {
-      final program = Compiler().compile({
+      // Bridge declarations must be registered on both the Compiler (so
+      // guest code importing package:omnis/sandbox_api.dart type-checks)
+      // and the Runtime (so the call actually resolves) — and both before
+      // the first executeLib call below, since Runtime.registerBridgeFunc
+      // is applied lazily on first setup, which executeLib triggers.
+      // Registering only one side leaves the guest call throwing
+      // UnimplementedError instead of doing anything.
+      const bridge = PluginSandboxBridge();
+      final compiler = Compiler()..addPlugin(bridge);
+      final program = compiler.compile({
         'default': {'main.dart': pluginSource},
       });
-      runtime = Runtime.ofProgram(program);
+      runtime = Runtime.ofProgram(program)..addPlugin(bridge);
       final wantsStorage = declaredPermissions.any(
         (p) => p == 'storage' || p == 'filesystem',
       );
       if (wantsStorage) {
         runtime.grant(FilesystemPermission.any);
+      }
+      if (declaredPermissions.contains('library')) {
+        runtime.grant(const LibraryReadPermission());
+      }
+      if (declaredPermissions.contains('events')) {
+        runtime.grant(const EventsPermission());
       }
       runtime.args = [
         <String, dynamic>{'omnisVersion': '0.1.0'},
@@ -148,6 +172,14 @@ class PluginRuntime {
   /// metadata Map returned by `createPlugin`.
   bool hasHook(String hook) => _declaredHooks.contains(hook);
 
+  /// Whether this plugin was granted the bridge permission domain
+  /// [domain] (e.g. [EventsPermission.domain]) — checked through
+  /// dart_eval's own `Runtime.checkPermission`, the same bookkeeping
+  /// [PluginSandboxBridge]'s bridged functions already assert against
+  /// themselves, rather than a separate list `PluginManager` would need
+  /// to keep in sync.
+  bool hasPermission(String domain) => _runtime.checkPermission(domain);
+
   /// Invoke a hook with JSON-serialisable arguments.
   ///
   /// The hook is called as a top-level function via `executeLib`. Returns
@@ -176,6 +208,16 @@ class PluginRuntime {
         hook,
         args.map(_wrap).toList(),
       );
+      // dart_eval 0.8.3's own $Future.$reified only shallow-unwraps its
+      // settled value (`.$value`, not `.$reified`) — confirmed directly:
+      // an async guest hook that awaits a bridged Future and returns a
+      // Map/List built from the result comes back with $Value-wrapped
+      // keys/entries still inside what otherwise looks like a plain Dart
+      // collection. Deep-reify explicitly for the Future case instead of
+      // trusting $Future's own (shallow) $reified.
+      if (raw is $Future) {
+        return raw.$value.then((v) => v is $Value ? v.$reified : v);
+      }
       return raw is $Value ? raw.$reified : raw;
     } catch (e) {
       throw PluginRuntimeException('Hook "$hook" failed: $e');

@@ -236,6 +236,11 @@ class _PluginsPageState extends State<PluginsPage> {
         return 'Storage — can read/write files on this device';
       case 'network':
         return 'Network — can make internet requests';
+      case 'library':
+        return 'Library — can read your music library (titles, artists, '
+            'albums — read-only)';
+      case 'events':
+        return 'Events — can be notified when things like favorites change';
       default:
         return perm;
     }
