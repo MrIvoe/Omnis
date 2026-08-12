@@ -197,6 +197,22 @@ void main() {
       expect(manager.plugins.every((p) => p.isBundled), isTrue);
     });
 
+    test(
+        'exactly QueuePresetPlugin and EqualizerPlugin declare '
+        'requiresSequentialInit — this must stay in sync with '
+        "bundled_plugins.dart's documented ordering dependencies "
+        '(QueuePresetPlugin after SmartPlaylistPlugin, EqualizerPlugin '
+        'after BluetoothPlaybackPlugin); a third dependency added without '
+        'updating both that doc and this test fails here rather than '
+        'silently racing under initializeAll()\'s parallel round', () {
+      final flagged = createBundledPlugins()
+          .where((p) => p.requiresSequentialInit)
+          .map((p) => p.id)
+          .toSet();
+
+      expect(flagged, {'queue_presets', 'equalizer'});
+    });
+
     test('bundled<T>() returns the registered shared instance', () {
       final manager = PluginManager();
       for (final plugin in createBundledPlugins()) {
