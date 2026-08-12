@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest something Omnis doesn't do yet.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Per [CONTRIBUTING.md](../../CONTRIBUTING.md), a concrete use case
+        is more useful here than a description of the feature — it's
+        easier to evaluate "I want to do X" against the plugin-vs-core
+        design rule than an abstract ask. Most new features belong in a
+        plugin, not the Core — see
+        [docs/PLUGIN_GUIDE.md](../../docs/PLUGIN_GUIDE.md).
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What are you trying to do?
+      description: The concrete goal, not the mechanism you imagine solving it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How might it work?
+      description: Optional — a sketch of the UI/behavior, if you have one in mind.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where do you think this belongs?
+      options:
+        - A new plugin (feature is self-contained, doesn't need Core changes)
+        - A change to an existing plugin
+        - Core (touches lib/core/ — AudioEngine, PluginManager, ServiceRegistry, etc.)
+        - A new Now Playing layout or theme
+        - Not sure
+    validations:
+      required: false

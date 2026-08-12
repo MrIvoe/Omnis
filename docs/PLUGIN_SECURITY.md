@@ -50,14 +50,17 @@ sounding impressive:
   per-directory scoping at this layer — a plugin that declares `storage`
   gets broad file access, not read-only-to-its-own-folder. Only grant it
   to a plugin you'd trust with your filesystem generally.
-- **No CPU/time budget on a hook call.** `PluginSandbox` isolates
-  *faults* (a thrown exception), not *resource use* — a plugin with an
-  infinite loop or heavy synchronous work inside a hook can still hang
-  the calling thread. There's no timeout wrapper around hook invocations
-  today. If you're auditing this project for a security-sensitive
-  deployment, this is the gap to know about; a `Future.timeout()` around
-  `PluginRuntime.callHook` would close it and is a reasonable thing to
-  contribute.
+- **A time budget on a hook call, with a real limit to what it can catch.**
+  `PluginSandbox.run` now wraps every hook call in `Future.timeout()` (8s
+  default, configurable per call, see `PluginSandbox.defaultTimeout`) —
+  a plugin with a stuck `await` (a hung network call, a Future that never
+  completes) is abandoned and logged to Plugin Health instead of hanging
+  the caller forever. This does **not** cover a plugin with a tight
+  synchronous loop that never yields — `dart_eval` runs on the same
+  thread as the call, so non-async CPU-bound guest code can still block
+  that thread until it returns on its own. Closing that remaining gap
+  would need the interpreter moved to its own isolate; worth doing before
+  a security-sensitive deployment, and a reasonable thing to contribute.
 - **`network` permission isn't currently enforced separately from
   everything else** — dart_eval's sandbox restricts imports, not
   outbound socket calls a plugin might reach through whatever's

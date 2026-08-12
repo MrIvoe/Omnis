@@ -146,6 +146,7 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
                     ),
                     IconButton(
                       icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
+                      tooltip: _playing ? 'Pause' : 'Play',
                       onPressed: () =>
                           _playing ? widget.engine.pause() : widget.engine.play(),
                     ),

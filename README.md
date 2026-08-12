@@ -78,6 +78,15 @@ lives in a plugin.
   testing, building release artifacts, signing.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the ground rules and workflow
   for contributing.
+- **[docs/PLUGIN_SECURITY.md](docs/PLUGIN_SECURITY.md)** — what a
+  downloaded plugin can and can't do, written for anyone deciding
+  whether to paste a GitHub URL in.
+- **[docs/COMMUNITY_PLUGINS.md](docs/COMMUNITY_PLUGINS.md)** — a
+  curated list of downloadable community plugins, and how to get yours
+  added.
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** /
+  **[SECURITY.md](SECURITY.md)** — community conduct expectations and
+  how to privately report a vulnerability.
 
 ## Quick start
 

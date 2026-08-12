@@ -367,6 +367,48 @@ void main() {
       sandbox.clearHealth();
       expect(sandbox.healthRecords, isEmpty);
     });
+
+    test('abandons a hook that runs past its timeout and records it',
+        () async {
+      final sandbox = PluginSandbox();
+      final result = await sandbox.run<int>(
+        pluginId: 'slow',
+        pluginName: 'Slow Plugin',
+        hook: 'onLibraryScan',
+        timeout: const Duration(milliseconds: 20),
+        operation: () async {
+          // Simulates a plugin hook stuck on a long/blocked await — e.g. a
+          // hung network call — rather than a thrown exception.
+          await Future.delayed(const Duration(seconds: 5));
+          return 1;
+        },
+      );
+
+      expect(result, isNull);
+      expect(sandbox.healthRecords, hasLength(1));
+      final rec = sandbox.healthRecords.first;
+      expect(rec.pluginId, 'slow');
+      expect(rec.hook, 'onLibraryScan');
+      expect(rec.message, contains('Timed out'));
+      expect(rec.reason, contains('too long'));
+    });
+
+    test('timeout: null waits indefinitely instead of using the default',
+        () async {
+      final sandbox = PluginSandbox();
+      final value = await sandbox.run<int>(
+        pluginId: 'patient',
+        pluginName: 'Patient',
+        hook: 'h',
+        timeout: null,
+        operation: () async {
+          await Future.delayed(const Duration(milliseconds: 50));
+          return 7;
+        },
+      );
+      expect(value, 7);
+      expect(sandbox.healthRecords, isEmpty);
+    });
   });
 
   group('PluginManifest', () {

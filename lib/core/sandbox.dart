@@ -1,3 +1,5 @@
+import 'dart:async';
+
 /// A single health record for a plugin failure.
 ///
 /// These records power the "Plugin Health" dashboard. When a plugin
@@ -44,6 +46,17 @@ class PluginSandbox {
   final List<PluginHealthRecord> _records = [];
   final List<void Function(List<PluginHealthRecord>)> _healthListeners = [];
 
+  /// Default wall-clock budget for a single hook call. Closes the "no
+  /// CPU/time budget on a hook call" gap called out in
+  /// docs/PLUGIN_SECURITY.md: [PluginSandbox] previously isolated only
+  /// *faults* (a thrown exception), not *resource use* — a plugin with an
+  /// infinite loop or a stuck await inside a hook could hang the caller
+  /// indefinitely. This only bounds the `await` on [run]'s Future; it can't
+  /// preempt synchronous, non-yielding work inside the interpreter (that
+  /// would require a separate isolate), but it does guarantee callers of
+  /// [run] always get control back within [defaultTimeout].
+  static const Duration defaultTimeout = Duration(seconds: 8);
+
   /// Snapshot of all plugin health records.
   List<PluginHealthRecord> get healthRecords => List.unmodifiable(_records);
 
@@ -65,14 +78,33 @@ class PluginSandbox {
   ///
   /// [pluginId], [pluginName] and [hook] are used to tag any failure.
   /// Returns the operation result, or `null` on failure.
+  ///
+  /// [timeout] bounds how long [run] will wait for [operation] before
+  /// abandoning it and recording a timeout failure — defaults to
+  /// [defaultTimeout]. Pass `null` to wait indefinitely (not recommended
+  /// for anything driven by untrusted downloaded plugin code).
   Future<T?> run<T>({
     required String pluginId,
     required String pluginName,
     required String hook,
     required Future<T?> Function() operation,
+    Duration? timeout = defaultTimeout,
   }) async {
     try {
-      return await operation();
+      final future = operation();
+      return timeout == null ? await future : await future.timeout(timeout);
+    } on TimeoutException {
+      _record(PluginHealthRecord(
+        pluginId: pluginId,
+        pluginName: pluginName,
+        hook: hook,
+        message: 'Timed out after ${timeout!.inMilliseconds}ms',
+        stackTrace: null,
+        timestamp: DateTime.now(),
+        reason: 'Plugin "$pluginName" took too long in $hook and was '
+            'abandoned so the music keeps playing.',
+      ));
+      return null;
     } catch (e, st) {
       _record(PluginHealthRecord(
         pluginId: pluginId,

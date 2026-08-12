@@ -1,0 +1,59 @@
+name: Submit a plugin to the community list
+description: Built a plugin? Get it listed in docs/COMMUNITY_PLUGINS.md so others can find it.
+title: "[Plugin] "
+labels: ["community-plugin"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is for **listing** your plugin, not installing it — Omnis
+        installs directly from a GitHub URL (Plugins tab → paste URL).
+        Read [docs/PLUGIN_SECURITY.md](../../docs/PLUGIN_SECURITY.md)
+        before submitting: listing here is a pointer, not a security
+        review or an endorsement, and reviewers will check that your
+        manifest's declared permissions actually match what the code
+        does before merging the listing.
+
+  - type: input
+    id: name
+    attributes:
+      label: Plugin name
+    validations:
+      required: true
+
+  - type: input
+    id: repo-url
+    attributes:
+      label: Repository URL
+      placeholder: "https://github.com/you/your-plugin"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What does it do?
+      description: One or two sentences, the same length you'd want to read in a list of a dozen plugins.
+    validations:
+      required: true
+
+  - type: input
+    id: permissions
+    attributes:
+      label: Declared permissions
+      description: Copy the `permissions:` list from your omnis_plugin.yaml.
+      placeholder: "e.g. none / storage / network / library, events"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: The repo has a valid `omnis_plugin.yaml` at its root (or points to one)
+          required: true
+        - label: I've tested it against a current build of Omnis
+          required: true
+        - label: The declared permissions match what the plugin actually does
+          required: true
