@@ -56,6 +56,17 @@ abstract class MusicPlugin {
   /// page — a bulk, one-tap version of switching each one off by hand.
   bool get usesNetwork => false;
 
+  /// Whether this plugin's [initialize] depends on another bundled
+  /// plugin having already initialized first — e.g. reading a
+  /// `ServiceRegistry` interface that other plugin registers inside its
+  /// own `initialize()`. Defaults `false`; most plugins have no such
+  /// dependency and stay eligible for parallel initialization. Only
+  /// override this for a plugin with a *documented* dependency (see
+  /// `Omnis-Plugins`' `bundled_plugins.dart` for the two known today) —
+  /// don't set it defensively "just in case," since every plugin flagged
+  /// `true` delays app launch by moving it out of the parallel round.
+  bool get requiresSequentialInit => false;
+
   /// Called once when the plugin is registered and enabled.
   Future<void> initialize();
 

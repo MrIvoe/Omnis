@@ -86,6 +86,46 @@ class _StoragePlugin extends MusicPlugin {
   Future<void> dispose() async {}
 }
 
+/// Records its id into a shared [log] when [initialize] finishes — used to
+/// assert `initializeAll()`'s two-round parallel/sequential ordering
+/// without depending on real bundled plugins or their real dependencies.
+class _RoundPlugin extends MusicPlugin {
+  final String _id;
+  final List<String> log;
+  final Future<void> Function()? delay;
+  @override
+  final bool requiresSequentialInit;
+
+  _RoundPlugin(this._id, this.log,
+      {this.delay, this.requiresSequentialInit = false});
+
+  @override
+  String get id => _id;
+  @override
+  String get name => _id;
+  @override
+  String get description => 'test';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+
+  @override
+  Future<void> initialize() async {
+    if (delay != null) await delay!();
+    log.add(_id);
+  }
+
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {}
+}
+
 /// Minimal plugin used to assert lifecycle ordering.
 class _LifecyclePlugin extends MusicPlugin {
   final List<String> calls = [];
@@ -340,6 +380,67 @@ void main() {
       second.register(ScrobblePlugin());
 
       expect(second.byId('scrobble')!.enabled, isFalse);
+    });
+  });
+
+  group('initializeAll() parallel rounds', () {
+    test(
+        'round-one plugins initialize concurrently, not one at a time — '
+        'total elapsed time is close to the slowest single delay, not '
+        'their sum', () async {
+      final manager = PluginManager();
+      final log = <String>[];
+      const delay = Duration(milliseconds: 60);
+      manager.register(_RoundPlugin('a', log,
+          delay: () => Future.delayed(delay)));
+      manager.register(_RoundPlugin('b', log,
+          delay: () => Future.delayed(delay)));
+      manager.register(_RoundPlugin('c', log,
+          delay: () => Future.delayed(delay)));
+
+      final stopwatch = Stopwatch()..start();
+      await manager.initializeAll();
+      stopwatch.stop();
+
+      expect(log.toSet(), {'a', 'b', 'c'});
+      // Sequential would take ~180ms; parallel takes ~60ms. 150ms is a
+      // generous cutoff that only a sequential run could cross.
+      expect(stopwatch.elapsedMilliseconds, lessThan(150));
+    });
+
+    test(
+        'a requiresSequentialInit plugin only initializes after every '
+        'round-one plugin has finished — even one that is slower than it '
+        'and registered after it', () async {
+      final manager = PluginManager();
+      final log = <String>[];
+      // 'slow' finishes after 'fast' despite being registered first, and
+      // after 'sequential' too if round two ran in parallel with round
+      // one instead of strictly after it — proving the wait is on "every
+      // round-one plugin," not "the previous list entry."
+      manager.register(_RoundPlugin('slow', log,
+          delay: () => Future.delayed(const Duration(milliseconds: 40))));
+      manager.register(_RoundPlugin('fast', log));
+      manager.register(
+          _RoundPlugin('sequential', log, requiresSequentialInit: true));
+
+      await manager.initializeAll();
+
+      expect(log.indexOf('sequential'), greaterThan(log.indexOf('slow')));
+      expect(log.indexOf('sequential'), greaterThan(log.indexOf('fast')));
+    });
+
+    test('a disabled plugin is skipped entirely by both rounds, same as '
+        'the previous sequential initializeAll()', () async {
+      final manager = PluginManager();
+      final log = <String>[];
+      final plugin = _RoundPlugin('disabled', log);
+      manager.register(plugin);
+      await manager.disablePlugin(manager.byId('disabled')!);
+
+      await manager.initializeAll();
+
+      expect(log, isEmpty);
     });
   });
 

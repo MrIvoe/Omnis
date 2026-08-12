@@ -282,9 +282,35 @@ class PluginManager {
   ///
   /// Each plugin is initialised inside the sandbox: a failing plugin does
   /// not block the rest.
+  ///
+  /// Runs in two batched rounds rather than one plugin at a time: most
+  /// plugins have no dependency on another plugin's initialization, so
+  /// round one runs every enabled plugin whose
+  /// [MusicPlugin.requiresSequentialInit] isn't `true` concurrently via
+  /// `Future.wait`. Round two — plugins that documented a dependency (see
+  /// `Omnis-Plugins`' `bundled_plugins.dart`) — only starts once round one
+  /// has fully completed, so any `ServiceRegistry` registration a round-two
+  /// plugin reads is guaranteed to already be there, without round two
+  /// needing to know *which* round-one plugin provided it. External
+  /// (sandboxed) plugins have no equivalent flag today, so they're treated
+  /// as round-one-eligible by default, same as any unflagged bundled
+  /// plugin. `initPlugin` itself is unchanged — this only reorders/
+  /// parallelizes the calls into it.
   Future<void> initializeAll() async {
-    for (final plugin in List<ManagedPlugin>.from(_plugins)) {
-      if (plugin.enabled) await initPlugin(plugin);
+    final stopwatch = kDebugMode ? (Stopwatch()..start()) : null;
+    final enabled =
+        List<ManagedPlugin>.from(_plugins).where((p) => p.enabled).toList();
+    final roundOne =
+        enabled.where((p) => p.inProcess?.requiresSequentialInit != true);
+    final roundTwo =
+        enabled.where((p) => p.inProcess?.requiresSequentialInit == true);
+
+    await Future.wait(roundOne.map(initPlugin));
+    await Future.wait(roundTwo.map(initPlugin));
+
+    if (stopwatch != null) {
+      debugPrint('Omnis: initializeAll() initialised ${enabled.length} '
+          'plugin(s) in ${stopwatch.elapsedMilliseconds}ms');
     }
   }
 
