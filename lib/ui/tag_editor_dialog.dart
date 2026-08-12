@@ -308,6 +308,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.remove_circle_outline),
+                                  tooltip: 'Remove field',
                                   onPressed: () => _removeExtraRow(i),
                                 ),
                               ],

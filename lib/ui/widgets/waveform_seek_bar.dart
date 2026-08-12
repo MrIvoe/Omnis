@@ -30,6 +30,19 @@ class WaveformSeekBar extends StatelessWidget {
     return duration * ratio;
   }
 
+  static String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '${d.inMinutes}:$s';
+  }
+
+  /// A fixed step for the screen-reader adjust gesture (swipe up/down on a
+  /// `Semantics(slider: true)` node) — matches the seek bar's own
+  /// tap/drag-to-seek contract in spirit, just quantized to something a
+  /// single adjust gesture can reach precisely.
+  static const _adjustStep = Duration(seconds: 10);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -40,25 +53,51 @@ class WaveformSeekBar extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => onSeek(_durationAtDx(d.localPosition.dx, width)),
-          onTapUp: (_) => onSeekEnd?.call(),
-          onHorizontalDragStart: (d) =>
-              onSeek(_durationAtDx(d.localPosition.dx, width)),
-          onHorizontalDragUpdate: (d) =>
-              onSeek(_durationAtDx(d.localPosition.dx, width)),
-          onHorizontalDragEnd: (_) => onSeekEnd?.call(),
-          child: SizedBox(
-            height: height,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _WaveformPainter(
-                waveform: waveform,
-                progress: progress,
-                playedColor: theme.colorScheme.primary,
-                unplayedColor:
-                    theme.colorScheme.onSurface.withValues(alpha: 0.24),
+        final increasedPosition =
+            (position + _adjustStep) > duration ? duration : position + _adjustStep;
+        final decreasedPosition = (position - _adjustStep) < Duration.zero
+            ? Duration.zero
+            : position - _adjustStep;
+        return Semantics(
+          slider: true,
+          label: 'Seek',
+          value: '${_formatDuration(position)} of ${_formatDuration(duration)}',
+          // A SemanticsNode with an increase/decrease action must set
+          // increasedValue/decreasedValue alongside value (both or
+          // neither) — omitting these trips a framework assertion during
+          // semantics compilation, not a silently-ignored no-op.
+          increasedValue:
+              '${_formatDuration(increasedPosition)} of ${_formatDuration(duration)}',
+          decreasedValue:
+              '${_formatDuration(decreasedPosition)} of ${_formatDuration(duration)}',
+          onIncrease: () {
+            onSeek(increasedPosition);
+            onSeekEnd?.call();
+          },
+          onDecrease: () {
+            onSeek(decreasedPosition);
+            onSeekEnd?.call();
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => onSeek(_durationAtDx(d.localPosition.dx, width)),
+            onTapUp: (_) => onSeekEnd?.call(),
+            onHorizontalDragStart: (d) =>
+                onSeek(_durationAtDx(d.localPosition.dx, width)),
+            onHorizontalDragUpdate: (d) =>
+                onSeek(_durationAtDx(d.localPosition.dx, width)),
+            onHorizontalDragEnd: (_) => onSeekEnd?.call(),
+            child: SizedBox(
+              height: height,
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _WaveformPainter(
+                  waveform: waveform,
+                  progress: progress,
+                  playedColor: theme.colorScheme.primary,
+                  unplayedColor:
+                      theme.colorScheme.onSurface.withValues(alpha: 0.24),
+                ),
               ),
             ),
           ),

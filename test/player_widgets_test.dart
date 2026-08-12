@@ -40,6 +40,7 @@ BaseTrack _track() => BaseTrack(
     );
 
 PlayerLayoutData _dataFor({
+  bool playing = true,
   bool shuffleEnabled = false,
   RepeatMode repeatMode = RepeatMode.off,
   SleepTimerPlugin? sleepTimerPlugin,
@@ -57,7 +58,7 @@ PlayerLayoutData _dataFor({
       track: _track(),
       position: position ?? const Duration(seconds: 30),
       duration: duration ?? const Duration(seconds: 180),
-      playing: true,
+      playing: playing,
       buffering: false,
       settings: AppSettings.instance,
       pluginManager: PluginManager(),
@@ -150,6 +151,61 @@ void main() {
       expect(find.byIcon(Icons.shuffle), findsOneWidget);
       expect(find.byIcon(Icons.repeat), findsNothing);
       expect(find.byIcon(Icons.repeat_one), findsNothing);
+    });
+  });
+
+  group('PlayerControlsRow accessibility', () {
+    testWidgets(
+        'every transport IconButton has a real tooltip/semantic label — '
+        'previous, seek back/forward, play/pause (state-aware), next',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: PlayerControlsRow(data: _dataFor())),
+      ));
+      await tester.pump();
+
+      final buttons = tester.widgetList<IconButton>(find.byType(IconButton));
+      expect(buttons, isNotEmpty);
+      for (final button in buttons) {
+        expect(button.tooltip, allOf(isNotNull, isNotEmpty),
+            reason: 'every transport IconButton must have a tooltip, not '
+                'just an icon');
+      }
+
+      IconButton buttonWithIcon(IconData icon) => buttons.firstWhere((b) {
+            // The play/pause button's icon is an AnimatedIcon, not a
+            // plain Icon (see player_widgets.dart) — skip it rather than
+            // casting unsafely, since only skip_previous/skip_next are
+            // looked up by this helper.
+            final i = b.icon;
+            return i is Icon && i.icon == icon;
+          });
+
+      expect(buttonWithIcon(Icons.skip_previous).tooltip, 'Previous');
+      expect(buttonWithIcon(Icons.skip_next).tooltip, 'Next');
+
+      await expectLater(
+        tester,
+        meetsGuideline(labeledTapTargetGuideline),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the play/pause tooltip flips with playing state',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerControlsRow(data: _dataFor(playing: false)),
+        ),
+      ));
+      await tester.pump();
+
+      final animatedIconButton = tester.widget<IconButton>(
+          find.ancestor(
+              of: find.byType(AnimatedIcon), matching: find.byType(IconButton)));
+      expect(animatedIconButton.tooltip, 'Play');
     });
   });
 

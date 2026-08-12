@@ -118,6 +118,46 @@ void main() {
   });
 
   testWidgets(
+      'the play/pause button exposes a state-aware accessibility label, '
+      'and the bar itself hints at what tapping it does', (tester) async {
+    final handle = tester.ensureSemantics();
+
+    final engine = _FakeEngine();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: MiniPlayerBar(engine: engine)),
+    ));
+    engine.setTrack(_track());
+    await tester.pump();
+
+    IconButton buttonWithIcon(IconData icon) => tester
+        .widgetList<IconButton>(find.byType(IconButton))
+        .firstWhere((b) => (b.icon as Icon).icon == icon);
+
+    expect(buttonWithIcon(Icons.play_arrow).tooltip, 'Play');
+
+    engine.setPlaying(true);
+    // A single pump is enough without an active SemanticsHandle (see the
+    // plain state-reaction test above), but with tester.ensureSemantics()
+    // active here, flushSemantics adds a pipeline phase that needs an
+    // extra frame to fully settle before the rebuilt IconButton is
+    // queryable.
+    await tester.pumpAndSettle();
+    expect(buttonWithIcon(Icons.pause).tooltip, 'Pause');
+
+    // The bar's own Semantics hint (distinct from the play/pause button's
+    // own label) tells a screen reader user what tapping the rest of the
+    // bar does, since InkWell alone gets a tap action but no spoken label.
+    final barSemantics = tester.getSemantics(find.text('Sunrise').first);
+    expect(barSemantics.hint, contains('Now Playing'));
+
+    await expectLater(
+      tester,
+      meetsGuideline(labeledTapTargetGuideline),
+    );
+    handle.dispose();
+  });
+
+  testWidgets(
       'tapping the bar itself pushes a new route, and the real '
       'NowPlayingPage it pushes renders without crashing', (tester) async {
     // NowPlayingPage (what MiniPlayerBar actually pushes) reads several

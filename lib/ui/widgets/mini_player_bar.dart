@@ -101,7 +101,9 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
       color: theme.colorScheme.surfaceContainerHigh,
       child: InkWell(
         onTap: () => Navigator.of(context).push(_nowPlayingRoute()),
-        child: Column(
+        child: Semantics(
+          hint: 'Double tap to open Now Playing.',
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
@@ -110,15 +112,17 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
                   children: [
-                    Hero(
-                      tag: 'now_playing_art',
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: TrackArtwork(
-                          track: track,
-                          width: 40,
-                          height: 40,
-                          iconSize: 18,
+                    ExcludeSemantics(
+                      child: Hero(
+                        tag: 'now_playing_art',
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: TrackArtwork(
+                            track: track,
+                            width: 40,
+                            height: 40,
+                            iconSize: 18,
+                          ),
                         ),
                       ),
                     ),
@@ -160,6 +164,7 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
               backgroundColor: Colors.transparent,
             ),
           ],
+          ),
         ),
       ),
     );

@@ -35,17 +35,28 @@ class CarModeLayout extends PlayerLayout {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _CarButton(icon: Icons.skip_previous, onPressed: data.onPrevious),
+            _CarButton(
+              icon: Icons.skip_previous,
+              tooltip: 'Previous',
+              onPressed: data.onPrevious,
+            ),
             _CarButton(
               icon: data.buffering
                   ? Icons.hourglass_top
                   : (data.playing
                       ? Icons.pause_circle_filled
                       : Icons.play_circle_fill),
+              tooltip: data.buffering
+                  ? 'Buffering'
+                  : (data.playing ? 'Pause' : 'Play'),
               onPressed: data.buffering ? null : data.onPlayPause,
               size: 84,
             ),
-            _CarButton(icon: Icons.skip_next, onPressed: data.onNext),
+            _CarButton(
+              icon: Icons.skip_next,
+              tooltip: 'Next',
+              onPressed: data.onNext,
+            ),
           ],
         ),
       ),
@@ -87,11 +98,13 @@ class CarModeLayout extends PlayerLayout {
 
 class _CarButton extends StatelessWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback? onPressed;
   final double size;
 
   const _CarButton({
     required this.icon,
+    required this.tooltip,
     required this.onPressed,
     this.size = 64,
   });
@@ -101,6 +114,7 @@ class _CarButton extends StatelessWidget {
     return IconButton(
       iconSize: size,
       icon: Icon(icon),
+      tooltip: tooltip,
       onPressed: onPressed,
       padding: const EdgeInsets.all(16),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
@@ -35,60 +36,75 @@ class KaraokeGesturesLayout extends PlayerLayout {
             'No lyrics added for this track yet — swipe for the next one, '
                 'or add lyrics from another layout.');
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: data.onPlayPause,
-      onHorizontalDragEnd: (details) {
-        switch (swipeSkipActionFor(details.primaryVelocity)) {
-          case SwipeSkipAction.next:
-            data.onNext();
-          case SwipeSkipAction.previous:
-            data.onPrevious();
-          case null:
-            break;
-        }
+    // Unlike full_art_gestures_layout, this layout's primary content (the
+    // lyric line) is already real, readable text — so this uses `hint`,
+    // not `label`, to add the tap/swipe affordance without replacing what
+    // a screen reader would otherwise read from the lyric/track info text
+    // nested inside.
+    return Semantics(
+      hint: 'Double tap to play or pause. Swipe to skip.',
+      onTap: data.buffering ? null : data.onPlayPause,
+      customSemanticsActions: {
+        const CustomSemanticsAction(label: 'Next track'): data.onNext,
+        const CustomSemanticsAction(label: 'Previous track'): data.onPrevious,
       },
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          PluginSlotView(
-            pluginManager: data.pluginManager,
-            locationId: 'now_playing_overlay',
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: PlayerTrackInfo(data: data, large: false),
-          ),
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: data.onPlayPause,
+        onHorizontalDragEnd: (details) {
+          switch (swipeSkipActionFor(details.primaryVelocity)) {
+            case SwipeSkipAction.next:
+              data.onNext();
+            case SwipeSkipAction.previous:
+              data.onPrevious();
+            case null:
+              break;
+          }
+        },
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            PluginSlotView(
+              pluginManager: data.pluginManager,
+              locationId: 'now_playing_overlay',
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: PlayerTrackInfo(data: data, large: false),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: PlayerProgressBar(data: data, interactive: false),
-          ),
-          const SizedBox(height: 16),
-          Icon(
-            data.buffering
-                ? Icons.hourglass_top
-                : (data.playing
-                    ? Icons.pause_circle_outline
-                    : Icons.play_circle_outline),
-            size: 36,
-          ),
-          const SizedBox(height: 24),
-        ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: PlayerProgressBar(data: data, interactive: false),
+            ),
+            const SizedBox(height: 16),
+            ExcludeSemantics(
+              child: Icon(
+                data.buffering
+                    ? Icons.hourglass_top
+                    : (data.playing
+                        ? Icons.pause_circle_outline
+                        : Icons.play_circle_outline),
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

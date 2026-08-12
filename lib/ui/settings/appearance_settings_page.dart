@@ -36,33 +36,40 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = [
-      Colors.deepPurple,
-      Colors.blue,
-      Colors.teal,
-      Colors.green,
-      Colors.orange,
-      Colors.pink,
-    ];
+    final colors = {
+      Colors.deepPurple: 'Deep purple',
+      Colors.blue: 'Blue',
+      Colors.teal: 'Teal',
+      Colors.green: 'Green',
+      Colors.orange: 'Orange',
+      Colors.pink: 'Pink',
+    };
 
     return AlertDialog(
       title: const Text('Choose accent color'),
       content: Wrap(
         spacing: 12,
         runSpacing: 12,
-        children: colors.map((color) {
+        children: colors.entries.map((entry) {
+          final color = entry.key;
+          final name = entry.value;
           final selected = color == _selectedColor;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedColor = color),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: selected ? Colors.white : Colors.transparent,
-                    width: 2),
+          return Semantics(
+            button: true,
+            label: name,
+            selected: selected,
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedColor = color),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: selected ? Colors.white : Colors.transparent,
+                      width: 2),
+                ),
               ),
             ),
           );

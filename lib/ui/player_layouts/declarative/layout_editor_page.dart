@@ -255,12 +255,15 @@ class _LayoutEditorPageState extends State<LayoutEditorPage> {
                                 'placed_canvas_${_placed[i].componentId}'),
                             left: _placed[i].position.dx,
                             top: _placed[i].position.dy,
-                            child: GestureDetector(
-                              onPanUpdate: (details) =>
-                                  _dragUpdate(i, details.delta, canvasSize),
-                              child: _PlacedChip(
-                                spec: _specFor(_placed[i].componentId),
-                                onRemove: () => _removeAt(i),
+                            child: Semantics(
+                              hint: 'Drag to move.',
+                              child: GestureDetector(
+                                onPanUpdate: (details) =>
+                                    _dragUpdate(i, details.delta, canvasSize),
+                                child: _PlacedChip(
+                                  spec: _specFor(_placed[i].componentId),
+                                  onRemove: () => _removeAt(i),
+                                ),
                               ),
                             ),
                           ),
@@ -345,16 +348,20 @@ class _PlacedChip extends StatelessWidget {
           Positioned(
             top: 0,
             right: 0,
-            child: InkWell(
-              onTap: onRemove,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  shape: BoxShape.circle,
+            child: Semantics(
+              button: true,
+              label: 'Remove ${spec.label}',
+              child: InkWell(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.close,
+                      size: 14, color: theme.colorScheme.onPrimary),
                 ),
-                child: Icon(Icons.close,
-                    size: 14, color: theme.colorScheme.onPrimary),
               ),
             ),
           ),

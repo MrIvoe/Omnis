@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:omnis/ui/player_layouts/declarative/layout_manifest.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
@@ -41,20 +42,36 @@ class DeclarativeLayoutRenderer {
     }
 
     if (manifest.definesOwnGestures) {
-      content = GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      // Same reasoning as the built-in gesture-driven layouts
+      // (full_art_gestures_layout.dart/karaoke_gestures_layout.dart): a
+      // user-authored manifest's content is arbitrary and may have no
+      // visible text at all, so the tap/swipe affordance needs its own
+      // explicit label rather than assuming the rendered content already
+      // speaks for itself.
+      content = Semantics(
+        button: true,
+        hint: 'Double tap to play or pause. Swipe to skip.',
         onTap: data.onPlayPause,
-        onHorizontalDragEnd: (details) {
-          switch (swipeSkipActionFor(details.primaryVelocity)) {
-            case SwipeSkipAction.next:
-              data.onNext();
-            case SwipeSkipAction.previous:
-              data.onPrevious();
-            case null:
-              break;
-          }
+        customSemanticsActions: {
+          const CustomSemanticsAction(label: 'Next track'): data.onNext,
+          const CustomSemanticsAction(label: 'Previous track'):
+              data.onPrevious,
         },
-        child: content,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: data.onPlayPause,
+          onHorizontalDragEnd: (details) {
+            switch (swipeSkipActionFor(details.primaryVelocity)) {
+              case SwipeSkipAction.next:
+                data.onNext();
+              case SwipeSkipAction.previous:
+                data.onPrevious();
+              case null:
+                break;
+            }
+          },
+          child: content,
+        ),
       );
     }
 

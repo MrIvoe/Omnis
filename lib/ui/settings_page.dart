@@ -356,6 +356,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ? null
                   : IconButton(
                       icon: const Icon(Icons.clear),
+                      tooltip: 'Clear search',
                       onPressed: () {
                         _searchController.clear();
                         setState(() => _query = '');

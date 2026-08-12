@@ -286,10 +286,12 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
     Widget iconButton(IconData icon,
         {required VoidCallback onPressed,
         required double size,
+        required String tooltip,
         Color? iconColor}) {
       return IconButton(
         iconSize: size,
         icon: Icon(icon, color: iconColor ?? color),
+        tooltip: tooltip,
         onPressed: onPressed,
       );
     }
@@ -336,29 +338,32 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (layout == ButtonLayout.standard)
-          Tooltip(
-            message: playModeTooltip,
-            child: iconButton(playModeIcon,
-                onPressed: data.onCyclePlayMode,
-                size: shuffleRepeatSize,
-                iconColor: playModeActive ? activeColor : inactiveColor),
-          ),
+          iconButton(playModeIcon,
+              onPressed: data.onCyclePlayMode,
+              size: shuffleRepeatSize,
+              tooltip: playModeTooltip,
+              iconColor: playModeActive ? activeColor : inactiveColor),
         if (layout != ButtonLayout.minimal)
           iconButton(Icons.skip_previous,
               onPressed: data.onPrevious,
-              size: compact ? iconSize * 0.8 : iconSize),
+              size: compact ? iconSize * 0.8 : iconSize,
+              tooltip: 'Previous'),
         if (layout == ButtonLayout.standard) ...[
           iconButton(seekIcons.$1,
               onPressed: () => skip(-seekIncrement),
-              size: shuffleRepeatSize),
+              size: shuffleRepeatSize,
+              tooltip: 'Back $seekIncrement seconds'),
           const SizedBox(width: 4),
         ],
         const SizedBox(width: 16),
         data.buffering
-            ? SizedBox(
-                width: playIconSize - 8,
-                height: playIconSize - 8,
-                child: CircularProgressIndicator(color: color),
+            ? Semantics(
+                label: 'Buffering',
+                child: SizedBox(
+                  width: playIconSize - 8,
+                  height: playIconSize - 8,
+                  child: CircularProgressIndicator(color: color),
+                ),
               )
             // `AnimatedIcon` morphs the glyph itself (play triangle <->
             // pause bars) instead of the old hard swap between two
@@ -371,6 +376,7 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
                   size: playSize,
                   color: color ?? theme.colorScheme.onSurface,
                 ),
+                tooltip: data.playing ? 'Pause' : 'Play',
                 onPressed: data.onPlayPause,
               ),
         const SizedBox(width: 16),
@@ -378,12 +384,14 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
           const SizedBox(width: 4),
           iconButton(seekIcons.$2,
               onPressed: () => skip(seekIncrement),
-              size: shuffleRepeatSize),
+              size: shuffleRepeatSize,
+              tooltip: 'Forward $seekIncrement seconds'),
         ],
         if (layout != ButtonLayout.minimal)
           iconButton(Icons.skip_next,
               onPressed: data.onNext,
-              size: compact ? iconSize * 0.8 : iconSize),
+              size: compact ? iconSize * 0.8 : iconSize,
+              tooltip: 'Next'),
       ],
     );
   }
