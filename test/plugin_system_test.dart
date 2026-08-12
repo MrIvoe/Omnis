@@ -208,6 +208,51 @@ class _FakeContext implements PluginContext {
       throw UnsupportedError('${invocation.memberName} not stubbed');
 }
 
+/// A [PluginContext] stand-in for the playback-control sandbox bridge —
+/// records every transport call it receives instead of touching a real
+/// `AudioEngine` (which needs a platform channel `flutter test` doesn't
+/// provide). Only the members the playback bridge functions actually use
+/// are stubbed; anything else falls through to noSuchMethod like
+/// _FakeContext above.
+class _RecordingPlaybackContext implements PluginContext {
+  final List<String> calls = [];
+
+  @override
+  BaseTrack? currentTrack;
+  @override
+  List<BaseTrack> queue = const [];
+  @override
+  bool isPlaying = false;
+  @override
+  int currentIndex = -1;
+
+  @override
+  Future<void> play() async => calls.add('play');
+
+  @override
+  Future<void> pause() async => calls.add('pause');
+
+  @override
+  Future<bool> next({bool wrap = false}) async {
+    calls.add('next:$wrap');
+    return true;
+  }
+
+  @override
+  Future<bool> previous() async {
+    calls.add('previous');
+    return true;
+  }
+
+  @override
+  Future<void> seek(Duration position) async =>
+      calls.add('seek:${position.inMilliseconds}');
+
+  @override
+  noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} not stubbed');
+}
+
 void main() {
   group('PluginManager isolation', () {
     test(
@@ -544,6 +589,199 @@ dynamic onTrackStart(dynamic track) async {
 }
 ''';
         // No declaredPermissions at all — 'library' not granted.
+        final runtime = PluginRuntime.create(source);
+
+        expect(
+          () => runtime.callHook('onTrackStart', [
+            {'title': 'irrelevant'}
+          ]),
+          throwsA(isA<PluginRuntimeException>().having(
+            (e) => e.message,
+            'message',
+            contains("Permission 'omnis.library' denied"),
+          )),
+        );
+      });
+    });
+
+    group('sandbox bridge — playback control', () {
+      test(
+          'a plugin granted "playback" can call play/pause/next/previous/'
+          'seek and the real (fake, in test) context receives the calls',
+          () async {
+        final context = _RecordingPlaybackContext();
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'transport_user',
+    'name': 'Transport User',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  await playbackPlay();
+  await playbackPause();
+  final advanced = await playbackNext(false);
+  final wentBack = await playbackPrevious();
+  await playbackSeek(1500);
+  return {'advanced': advanced, 'wentBack': wentBack};
+}
+''';
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: const ['playback'],
+          getContext: () => context,
+        );
+
+        final raw = runtime.callHook('onTrackStart', [
+          {'title': 'irrelevant'}
+        ]);
+        final result = raw is Future ? await raw : raw;
+
+        expect(context.calls, [
+          'play',
+          'pause',
+          'next:false',
+          'previous',
+          'seek:1500',
+        ]);
+        expect((result as Map)['advanced'], isTrue);
+        expect(result['wentBack'], isTrue);
+      });
+
+      test(
+          'a plugin without "playback" permission gets a permission error '
+          'attempting transport control, not a silent no-op', () async {
+        final context = _RecordingPlaybackContext();
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'no_playback_permission',
+    'name': 'No Playback Permission',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  await playbackPlay();
+  return null;
+}
+''';
+        // No 'playback' declared — only unrelated permissions granted.
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: const ['library'],
+          getContext: () => context,
+        );
+
+        expect(
+          () => runtime.callHook('onTrackStart', [
+            {'title': 'irrelevant'}
+          ]),
+          throwsA(isA<PluginRuntimeException>().having(
+            (e) => e.message,
+            'message',
+            contains("Permission 'omnis.playback' denied"),
+          )),
+        );
+        expect(context.calls, isEmpty);
+      });
+
+      test(
+          'read-only state (currentTrack/queue/isPlaying/currentIndex) '
+          'works with just "library" permission — no "playback" needed',
+          () async {
+        final context = _RecordingPlaybackContext()
+          ..currentTrack = BaseTrack(
+            id: 't1',
+            title: 'Sunrise',
+            artists: const ['Ava'],
+            album: 'Morning',
+            duration: 180,
+            type: TrackType.local,
+          )
+          ..queue = [
+            BaseTrack(
+              id: 't1',
+              title: 'Sunrise',
+              artists: const ['Ava'],
+              album: 'Morning',
+              duration: 180,
+              type: TrackType.local,
+            ),
+          ]
+          ..isPlaying = true
+          ..currentIndex = 0;
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'state_reader',
+    'name': 'State Reader',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) {
+  final current = getCurrentTrack();
+  return {
+    'title': current['title'],
+    'queueLength': getQueue().length,
+    'isPlaying': getIsPlaying(),
+    'currentIndex': getCurrentIndex(),
+  };
+}
+''';
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: const ['library'],
+          getContext: () => context,
+        );
+
+        final raw = runtime.callHook('onTrackStart', [
+          {'title': 'irrelevant'}
+        ]);
+        final result = raw is Future ? await raw : raw;
+
+        expect((result as Map)['title'], 'Sunrise');
+        expect(result['queueLength'], 1);
+        expect(result['isPlaying'], isTrue);
+        expect(result['currentIndex'], 0);
+      });
+
+      test(
+          'loadPlaylists() is gated by "library" permission, the same as '
+          'loadLibraryTracks()', () async {
+        const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'no_permission_playlists',
+    'name': 'No Permission Playlists',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  final playlists = await loadPlaylists();
+  return playlists.length;
+}
+''';
         final runtime = PluginRuntime.create(source);
 
         expect(

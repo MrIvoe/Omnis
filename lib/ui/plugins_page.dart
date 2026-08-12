@@ -265,6 +265,8 @@ class _PluginsPageState extends State<PluginsPage> {
             'albums — read-only)';
       case 'events':
         return 'Events — can be notified when things like favorites change';
+      case 'playback':
+        return 'Playback control — can play, pause, skip, and seek';
       default:
         return perm;
     }

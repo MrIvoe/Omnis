@@ -3,6 +3,7 @@ import 'package:dart_eval/dart_eval_bridge.dart';
 import 'package:dart_eval/dart_eval_security.dart';
 import 'package:dart_eval/stdlib/core.dart';
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
+import 'package:omnis_plugin_api/plugin_context.dart';
 
 /// Compilation/interpreter error thrown by [PluginRuntime].
 class PluginRuntimeException implements Exception {
@@ -53,11 +54,16 @@ class PluginRuntimeException implements Exception {
 ///
 /// ## Bridged host capabilities
 ///
-/// A plugin that declared `library` in its manifest's `permissions:` can
-/// also `import 'package:omnis/sandbox_api.dart';` and call real host
-/// functions — see [PluginSandboxBridge] for what's bridged and why this
-/// (not a JSON-only side channel) is the mechanism for giving a downloaded
-/// plugin real capability without making it a bundled, compiled-in plugin.
+/// A plugin that declared `library`/`events`/`playback` in its manifest's
+/// `permissions:` can also `import 'package:omnis/sandbox_api.dart';` and
+/// call real host functions — see [PluginSandboxBridge] for what's bridged
+/// and why this (not a JSON-only side channel) is the mechanism for giving
+/// a downloaded plugin real capability without making it a bundled,
+/// compiled-in plugin. [getContext] supplies the bridge's live
+/// `PluginContext` for the `playback`-gated transport-control functions —
+/// `null` if the caller has none to give (e.g. `PluginManager` before
+/// `attachContext` runs), in which case those functions throw rather than
+/// silently no-op.
 class PluginRuntime {
   final Map<String, dynamic> _metadata;
   final Runtime _runtime;
@@ -85,6 +91,7 @@ class PluginRuntime {
   factory PluginRuntime.create(
     String pluginSource, {
     List<String> declaredPermissions = const [],
+    PluginContext? Function()? getContext,
   }) {
     Map<dynamic, dynamic> metadata;
     Runtime runtime;
@@ -96,7 +103,7 @@ class PluginRuntime {
       // is applied lazily on first setup, which executeLib triggers.
       // Registering only one side leaves the guest call throwing
       // UnimplementedError instead of doing anything.
-      const bridge = PluginSandboxBridge();
+      final bridge = PluginSandboxBridge(getContext ?? () => null);
       final compiler = Compiler()..addPlugin(bridge);
       final program = compiler.compile({
         'default': {'main.dart': pluginSource},
@@ -113,6 +120,9 @@ class PluginRuntime {
       }
       if (declaredPermissions.contains('events')) {
         runtime.grant(const EventsPermission());
+      }
+      if (declaredPermissions.contains('playback')) {
+        runtime.grant(const PlaybackControlPermission());
       }
       runtime.args = [
         <String, dynamic>{'omnisVersion': '0.1.0'},

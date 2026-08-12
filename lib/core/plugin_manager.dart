@@ -441,6 +441,7 @@ class PluginManager {
     final runtime = PluginRuntime.create(
       source,
       declaredPermissions: manifest.permissions,
+      getContext: () => _context,
     );
     final id = runtime.id.isNotEmpty && runtime.id != 'unknown'
         ? runtime.id
@@ -482,6 +483,7 @@ class PluginManager {
       final runtime = PluginRuntime.create(
         source,
         declaredPermissions: manifest.permissions,
+        getContext: () => _context,
       );
       if (_plugins.any((p) => p.id == runtime.id)) return;
       final managed = ManagedPlugin(
