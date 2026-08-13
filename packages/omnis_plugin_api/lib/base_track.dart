@@ -387,6 +387,13 @@ enum TrackType {
   /// (always `0`) and no per-track identity of its own — [id] identifies
   /// the *station*, not a song.
   radio,
+
+  /// A track streamed from a self-hosted OpenSubsonic-compatible media
+  /// server (Navidrome, Airsonic, Subsonic itself, ...) — see
+  /// `OpenSubsonicPlugin` in `Omnis-Plugins`. Unlike [spotify]/[youtube],
+  /// this is directly playable: [BaseTrack.streamUrl] is the server's own
+  /// real audio stream endpoint, not a metadata-only reference.
+  subsonic,
 }
 
 /// ReleaseType represents the kind of release an album is.

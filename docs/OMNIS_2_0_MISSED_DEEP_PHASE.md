@@ -331,13 +331,42 @@ to separate plugin repos as spec §6.2 describes.
 
 ### Phase 5 — Connectivity
 
-**31-35. OpenSubsonic / Navidrome / Jellyfin / Plex / DLNA-UPnP** —
-Genuine 0%, every one. No file, class, or `TrackType` case for any of
-them in either repo. Since Navidrome would piggyback on an OpenSubsonic
-client, and none exists, there's no partial credit there either. This
-is the single biggest concrete gap-cluster found across every phase
-audited — the spec (§16) calls self-hosted connectivity "a major
-opportunity," and literally none of it exists.
+**31-32. OpenSubsonic / Navidrome** — Solid but unverified (closed
+2026-08-13, was genuine 0%). New `OpenSubsonicPlugin`
+(`Omnis-Plugins/lib/opensubsonic_plugin.dart`) is a real client to the
+OpenSubsonic/Subsonic REST API — the protocol Navidrome, Airsonic, and
+the original Subsonic all implement, so one client covers all of them;
+no Navidrome-specific code exists or is needed, matching the tracker's
+own earlier prediction that Navidrome would "piggyback on OpenSubsonic."
+Auth uses the recommended token scheme (`t = md5(password + salt)`, a
+fresh random salt per request) rather than sending the plaintext
+password on every call, though the password itself is still stored
+locally in this plugin's own `PluginStorage` — no secure-keystore
+integration exists anywhere in this app, the same limitation
+`MetadataEnrichmentPlugin`'s API keys already have. `search3.view`
+returns genuinely playable `BaseTrack`s (new `TrackType.subsonic` on
+`plugin-api-v0.8.0`): each track's `streamUrl` is the server's own real
+`stream.view` endpoint, so `AudioEngine` plays it with zero
+special-casing — unlike `SpotifyImportPlugin`'s metadata-only imports
+(Spotify's catalog is DRM-protected), this is a fully working provider,
+not just a browsable library. Settings UI (server/username/password,
+"Test connection," inline search-and-play) reached through the Plugins
+page's existing per-plugin settings slot — no new bottom-nav tab or
+Core changes needed. 17 tests against a mocked HTTP client, including
+one that independently recomputes the MD5 token from the salt actually
+sent in the request to prove the auth math is correct, not just that
+*some* token was sent. **Not exercised against a real Navidrome/
+Subsonic/Airsonic server** in this environment — what's verified is
+protocol-level request/response handling, the identical caveat already
+applied to Spotify/YouTube (item 36 below).
+
+**33-35. Jellyfin / Plex / DLNA-UPnP** — Still genuine 0%. Each is its
+own distinct protocol (Jellyfin and Plex both have REST APIs broadly
+similar in shape to OpenSubsonic's but incompatible in the details —
+different auth schemes, different endpoint/field names — so neither
+gets free coverage from `OpenSubsonicPlugin`; DLNA/UPnP is a different
+kind of protocol entirely, SSDP discovery + SOAP, not a REST API at
+all). Real, separate work for each, not attempted here.
 
 **36. Spotify** — Solid, unverified. `SpotifyAuth`: full Authorization
 Code + PKCE OAuth (RFC 7636) against Spotify's Web API, platform-aware
