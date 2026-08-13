@@ -380,6 +380,13 @@ enum TrackType {
 
   /// YouTube stream
   youtube,
+
+  /// A live internet radio station (Icecast/Shoutcast-style continuous
+  /// stream) — see `RadioPlugin` in `Omnis-Plugins`. Distinct from
+  /// [youtube]/[spotify]: a station has no fixed [BaseTrack.duration]
+  /// (always `0`) and no per-track identity of its own — [id] identifies
+  /// the *station*, not a song.
+  radio,
 }
 
 /// ReleaseType represents the kind of release an album is.

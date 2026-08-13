@@ -14,6 +14,7 @@ import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/playlist_page.dart';
+import 'package:omnis/ui/radio_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/widgets/mini_player_bar.dart';
@@ -166,6 +167,7 @@ class _HomePageState extends State<HomePage> {
           MaterialPageRoute(builder: (_) => const NowPlayingPage()),
         ),
       ),
+      RadioPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       SettingsPage(
           engine: core.audioEngine,
           pluginManager: core.pluginManager,
@@ -210,6 +212,10 @@ class _HomePageState extends State<HomePage> {
         NavigationDestination(
           icon: Icon(Icons.mood),
           label: 'Moods',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.radio),
+          label: 'Radio',
         ),
         NavigationDestination(
           icon: Icon(Icons.settings),

@@ -353,12 +353,42 @@ results (`SmartPlaylistPlugin`/`QueuePresetPlugin`) is still tag-string
 matching once the tags are populated, not fingerprint/vector similarity
 the way Plexamp's Sonic Analysis (cited in the spec) works.
 
-**41. Radio** — Genuine 0%. Confirmed by filename search (`*radio*`,
-zero hits) and content search (`radio`/`Icecast`/`Shoutcast`/
-`RadioBrowser`, only false positives — Flutter's own `RadioListTile`
-widget, an unrelated code comment). No Radio Browser API integration,
-no custom stream support, no Icecast/Shoutcast client, no station
-browsing UI, no streaming-station playback path.
+**41. Radio** — Partial (was genuine 0%, closed 2026-08-13). New
+`RadioPlugin` (`Omnis-Plugins/lib/radio_plugin.dart`) is a real client
+to the free, keyless Radio Browser directory API
+(`de1.api.radio-browser.info`) — `searchStations`/`topStations`/
+`stationsByTag`, all real HTTP calls, per-entry defensive JSON decoding
+(one malformed station in a response can't wipe the rest), converting
+each station to a plain `BaseTrack` (`type: TrackType.radio` — a new,
+additive `TrackType` value added in `plugin-api-v0.7.0`; `duration: 0`
+since a live stream has none; `streamUrl` set to the station's real
+Icecast/Shoutcast stream). Playback needed **zero** engine changes:
+`AudioEngine.uriFor` already plays any track with a `streamUrl` set,
+the exact path YouTube/Spotify tracks already use — a station is just
+another track to the player. New "Radio" bottom-nav tab
+(`lib/ui/radio_page.dart`): search box + a default "top stations" view,
+tapping a result sets the queue starting at that station and plays.
+Caught and fixed a real bug while writing this: the `bytag` endpoint's
+tag was being run through `Uri.encodeComponent` *and then* handed to
+`Uri.https`'s already-encoding `unencodedPath` parameter, which
+would've double-encoded any tag with a space (e.g. "80s hits" →
+literal `%2520` in the request path, silently returning zero results
+for any multi-word tag) — a test asserting the decoded path segment
+caught it immediately. Still gaps: talks to a single fixed API mirror
+rather than the full DNS-round-robin server discovery Radio Browser's
+own docs recommend at production scale (reasonable for one app's search
+traffic, but a documented simplification); no manual/custom stream URL
+entry for a station not in the directory. Play history is a real but
+half-working case: `MainCore.recordPlay` fires unconditionally on track
+start, so a played station's `radio:<uuid>` id does get a genuine
+`PlayHistoryStore` entry, same as any other track — but
+`HomeDashboardPage`'s "Recently Played"/"Most Played" rows join those
+history entries against `LibraryRepository`'s persisted library
+(`libraryById[s.trackId]`) to render them, and a radio station is never
+saved into that library (it's fetched live from the API, not
+scanned/imported) — so the entry is recorded but silently invisible on
+Home. No favorites integration for stations either. Both are real,
+distinct follow-up work, not attempted here.
 
 **42. Smart playlists** — Partial. Despite the name, `SmartPlaylistPlugin`
 is a flat, user-editable list of mood strings matched via case-insensitive
