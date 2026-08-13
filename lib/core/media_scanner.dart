@@ -208,7 +208,7 @@ class MediaScanner {
       final results = await Future.wait(
         batch.map((file) => _trackForFile(file, tagEditor, knownByPath)),
       );
-      tracks.addAll(results);
+      tracks.addAll(results.whereType<BaseTrack>());
     }
     return tracks;
   }
@@ -219,17 +219,32 @@ class MediaScanner {
   /// This is what makes a repeat scan of a large, mostly-unchanged library
   /// fast: only new or actually-modified files pay [_trackFromFile]'s
   /// cost.
-  Future<BaseTrack> _trackForFile(
+  ///
+  /// Returns `null` (never throws) if the file becomes unreadable between
+  /// being listed and being read here — a deleted file, or removable
+  /// storage that unmounted mid-scan. Before this, `file.lastModified()`
+  /// throwing here propagated out of the `Future.wait` batch in
+  /// [_scanFilesystem] and aborted the *entire* scan, discarding every
+  /// track already found — the same "one bad entry breaks everything"
+  /// failure mode the directory-listing stream's `handleError` above
+  /// already guards against, just one step later in the pipeline.
+  Future<BaseTrack?> _trackForFile(
     File file,
     TagEditorPlugin tagEditor,
     Map<String, BaseTrack> knownByPath,
   ) async {
-    final mtime = await file.lastModified();
-    final known = knownByPath[file.path];
-    if (known != null && known.fileModifiedAt == mtime) {
-      return known;
+    try {
+      final mtime = await file.lastModified();
+      final known = knownByPath[file.path];
+      if (known != null && known.fileModifiedAt == mtime) {
+        return known;
+      }
+      return await _trackFromFile(file, tagEditor, mtime: mtime);
+    } catch (e) {
+      debugPrint(
+          'Omnis: skipped "${file.path}" during scan — became unreadable: $e');
+      return null;
     }
-    return _trackFromFile(file, tagEditor, mtime: mtime);
   }
 
   /// Builds a [BaseTrack] for one local file, preferring real embedded

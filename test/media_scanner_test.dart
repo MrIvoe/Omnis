@@ -132,6 +132,37 @@ void main() {
     });
   });
 
+  group('per-file error handling', () {
+    // Regression coverage for a real bug adjacent to the directory-walk
+    // one above: a file that vanishes *after* being listed but *before*
+    // it's stat'd/read (deleted mid-scan, removable storage unmounting)
+    // used to throw out of `file.lastModified()`, which propagated out
+    // of the `Future.wait` batch in `_scanFilesystem` and aborted the
+    // entire scan — discarding every track already found, not just the
+    // one vanished file.
+
+    test('a file that no longer exists when read is skipped, not fatal '
+        'to the whole scan', () async {
+      final fileA = audioFile('song_a.mp3');
+      final vanished = File('${tempDir.path}/vanished.mp3');
+      // Never actually created on disk — lastModified() on it throws a
+      // real FileSystemException, the same shape a deleted/unmounted
+      // file produces, no platform-specific fakery required.
+      final fileB = audioFile('song_b.mp3');
+
+      final scanner = MediaScanner.forTesting(
+        lister: (dir) => Stream<FileSystemEntity>.fromIterable(
+            [fileA, vanished, fileB]),
+      );
+
+      final tracks = await scanner.scanLibrary();
+
+      expect(tracks.map((t) => t.title).toSet(), {'song_a', 'song_b'},
+          reason: 'both real files must still be found — only the '
+              'vanished one should be skipped');
+    });
+  });
+
   group('incremental scanning (knownTracks)', () {
     // Regression coverage for a real, user-reported problem: every scan
     // re-read and re-decoded ID3 tags for every file, even ones already
