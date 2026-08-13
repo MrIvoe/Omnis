@@ -25,7 +25,20 @@
   produced a build error pointing at the next.
 - **Windows desktop** builds need the Visual Studio Build Tools with the
   "Desktop development with C++" workload. `flutter doctor` checks for
-  this too.
+  this too — but a green `flutter doctor` check isn't sufficient on its
+  own: `flutter build windows` also needs the *specific* installed VS
+  version to be one this Flutter SDK's CMake-generator detection
+  recognizes. Confirmed on 2026-08-13 in the dev environment this repo
+  was originally built in: `flutter doctor` reported Visual Studio
+  fully green (Build Tools 2026, 18.3.x), but `flutter build windows`
+  still failed —
+  `CMake Error ... Generator "Visual Studio 16 2019" could not find any
+  instance of Visual Studio` — because the pinned Flutter SDK there
+  (3.27.4, January 2025) predates VS2026's existence and falls back to
+  a hardcoded VS2019 generator string that doesn't match anything
+  actually installed. Fix is a Flutter SDK upgrade (or a matching older
+  VS install), neither of which this repo's own files can control —
+  if you hit this exact CMake error, that's what's happening.
 - **iOS/macOS**: this repository doesn't have an `ios/`/`macos/`
   platform folder yet (`flutter create --platforms=ios,macos .` would add
   one) — nothing here has been built or tested for those platforms.
@@ -55,6 +68,22 @@ First launch is intentionally fast: `main()` only waits on a single
 bootstrap (audio engine, plugin manager, installed plugins, layouts) runs
 behind `HomePage`'s own loading gate, after something is already on
 screen. See [ARCHITECTURE.md](ARCHITECTURE.md#startup-speed).
+
+### Real-device smoke testing (Android)
+
+Confirmed working end-to-end on 2026-08-13 via a debug APK
+(`flutter build apk --debug`) installed on the `Medium_Phone_API_36.1`
+AVD (`flutter emulators --launch <id>`, then `adb install -r
+build/app/outputs/flutter-apk/app-debug.apk`): onboarding renders, the
+bottom nav shows all six tabs including the new Radio tab, and Radio's
+"Top stations" list genuinely round-trips a live call to the real Radio
+Browser API (real station names, real favicon images loading over the
+network) — not a mock. `adb logcat -d "*:E" | grep <package>` showed
+zero errors across the whole session. This is the first real-device
+verification any UI work in this repo's history has had, as opposed to
+`flutter analyze`/`flutter test` alone — Windows desktop (the only other
+platform folder present) doesn't build in every environment; see the
+Windows note above.
 
 ## Testing and static analysis
 

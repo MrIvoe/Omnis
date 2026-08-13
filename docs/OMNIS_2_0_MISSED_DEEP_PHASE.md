@@ -21,10 +21,19 @@
 - **§51.2 — `AudioEngine` is still one large facade.** Split OS-integration
   and A-B repeat out into their own files/classes; the bigger split
   (`QueueController`, `OutputController`, `AudioSessionController`) is
-  still undone. Reason: touching the crossfade/queue state machine
-  without a real device to smoke-test on (this dev environment's Windows
-  build is blocked — see `docs/BUILDING.md`) is a correctness risk not
-  worth taking blind.
+  still undone. Originally deferred because touching the crossfade/queue
+  state machine felt too risky without a real device to smoke-test on —
+  as of 2026-08-13 that's now half-outdated: Android smoke testing is
+  confirmed working in this dev environment (a debug APK built,
+  installed, and ran clean on an emulator, including a genuine live
+  network round-trip via the new Radio feature — see `docs/BUILDING.md`).
+  Windows desktop specifically is still blocked, but for a confirmed,
+  narrow reason (Flutter SDK 3.27.4 doesn't recognize the installed
+  Visual Studio Build Tools 2026's version and falls back to a CMake
+  generator string that doesn't exist on this machine — also documented
+  there). The bigger `AudioEngine` split is still real, separate work
+  not attempted in this pass, but "no way to smoke-test it at all" is no
+  longer the blocker — only "hasn't been done yet."
 - **§7 — Queue engine depth.** No queue history/snapshots, no
   smart/rule-based continuation (mood/artist/genre/similar-track
   auto-continuation), no advanced shuffle modes beyond what
