@@ -55,61 +55,71 @@
 
 ## Phase 3 — Audio
 
+> **Audited 2026-08-13.** Full findings in [OMNIS_2_0_MISSED_DEEP_PHASE.md](OMNIS_2_0_MISSED_DEEP_PHASE.md#phase-3--audio).
+
 | # | Item | Status |
 |---|------|--------|
-| 18 | DSP pipeline | ⬜ Not started |
-| 19 | ReplayGain | ⬜ Not started |
-| 20 | EQ | ⬜ Not started |
-| 21 | Output devices | ⬜ Not started |
-| 22 | Bit-perfect | ⬜ Not started |
-| 23 | Audio analysis | ⬜ Not started |
+| 18 | DSP pipeline | 🟡 Partial — a flat named-multiplier gain-composition system (`AudioEngine.setGainContribution`), not the spec's staged, independently-replaceable chain. Zero compressor/limiter/crossfeed/convolver/spatializer/room-correction anywhere in either repo. |
+| 19 | ReplayGain | 🟡 Partial — `ReplayGainPlugin` applies gain from tags already written by an external tool (foobar2000 etc.) plus a user preamp; Omnis never scans/computes ReplayGain itself. |
+| 20 | EQ | 🟡 Partial — real Android hardware EQ + a 3-band virtual trim everywhere else, per-*device* profiles (not per-artist/album), no parametric mode, no selectable band count. |
+| 21 | Output devices | ⬜ **0% for selection** — Bluetooth *detection* exists (`BluetoothPlaybackPlugin`), but there is no device-selection UI, no USB DAC support, no per-device volume/DSP beyond EQ-profile keying. `AudioEngine.setOutputDeviceToDefault()` is an explicit no-op. |
+| 22 | Bit-perfect | ⬜ **Genuine 0%** — `BaseTrack` carries no audio-format fields at all (no codec/container/bit-depth/sample-rate/bitrate), so there's no data source to build the spec's source→DSP→output display from, let alone an exclusive/WASAPI output mode. |
+| 23 | Audio analysis | 🟡 Partial — `AudioAnalysisPlugin` gets real audio-derived BPM/key/mood/genre from a self-hosted Essentia service (not bundled, user must deploy it); no loudness/dynamic-range measurement, no on-device/offline analysis. |
 
 ## Phase 4 — Plugin platform
 
+> **Audited 2026-08-13.** Full findings in [OMNIS_2_0_MISSED_DEEP_PHASE.md](OMNIS_2_0_MISSED_DEEP_PHASE.md#phase-4--plugin-platform). This phase is the most under-credited by the old blanket tracker — most of it is real.
+
 | # | Item | Status |
 |---|------|--------|
-| 24 | Capability interfaces | ⬜ Not started |
-| 25 | Plugin lifecycle | ⬜ Not started |
-| 26 | Dependency resolution | ⬜ Not started |
-| 27 | Permissions | ⬜ Not started |
-| 28 | Plugin health | ⬜ Not started |
-| 29 | Plugin updates | ⬜ Not started |
-| 30 | Marketplace/catalog | ⬜ Not started |
+| 24 | Capability interfaces | ✅ Solid — a real typed `ServiceRegistry` (`register`/`get<T>`/`getAll<T>`, multi-provider support) with 9 interfaces (`ILyricsProvider`, `IMetadataProvider`, `IQueueBuilder`, etc.), used throughout. Gap: external (downloaded) plugins can only register as providers for 2 of the 9 — a hardcoded `switch` in `PluginManager._registerProvidedServices`. |
+| 25 | Plugin lifecycle | ✅ Solid mechanics — real sandboxing (`PluginSandbox.run`, catches + 8s-timeouts every hook, logs health, never propagates), a real interpreted sandbox (`dart_eval`) for downloaded plugins. Gap: no formal state-machine enum (two booleans instead), and `dart_eval` runs on the same thread (documented in `docs/PLUGIN_SECURITY.md`) so a non-yielding downloaded-plugin loop can still hang the UI. |
+| 26 | Dependency resolution | 🟡 Partial for *bundled* plugins only (`requiresSequentialInit` + a two-round init) — **manifests have no `dependencies:` field parsed at all**, no version-range enforcement (`minOmnisVersion` is parsed but never read anywhere), no detection/handling of a dependency disappearing. |
+| 27 | Permissions | ✅ Solid — declared manifest permissions map to real `dart_eval` grants, shown in plain English before any plugin code runs. Gap: coarse categories (`network`, `storage`), not the spec's granular `network:musicbrainz`-style scoping; `network` itself is declarative-only, not technically enforced. |
+| 28 | Plugin health | 🟡 Partial — real, reactive health records (created whenever a sandboxed call throws/times out) with a live UI section on the Plugins page. Gap: no heartbeat (a silently-hung plugin isn't detected), no per-plugin retry/reset action, no dedicated health-center page. |
+| 29 | Plugin updates | ⬜ **Genuine 0%** — reinstalling the same URL deletes and replaces files, but there's no version comparison, no update-check, no backup-before-update, no rollback. |
+| 30 | Marketplace/catalog | 🟡 Partial — a real permission-confirmation install flow exists, but it's "paste a GitHub URL" plus one hardcoded catalog entry, not a fetched `catalog.json`/browsable store. `docs/PLUGIN_SECURITY.md` states this outright: "No plugin registry or curation today." |
 
 ## Phase 5 — Connectivity
 
+> **Audited 2026-08-13.** Full findings in [OMNIS_2_0_MISSED_DEEP_PHASE.md](OMNIS_2_0_MISSED_DEEP_PHASE.md#phase-5--connectivity).
+
 | # | Item | Status |
 |---|------|--------|
-| 31 | OpenSubsonic | ⬜ Not started |
-| 32 | Navidrome | ⬜ Not started |
-| 33 | Jellyfin | ⬜ Not started |
-| 34 | Plex | ⬜ Not started |
-| 35 | DLNA/UPnP | ⬜ Not started |
-| 36 | Spotify | ⬜ Not started |
-| 37 | YouTube | ⬜ Not started |
-| 38 | Other providers | ⬜ Not started |
+| 31 | OpenSubsonic | ⬜ **Genuine 0%** — no file, class, or `TrackType` case anywhere in either repo. |
+| 32 | Navidrome | ⬜ **Genuine 0%** — would piggyback on OpenSubsonic, which doesn't exist. |
+| 33 | Jellyfin | ⬜ **Genuine 0%**. |
+| 34 | Plex | ⬜ **Genuine 0%**. |
+| 35 | DLNA/UPnP | ⬜ **Genuine 0%**. |
+| 36 | Spotify | 🟢 Solid, unverified — real PKCE OAuth (`SpotifyAuth`), playlist import (`SpotifyImportPlugin`), and Spotify-Connect remote control (`SpotifyPlaybackPlugin`), all deliberately metadata/remote-only (DRM prevents local decode — by design, not a shortfall). Self-flagged ⚠️ in `Omnis-Plugins/README.md`: never exercised against a real account. |
+| 37 | YouTube | 🟢 Solid, unverified — same shape as Spotify: OAuth (`YoutubeAuth`), playlist import + public search (`YoutubeMusicImportPlugin`), and playback via YouTube's own embedded IFrame player (`YoutubePlaybackPlugin`), deliberately not stream-extraction (ToS). Self-flagged ⚠️: never run on a real device/OAuth client. |
+| 38 | Other providers | ⬜ **Genuine 0%** for Apple Music/SoundCloud/Bandcamp/Tidal/Qobuz/Emby. `ArtistImagePlugin`'s Deezer call is artist-photo lookup only, not a Deezer music provider. |
 
 ## Phase 6 — Discovery
 
+> **Audited 2026-08-13.** Full findings in [OMNIS_2_0_MISSED_DEEP_PHASE.md](OMNIS_2_0_MISSED_DEEP_PHASE.md#phase-6--discovery).
+
 | # | Item | Status |
 |---|------|--------|
-| 39 | Recommendations | ⬜ Not started |
-| 40 | Sonic similarity | ⬜ Not started |
-| 41 | Radio | ⬜ Not started |
-| 42 | Smart playlists | ⬜ Not started |
-| 43 | AI | ⬜ Not started |
+| 39 | Recommendations | 🟡 Partial — the "Moods" page (`_MoodsPage`) is effectively one crude "Mood Radio" algorithm off `IQueueBuilder`. None of the spec's other algorithms (Similar Track/Artist, Daily/Weekly Mix, Discovery, Deep Cuts, Rediscover, New Releases) exist; no provider-neutral recommendation framework; favorites/ratings data exists but nothing consumes it for recommendations. |
+| 40 | Sonic similarity | 🟡 Partial — `AudioAnalysisPlugin` extracts real acoustic features (BPM/key/mood/genre) via Essentia, but there's no embedding/fingerprint and no similarity/distance computation anywhere — nothing does actual "find tracks that sound like this." |
+| 41 | Radio | ⬜ **Genuine 0%** — no Radio Browser/Icecast/Shoutcast integration, no station browsing, no streaming-station playback path. |
+| 42 | Smart playlists | 🟡 Partial — despite the name, `SmartPlaylistPlugin` is a flat mood-string substring matcher (the same engine behind Moods), not a rule-based, multi-condition, ALL/ANY/NONE engine. No `SmartPlaylistRule`/condition-group model exists anywhere. |
+| 43 | AI | ⬜ **Genuine 0%** — no `IAIProvider`, no AI-related code/dependency anywhere in either repo. |
 
 ## Phase 7 — Advanced UX
 
+> **Audited 2026-08-13.** Full findings in [OMNIS_2_0_MISSED_DEEP_PHASE.md](OMNIS_2_0_MISSED_DEEP_PHASE.md#phase-7--advanced-ux). Themes/layouts/car-mode/accessibility are far more built than the blanket tracker credited; TV mode, OS widgets, and general automation are genuine 0%.
+
 | # | Item | Status |
 |---|------|--------|
-| 44 | Themes | ⬜ Not started |
-| 45 | Layout builder | ⬜ Not started |
-| 46 | Car mode | ⬜ Not started |
-| 47 | TV mode | ⬜ Not started |
-| 48 | Accessibility | ⬜ Not started |
-| 49 | Widgets | ⬜ Not started |
-| 50 | Automation | ⬜ Not started |
+| 44 | Themes | 🟡 Partial — a real declarative theme engine (import from URL/file, closed-schema colors/typography/shape/motion) exists, but none of the spec's 6 named presets (Pure/Drive/Karaoke/Future/Audiophile survive by name) do — only 4 original substitutes (Classic/Midnight/Aurora/Sunset). Themes don't touch navigation/Home/Library layout as the spec's "theme = composition" concept demands — that lives in a separate system (see item 45). |
+| 45 | Layout builder | 🟢 Solid for Now Playing (a real drag-and-drop visual editor, `LayoutEditorPage`, 6 bundled layouts including Car Mode/Karaoke), **0% for Home** — `home_dashboard_page.dart` is a hardcoded, non-reorderable widget with fixed sections, no "widget canvas" per spec. No sidebar customization either. |
+| 46 | Car mode | 🟢 Solid — a dedicated, deliberately-minimal Now Playing layout (`CarModeLayout`) plus real GPS-speed-triggered auto-activation (`DrivingModePlugin`, documented Android background-service limitations). No separate Car *theme*, no voice control, no Android Auto/CarPlay. |
+| 47 | TV mode | ⬜ **Genuine 0%** — no file, class, or string reference anywhere; no D-pad/remote focus handling. |
+| 48 | Accessibility | 🟡 Partial — a real, git-log-verified accessibility pass (tooltips, `Semantics` labels on custom gesture targets, `ExcludeSemantics` on decoration, widget tests asserting on the semantics tree) plus working "Reduce motion"/"Reduce transparency" settings. No dedicated Accessibility settings category (buried in Appearance), no high-contrast mode, no app-wide text scaling, **no keyboard navigation/shortcuts anywhere** (zero `Shortcuts`/`FocusTraversalGroup` usage), so §37/§38's global search/command palette also don't exist. |
+| 49 | Widgets | ⬜ **Genuine 0%** — no OS-level home-screen widget on any platform (this refers to lock-screen/home-screen widgets, not in-app UI). |
+| 50 | Automation | 🟡 Partial — two real, working single-purpose triggers (GPS-speed → Car Mode layout; Bluetooth-connect → quick-play/EQ-preset prompt), but no general automation-rules engine, no time-based triggers, and the Bluetooth trigger doesn't switch the UI/theme the way the spec's own example describes. |
 
 ---
 
@@ -135,3 +145,4 @@
 | 2026-08-13 | — | (phase transition) | Moved from "keep hardening Phase 1" to Phase 2 (Library) at the user's direction. Did a real audit of all 8 Phase 2 items before picking a starting point (see the Phase 2 table above) rather than guessing — found Search was a genuine, confirmed 0% gap despite the spec calling it a "killer feature," while most of the rest (Metadata/Artwork/Playlists/Favorites/History/Tag editor) already had real pre-existing implementations the blanket tracker never credited. Ratings is also a genuine 0% gap but needs a new plugin in the separate `Omnis-Plugins` repo plus a version bump here — deliberately deferred as a distinct, larger unit of work rather than folded into this session. |
 | 2026-08-13 | 10 | Search | Added `lib/core/library_search.dart` (`filterTracks`) — free text across title/artist/album/genre, plus `artist:`/`album:`/`genre:`/`title:`/`mood:`/`year:` (exact or range) qualifiers per §6, AND-combined. Wired into `library_page.dart`'s search box (filters both list and grid paths; a real "no results" state distinct from "library is empty"). 20 unit tests, all passing. **Could not get an interactive widget test working**: `library_page_test.dart` hung indefinitely regardless of fix attempted (a real `AudioEngine()` building a real `AudioPlayer()` — fixed with a lightweight fake; `LibraryStore.save()`'s 500ms debounce `Timer` not firing under a plain `await` — fixed by seeding the JSON file directly; a third, unidentified hang past both of those). Removed the test file rather than ship a hang that would block every future `flutter test` run — the pure filter-logic tests plus `flutter analyze` are what's backing this feature instead. Full suite: 522 passing, `flutter analyze` clean. |
 | 2026-08-13 | 15 | Ratings | User explicitly asked for the cross-repo work (build **and** push), not just build-locally. Added `RatingsPlugin` to `Omnis-Plugins` (mirrors `FavoritesPlugin`'s shape exactly: own `PluginStorage`, works unattached, 0-5 rating stored as one per-entry-defensively-decoded JSON blob), 15 tests, `flutter analyze`/`flutter test` clean there (84 passing total) — committed, tagged `v0.5.0` (annotated, matching the existing `v0.1.0`-`v0.4.0` convention), pushed to `github.com/MrIvoe/Omnis-Plugins`. Bumped this repo's `pubspec.yaml` `omnis_plugins` ref to `v0.5.0`, `flutter pub get`, registered in `bundled_plugins.dart`. Wired into `library_page.dart`: "Rate track" menu item -> 5-star picker dialog; a compact star indicator shows on any rated row. Full main-repo suite: 522 passing (unchanged — the new tests live in `Omnis-Plugins`), `flutter analyze` clean in both repos. |
+| 2026-08-13 | 3-7 | (all) | User directive: stop asking, keep building autonomously through every remaining phase, auto-commit and push, write a dedicated "missed" document for gaps found but not fixed in the pass that found them. Ran 5 parallel research audits (one per remaining phase) against both repos before touching any code — same discipline as the Phase 2 audit. Result: Phase 4 (Plugin platform) turned out far more built than the blanket tracker credited (real `ServiceRegistry`, real sandboxing, real permission UI); Phase 3 (Audio)/Phase 6 (Discovery)/Phase 7 (Advanced UX) are a real mix of solid-but-narrower-than-spec pieces and genuine 0% gaps; Phase 5 (Connectivity) is almost entirely 0% except Spotify/YouTube, which are solid but self-flagged unverified against real accounts. Full findings appended to `OMNIS_2_0_MISSED_DEEP_PHASE.md`; phase tables above updated from "Not started" to real, cited statuses. |
