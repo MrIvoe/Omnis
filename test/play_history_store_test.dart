@@ -137,6 +137,19 @@ void main() {
     expect(await store.mostPlayed(), isEmpty);
   });
 
+  test('save() writes atomically — no leftover .tmp file after '
+      'recordPlay', () async {
+    final store = PlayHistoryStore.instance;
+    await store.recordPlay(_track('a'));
+
+    final dir = await PathProviderPlatform.instance.getApplicationDocumentsPath();
+    final tmp = File('$dir/omnis_play_history.json.tmp');
+    expect(await tmp.exists(), isFalse,
+        reason: 'the .tmp file must be renamed away, never left behind');
+    final real = File('$dir/omnis_play_history.json');
+    expect(await real.exists(), isTrue);
+  });
+
   test('tolerates corrupt JSON on disk', () async {
     final store = PlayHistoryStore.instance;
     await store.recordPlay(_track('a'));

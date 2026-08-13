@@ -82,6 +82,25 @@ void main() {
     expect(await PlaylistStore.instance.load(), isEmpty);
   });
 
+  test('save() writes atomically — no leftover .tmp file, and the real '
+      'file always has the latest complete content', () async {
+    await PlaylistStore.instance.save([
+      Playlist(
+        id: 'p1',
+        name: 'Road Trip',
+        trackIds: const ['t1'],
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      ),
+    ]);
+
+    final tmp = File('$tempDir/omnis_playlists.json.tmp');
+    expect(await tmp.exists(), isFalse,
+        reason: 'the .tmp file must be renamed away, never left behind');
+    final real = File('$tempDir/omnis_playlists.json');
+    expect(await real.exists(), isTrue);
+    expect(await PlaylistStore.instance.load(), hasLength(1));
+  });
+
   group('M3U export/import', () {
     BaseTrack track(String id,
             {String artist = 'Artist',

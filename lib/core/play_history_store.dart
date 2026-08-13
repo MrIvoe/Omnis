@@ -124,11 +124,21 @@ class PlayHistoryStore {
     }
   }
 
+  /// Writes to a sibling `.tmp` file and renames it over the real path —
+  /// atomic on the filesystems this app targets, so a crash/power-loss
+  /// mid-write (this fires on every pause and every track change, not a
+  /// rare event) leaves the previous complete file intact rather than a
+  /// truncated one that silently wipes Recently/Most Played/Continue
+  /// Listening. Same fix as `LibraryStore.save`; no debounce added here
+  /// unlike that one — this store isn't called in the kind of tight
+  /// per-mutation loop LibraryStore's bulk tag-edit path is.
   Future<void> _save(Map<String, TrackPlayStats> stats) async {
     try {
       final file = await _getFile();
       final json = await compute(_encodeStats, stats);
-      await file.writeAsString(json);
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(json, flush: true);
+      await tmp.rename(file.path);
     } catch (e) {
       // Best-effort persistence; a failure here must never crash the app.
     }

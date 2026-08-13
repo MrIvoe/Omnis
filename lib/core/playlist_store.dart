@@ -90,11 +90,20 @@ class PlaylistStore {
   }
 
   /// Persist the given playlists to disk.
+  ///
+  /// Writes to a sibling `.tmp` file and renames it over the real path —
+  /// atomic on the filesystems this app targets, so a crash/power-loss
+  /// mid-write leaves the previous complete file intact rather than a
+  /// truncated one (the same corruption `LibraryStore.save` guards
+  /// against, and just as costly here: this is the user's own
+  /// hand-built playlists, not something a rescan can regenerate).
   Future<void> save(List<Playlist> playlists) async {
     try {
       final file = await _getFile();
       final json = jsonEncode(playlists.map((p) => p.toJson()).toList());
-      await file.writeAsString(json);
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(json, flush: true);
+      await tmp.rename(file.path);
     } catch (e) {
       // Best-effort persistence; a failure here must never crash the app.
     }
