@@ -85,6 +85,33 @@ class BaseTrack {
   /// `MediaScanner._scanFilesystem`.
   final DateTime? fileModifiedAt;
 
+  /// Short codec/format label sniffed from the file's own header bytes —
+  /// e.g. "FLAC", "MP3", "PCM (WAV)". `null` for a non-local track, an
+  /// unrecognized extension, or a local one scanned before this field
+  /// existed. Distinct from an ID3/tag field: this comes from the actual
+  /// audio stream's framing, not embedded metadata. See
+  /// `AudioFormatReader` in the main app for how this is derived.
+  final String? codec;
+
+  /// Sample rate in Hz (e.g. 44100, 48000, 96000), when the codec's
+  /// header made it available. `null` when unknown or not applicable.
+  final int? sampleRateHz;
+
+  /// Bit depth in bits per sample (e.g. 16, 24), meaningful for PCM/
+  /// lossless formats (WAV, FLAC, AIFF). `null` for lossy formats where
+  /// the concept doesn't apply, or when unknown.
+  final int? bitDepth;
+
+  /// Bitrate in kbps. For lossy formats this is a real average (computed
+  /// from a VBR header's total frame/byte counts when present, not just
+  /// the first frame's value); for lossless formats it's the file's
+  /// actual average (file size / duration), not a fixed encoder setting.
+  /// `null` when unknown.
+  final int? bitrateKbps;
+
+  /// Channel count (1 = mono, 2 = stereo, ...). `null` when unknown.
+  final int? channels;
+
   /// Constructor
   BaseTrack({
     required this.id,
@@ -111,6 +138,11 @@ class BaseTrack {
     this.releaseDate,
     this.dateAdded,
     this.fileModifiedAt,
+    this.codec,
+    this.sampleRateHz,
+    this.bitDepth,
+    this.bitrateKbps,
+    this.channels,
   });
 
   /// Create a copy of this track with updated values
@@ -139,6 +171,11 @@ class BaseTrack {
     DateTime? releaseDate,
     DateTime? dateAdded,
     DateTime? fileModifiedAt,
+    String? codec,
+    int? sampleRateHz,
+    int? bitDepth,
+    int? bitrateKbps,
+    int? channels,
   }) {
     return BaseTrack(
       id: id ?? this.id,
@@ -165,6 +202,11 @@ class BaseTrack {
       releaseDate: releaseDate ?? this.releaseDate,
       dateAdded: dateAdded ?? this.dateAdded,
       fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      codec: codec ?? this.codec,
+      sampleRateHz: sampleRateHz ?? this.sampleRateHz,
+      bitDepth: bitDepth ?? this.bitDepth,
+      bitrateKbps: bitrateKbps ?? this.bitrateKbps,
+      channels: channels ?? this.channels,
     );
   }
 
@@ -195,6 +237,11 @@ class BaseTrack {
       'releaseDate': releaseDate?.toIso8601String(),
       'dateAdded': dateAdded?.toIso8601String(),
       'fileModifiedAt': fileModifiedAt?.toIso8601String(),
+      'codec': codec,
+      'sampleRateHz': sampleRateHz,
+      'bitDepth': bitDepth,
+      'bitrateKbps': bitrateKbps,
+      'channels': channels,
     };
   }
 
@@ -240,6 +287,11 @@ class BaseTrack {
       fileModifiedAt: json['fileModifiedAt'] != null
           ? DateTime.tryParse(json['fileModifiedAt'] as String)
           : null,
+      codec: json['codec'] as String?,
+      sampleRateHz: json['sampleRateHz'] as int?,
+      bitDepth: json['bitDepth'] as int?,
+      bitrateKbps: json['bitrateKbps'] as int?,
+      channels: json['channels'] as int?,
     );
   }
 
@@ -271,7 +323,12 @@ class BaseTrack {
         other.releaseType == releaseType &&
         other.releaseDate == releaseDate &&
         other.dateAdded == dateAdded &&
-        other.fileModifiedAt == fileModifiedAt;
+        other.fileModifiedAt == fileModifiedAt &&
+        other.codec == codec &&
+        other.sampleRateHz == sampleRateHz &&
+        other.bitDepth == bitDepth &&
+        other.bitrateKbps == bitrateKbps &&
+        other.channels == channels;
   }
 
   @override
@@ -304,6 +361,11 @@ class BaseTrack {
       releaseDate,
       dateAdded,
       fileModifiedAt,
+      codec,
+      sampleRateHz,
+      bitDepth,
+      bitrateKbps,
+      channels,
     ]);
   }
 }

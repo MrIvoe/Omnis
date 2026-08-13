@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/audio_format_reader.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:path_provider/path_provider.dart';
@@ -260,7 +261,15 @@ class MediaScanner {
         ? file.uri.pathSegments.last.replaceAll(RegExp(r'\.[^.]+$'), '')
         : 'Unknown';
 
-    final tags = await tagEditor.readTags(file.path, includeArtwork: false);
+    // Independent, I/O-bound reads of the same file — run concurrently
+    // rather than serially, the same reasoning as the batch-of-32
+    // concurrency in _scanFilesystem above, just one level down.
+    final results = await Future.wait([
+      tagEditor.readTags(file.path, includeArtwork: false),
+      AudioFormatReader.read(file.path),
+    ]);
+    final tags = results[0] as TrackTags;
+    final format = results[1] as AudioFormatInfo;
 
     final rawArtist = tags.artist?.trim() ?? '';
     final artists = rawArtist.isEmpty
@@ -309,6 +318,11 @@ class MediaScanner {
           ? rawAlbumArtist
           : null,
       fileModifiedAt: mtime,
+      codec: format.codec,
+      sampleRateHz: format.sampleRateHz,
+      bitDepth: format.bitDepth,
+      bitrateKbps: format.bitrateKbps,
+      channels: format.channels,
     );
   }
 

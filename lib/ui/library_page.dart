@@ -1315,6 +1315,92 @@ class _LibraryPageState extends State<LibraryPage> {
     _toast('Tags updated for "${updated.title}".');
   }
 
+  /// Shows what `MediaScanner`/`AudioFormatReader` actually found in this
+  /// file's own header — codec, sample rate, bit depth, bitrate, channel
+  /// count — the "source" half of Bit-perfect mode's spec'd
+  /// source→DSP→output display. A file scanned before these fields
+  /// existed, a streaming track, or a format this app can't parse a
+  /// header for shows "Not available" per field rather than a fabricated
+  /// guess.
+  Future<void> _showAudioInfo(BaseTrack track) async {
+    String field(String? value) => (value == null || value.isEmpty)
+        ? 'Not available'
+        : value;
+    final rows = <MapEntry<String, String>>[
+      MapEntry('Codec', field(track.codec)),
+      MapEntry(
+        'Sample rate',
+        track.sampleRateHz != null
+            ? '${(track.sampleRateHz! / 1000).toStringAsFixed(1)} kHz'
+            : 'Not available',
+      ),
+      MapEntry(
+        'Bit depth',
+        track.bitDepth != null ? '${track.bitDepth}-bit' : 'Not available',
+      ),
+      MapEntry(
+        'Bitrate',
+        track.bitrateKbps != null
+            ? '${track.bitrateKbps} kbps'
+            : 'Not available',
+      ),
+      MapEntry(
+        'Channels',
+        track.channels == 1
+            ? 'Mono'
+            : track.channels == 2
+                ? 'Stereo'
+                : track.channels != null
+                    ? '${track.channels}'
+                    : 'Not available',
+      ),
+      MapEntry('File', field(track.localPath)),
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Audio info — ${track.title}'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 100,
+                        child: Text(
+                          row.key,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          row.value,
+                          style: const TextStyle(fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _bulkAutoTagCancelled = false;
 
   /// Automatic bulk tagging: cleans up featured-artist splitting
@@ -2069,11 +2155,16 @@ class _LibraryPageState extends State<LibraryPage> {
                             if (value == 'enrich') _enrichSingle(track);
                             if (value == 'analyze') _analyzeSingle(track);
                             if (value == 'set_ringtone') _setAsRingtone(track);
+                            if (value == 'audio_info') _showAudioInfo(track);
                           },
                           itemBuilder: (context) => const [
                             PopupMenuItem(
                               value: 'edit_tags',
                               child: Text('Edit tags'),
+                            ),
+                            PopupMenuItem(
+                              value: 'audio_info',
+                              child: Text('Audio info'),
                             ),
                             PopupMenuItem(
                               value: 'add_to_playlist',

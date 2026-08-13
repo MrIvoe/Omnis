@@ -1634,5 +1634,61 @@ dynamic provideLyrics(dynamic track, dynamic positionMs) => 'x';
       expect(restored.title, 'Stream Song');
       expect(restored.type, TrackType.youtube);
     });
+
+    test('audio-format fields (codec/sampleRateHz/bitDepth/bitrateKbps/'
+        'channels) round-trip through JSON', () {
+      final track = BaseTrack(
+        id: '3',
+        title: 'Lossless Song',
+        artists: const ['C'],
+        album: 'Album',
+        duration: 300,
+        type: TrackType.local,
+        localPath: '/tmp/song.flac',
+        codec: 'FLAC',
+        sampleRateHz: 96000,
+        bitDepth: 24,
+        bitrateKbps: 2304,
+        channels: 2,
+      );
+
+      final restored = BaseTrack.fromJson(track.toJson());
+
+      expect(restored.codec, 'FLAC');
+      expect(restored.sampleRateHz, 96000);
+      expect(restored.bitDepth, 24);
+      expect(restored.bitrateKbps, 2304);
+      expect(restored.channels, 2);
+      // Not `expect(restored, track)`: BaseTrack's `==` compares list
+      // fields (artists/genres) with plain `==`, which Dart's List
+      // doesn't override for content equality — a pre-existing gap this
+      // test isn't the place to fix, so it checks scalar fields instead,
+      // matching the pattern the test above already uses.
+      expect(restored.id, track.id);
+      expect(restored.title, track.title);
+    });
+
+    test('audio-format fields decode as null from JSON written before '
+        'they existed — an additive field, not a breaking one', () {
+      final legacyJson = {
+        'id': '4',
+        'title': 'Old Scan',
+        'artists': ['D'],
+        'album': 'Album',
+        'duration': 180,
+        'genres': [],
+        'type': 'local',
+        'localPath': '/tmp/old.mp3',
+        // No codec/sampleRateHz/bitDepth/bitrateKbps/channels keys at all.
+      };
+
+      final restored = BaseTrack.fromJson(legacyJson);
+
+      expect(restored.codec, isNull);
+      expect(restored.sampleRateHz, isNull);
+      expect(restored.bitDepth, isNull);
+      expect(restored.bitrateKbps, isNull);
+      expect(restored.channels, isNull);
+    });
   });
 }

@@ -176,11 +176,30 @@ is an explicit documented no-op. No device list UI, no USB DAC support,
 no per-device volume/DSP beyond the EQ keying above, no
 HDMI/Cast/DLNA/AirPlay output.
 
-**22. Bit-perfect mode** — Genuine 0%. `BaseTrack` carries no audio-format
-fields at all — no codec, container, bit depth, sample rate, channels,
-or bitrate. There's no data source to build the spec's
-source→DSP→resampling→output display from, and no exclusive/WASAPI-style
-output mode.
+**22. Bit-perfect mode** — Partial, informational half only (2026-08-13).
+`BaseTrack` now carries real `codec`/`sampleRateHz`/`bitDepth`/
+`bitrateKbps`/`channels` fields (`plugin-api-v0.6.0`), populated by a new
+pure-Dart `AudioFormatReader` (`lib/core/audio_format_reader.dart`) that
+parses real file headers — FLAC STREAMINFO (exact sample rate/bit depth/
+channels, average bitrate from file-size/duration), WAV fmt chunk (exact,
+including a real byte-rate-derived bitrate), and MP3 frame headers
+(sample rate/channels from the first valid frame, average bitrate from a
+Xing/Info VBR header's frame/byte counts when present, not just the
+misleading first-frame value for VBR files). Surfaced via a new
+"Audio info" dialog on each track (`library_page.dart`'s track menu).
+Still gaps: M4A/AAC, OGG/Opus, WMA, and AIFF only get a codec label from
+their extension — full MP4-box/Ogg-page/ASF-header parsing for those
+containers is real, separate work, deliberately not attempted here to
+avoid shipping wrong numbers. And the DSP/output half is still fully 0%:
+no source→DSP→resampling→output *chain* display, no exclusive/
+WASAPI-style output mode. Also found and left as-is (out of scope for
+this pass): `BaseTrack`'s `==`/`hashCode` compare list fields
+(`artists`/`genres`) with plain `List.==`, which Dart doesn't override
+for content equality — so two structurally-identical tracks built from
+separate list literals are never `==`-equal unless they share list
+instances. Harmless today (every real call site compares tracks by
+`.id`, never by `==`/in a `Set`), but a latent trap for future code that
+assumes value equality.
 
 **23. Audio analysis** — Partial. `AudioAnalysisPlugin` is a real HTTP
 client to a self-hosted Essentia service (`tools/essentia_service/`,
