@@ -539,27 +539,41 @@ class _LibraryPageState extends State<LibraryPage> {
 
     var done = 0;
     var changed = 0;
-    for (final track in List<BaseTrack>.from(_tracks)) {
-      if (_bulkEnrichCancelled || !mounted) break;
-      final result = await provider.enrich(track);
-      if (!result.isEmpty) {
-        _applyEnrichment(track, result);
-        changed++;
-        changedNotifier.value = changed;
+    // try/catch/finally so a thrown exception anywhere in the loop (a
+    // misbehaving IMetadataProvider — a downloaded plugin, not
+    // necessarily the bundled one — or a save failure) can't strand this
+    // dialog on screen forever: it's barrierDismissible: false, so
+    // without this the only way out would be force-closing the app.
+    var failed = false;
+    try {
+      for (final track in List<BaseTrack>.from(_tracks)) {
+        if (_bulkEnrichCancelled || !mounted) break;
+        final result = await provider.enrich(track);
+        if (!result.isEmpty) {
+          _applyEnrichment(track, result);
+          changed++;
+          changedNotifier.value = changed;
+        }
+        done++;
+        doneNotifier.value = done;
+        if (done < total && !_bulkEnrichCancelled) {
+          await Future<void>.delayed(const Duration(milliseconds: 1100));
+        }
       }
-      done++;
-      doneNotifier.value = done;
-      if (done < total && !_bulkEnrichCancelled) {
-        await Future<void>.delayed(const Duration(milliseconds: 1100));
+      await LibraryRepository.instance.save(_tracks);
+    } catch (e) {
+      failed = true;
+      debugPrint('Omnis: bulk enrichment stopped early: $e');
+    } finally {
+      doneNotifier.dispose();
+      changedNotifier.dispose();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: false).pop();
+        _toast(failed
+            ? 'Enrichment stopped after an error — $changed of $done tracks '
+                'were updated before it happened.'
+            : 'Enrichment finished: $changed of $done tracks updated.');
       }
-    }
-
-    await LibraryRepository.instance.save(_tracks);
-    doneNotifier.dispose();
-    changedNotifier.dispose();
-    if (mounted) {
-      Navigator.of(context, rootNavigator: false).pop();
-      _toast('Enrichment finished: $changed of $done tracks updated.');
     }
   }
 
@@ -736,27 +750,40 @@ class _LibraryPageState extends State<LibraryPage> {
 
     var done = 0;
     var changed = 0;
-    for (final track in local) {
-      if (_bulkAnalyzeCancelled || !mounted) break;
-      final result = await provider.analyze(track);
-      if (!result.isEmpty) {
-        _applyAnalysis(track, result);
-        final merged =
-            _tracks.firstWhere((t) => t.id == track.id, orElse: () => track);
-        await _writeAnalysisTagsToFile(merged);
-        changed++;
-        changedNotifier.value = changed;
+    // Same try/catch/finally rationale as _enrichAll: this dialog is
+    // barrierDismissible: false, so an uncaught exception anywhere in
+    // here (a misbehaving IAudioAnalysisProvider, a tag-write failure, a
+    // save failure) would otherwise strand it on screen forever.
+    var failed = false;
+    try {
+      for (final track in local) {
+        if (_bulkAnalyzeCancelled || !mounted) break;
+        final result = await provider.analyze(track);
+        if (!result.isEmpty) {
+          _applyAnalysis(track, result);
+          final merged = _tracks.firstWhere((t) => t.id == track.id,
+              orElse: () => track);
+          await _writeAnalysisTagsToFile(merged);
+          changed++;
+          changedNotifier.value = changed;
+        }
+        done++;
+        doneNotifier.value = done;
       }
-      done++;
-      doneNotifier.value = done;
-    }
-
-    await LibraryRepository.instance.save(_tracks);
-    doneNotifier.dispose();
-    changedNotifier.dispose();
-    if (mounted) {
-      Navigator.of(context, rootNavigator: false).pop();
-      _toast('Analysis finished: $changed of $done tracks updated.');
+      await LibraryRepository.instance.save(_tracks);
+    } catch (e) {
+      failed = true;
+      debugPrint('Omnis: bulk analysis stopped early: $e');
+    } finally {
+      doneNotifier.dispose();
+      changedNotifier.dispose();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: false).pop();
+        _toast(failed
+            ? 'Analysis stopped after an error — $changed of $done tracks '
+                'were updated before it happened.'
+            : 'Analysis finished: $changed of $done tracks updated.');
+      }
     }
   }
 
@@ -925,15 +952,25 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     ));
 
-    final done = await _runDurationMeasurement(unmeasured,
-        isCancelled: () => _bulkMeasureCancelled,
-        onProgress: (n) => doneNotifier.value = n);
-
-    _measurementInProgress = false;
-    doneNotifier.dispose();
-    if (mounted) {
-      Navigator.of(context, rootNavigator: false).pop();
-      _toast('Measured $done of $total tracks.');
+    // try/finally so a thrown exception in here (e.g. a LibraryRepository
+    // listener elsewhere in the app throwing during notifyListeners(),
+    // which propagates straight through save()) can't leave
+    // _measurementInProgress stuck true forever — that would silently
+    // disable "Measure durations" (and the post-scan automatic pass) for
+    // the rest of the session, on top of stranding this
+    // barrierDismissible: false dialog.
+    var done = 0;
+    try {
+      done = await _runDurationMeasurement(unmeasured,
+          isCancelled: () => _bulkMeasureCancelled,
+          onProgress: (n) => doneNotifier.value = n);
+    } finally {
+      _measurementInProgress = false;
+      doneNotifier.dispose();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: false).pop();
+        _toast('Measured $done of $total tracks.');
+      }
     }
   }
 
@@ -1335,41 +1372,54 @@ class _LibraryPageState extends State<LibraryPage> {
 
     var done = 0;
     var changed = 0;
-    for (final track in candidates) {
-      if (_bulkAutoTagCancelled || !mounted) break;
-      final cleaned = tagEditor.cleanArtistFields(track);
-      if (cleaned != null) {
-        final ok = await tagEditor.writeTags(
-          track.localPath!,
-          title: cleaned.title,
-          artist: cleaned.artists.join(', '),
-        );
-        if (ok) {
-          final index = _tracks.indexWhere((t) => t.id == track.id);
-          if (index >= 0) {
-            final updated = _tracks[index]
-                .copyWith(title: cleaned.title, artists: cleaned.artists);
-            if (mounted) {
-              setState(() => _tracks[index] = updated);
-            } else {
-              _tracks[index] = updated;
+    // Same try/catch/finally rationale as _enrichAll/_analyzeAll: this
+    // dialog is barrierDismissible: false, so an uncaught exception
+    // anywhere in here (a file-write failure, a save failure) would
+    // otherwise strand it on screen forever.
+    var failed = false;
+    try {
+      for (final track in candidates) {
+        if (_bulkAutoTagCancelled || !mounted) break;
+        final cleaned = tagEditor.cleanArtistFields(track);
+        if (cleaned != null) {
+          final ok = await tagEditor.writeTags(
+            track.localPath!,
+            title: cleaned.title,
+            artist: cleaned.artists.join(', '),
+          );
+          if (ok) {
+            final index = _tracks.indexWhere((t) => t.id == track.id);
+            if (index >= 0) {
+              final updated = _tracks[index]
+                  .copyWith(title: cleaned.title, artists: cleaned.artists);
+              if (mounted) {
+                setState(() => _tracks[index] = updated);
+              } else {
+                _tracks[index] = updated;
+              }
             }
+            changed++;
+            changedNotifier.value = changed;
           }
-          changed++;
-          changedNotifier.value = changed;
         }
+        await tagEditor.markAutoTagged(track.id);
+        done++;
+        doneNotifier.value = done;
       }
-      await tagEditor.markAutoTagged(track.id);
-      done++;
-      doneNotifier.value = done;
-    }
-
-    await LibraryRepository.instance.save(_tracks);
-    doneNotifier.dispose();
-    changedNotifier.dispose();
-    if (mounted) {
-      Navigator.of(context, rootNavigator: false).pop();
-      _toast('Auto-tagging finished: $changed of $done tracks fixed.');
+      await LibraryRepository.instance.save(_tracks);
+    } catch (e) {
+      failed = true;
+      debugPrint('Omnis: bulk auto-tagging stopped early: $e');
+    } finally {
+      doneNotifier.dispose();
+      changedNotifier.dispose();
+      if (mounted) {
+        Navigator.of(context, rootNavigator: false).pop();
+        _toast(failed
+            ? 'Auto-tagging stopped after an error — $changed of $done '
+                'tracks were fixed before it happened.'
+            : 'Auto-tagging finished: $changed of $done tracks fixed.');
+      }
     }
   }
 
