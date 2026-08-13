@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -160,5 +161,32 @@ void main() {
     await file.writeAsString('not valid json {{{');
 
     expect(await store.mostPlayed(), isEmpty);
+  });
+
+  test('a single malformed stats record among many valid ones is '
+      'skipped, not fatal to the rest of the history', () async {
+    final dir = await PathProviderPlatform.instance.getApplicationDocumentsPath();
+    final file = File('$dir/omnis_play_history.json');
+    // TrackPlayStats.fromJson uses DateTime.parse (throws on a bad/absent
+    // value) and hard-casts playCount.
+    await file.writeAsString(jsonEncode({
+      'good_one': {
+        'trackId': 'good_one',
+        'playCount': 3,
+        'lastPlayedAt': DateTime(2024, 1, 1).toIso8601String(),
+      },
+      'bad': <String, dynamic>{},
+      'good_two': {
+        'trackId': 'good_two',
+        'playCount': 5,
+        'lastPlayedAt': DateTime(2024, 1, 2).toIso8601String(),
+      },
+    }));
+
+    final mostPlayed = await PlayHistoryStore.instance.mostPlayed();
+
+    expect(mostPlayed.map((s) => s.trackId).toSet(), {'good_one', 'good_two'},
+        reason: 'the rest of the play history must not be lost over one '
+            'bad record');
   });
 }

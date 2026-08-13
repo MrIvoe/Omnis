@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +81,33 @@ void main() {
     await f.writeAsString('not valid json {{{');
 
     expect(await PlaylistStore.instance.load(), isEmpty);
+  });
+
+  test('a single malformed playlist record among many valid ones is '
+      'skipped, not fatal to every other playlist', () async {
+    final f = File('$tempDir/omnis_playlists.json');
+    // Playlist.fromJson hard-casts id/name and throws when missing.
+    await f.writeAsString(jsonEncode([
+      {
+        'id': 'p1',
+        'name': 'Good One',
+        'trackIds': <String>[],
+        'createdAt': 1000,
+      },
+      <String, dynamic>{},
+      {
+        'id': 'p2',
+        'name': 'Good Two',
+        'trackIds': <String>[],
+        'createdAt': 2000,
+      },
+    ]));
+
+    final loaded = await PlaylistStore.instance.load();
+
+    expect(loaded.map((p) => p.name).toSet(), {'Good One', 'Good Two'},
+        reason: 'every other playlist must not be lost over one bad '
+            'record');
   });
 
   test('save() writes atomically — no leftover .tmp file, and the real '

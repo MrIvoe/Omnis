@@ -73,6 +73,14 @@ class PlaylistStore {
   }
 
   /// Load persisted playlists. Returns an empty list if none exist.
+  ///
+  /// Each entry is decoded independently and a failure skips just that
+  /// one playlist — `Playlist.fromJson` hard-casts `id`/`name` and
+  /// throws on anything malformed. A single corrupted record among many
+  /// used to throw out of a bulk `.map(...)`, wiping *every* playlist —
+  /// the user's own hand-curated content, with nothing to regenerate it
+  /// from — over one bad entry. Same rationale as `LibraryStore`'s
+  /// identical per-entry guard.
   Future<List<Playlist>> load() async {
     try {
       final file = await _getFile();
@@ -80,9 +88,16 @@ class PlaylistStore {
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return [];
       final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
-          .map((e) => Playlist.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final playlists = <Playlist>[];
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+        try {
+          playlists.add(Playlist.fromJson(Map<String, dynamic>.from(entry)));
+        } catch (_) {
+          continue;
+        }
+      }
+      return playlists;
     } catch (e) {
       // Corrupt or unreadable file: treat as empty, don't crash.
       return [];

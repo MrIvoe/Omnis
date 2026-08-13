@@ -73,12 +73,28 @@ class TrackPlayStats {
 /// function, same reason `LibraryStore`'s `_decodeTracks` is one:
 /// [compute] spawns an isolate, which needs a function with no captured
 /// state.
+///
+/// Each entry is decoded independently and a failure skips just that one
+/// track's stats — `TrackPlayStats.fromJson` uses `DateTime.parse` (not
+/// `tryParse`) and hard-casts `playCount`, so it throws on anything
+/// malformed. A single corrupted record among thousands used to throw
+/// out of a bulk `Map.map(...)`, wiping the *entire* play history (every
+/// play count, every "last played," Continue Listening's whole dataset)
+/// over one bad entry. Same rationale as `LibraryStore`'s identical
+/// per-entry guard.
 Map<String, TrackPlayStats> _decodeStats(String raw) {
   final decoded = jsonDecode(raw) as Map<String, dynamic>;
-  return decoded.map(
-    (id, value) =>
-        MapEntry(id, TrackPlayStats.fromJson(value as Map<String, dynamic>)),
-  );
+  final stats = <String, TrackPlayStats>{};
+  for (final entry in decoded.entries) {
+    if (entry.value is! Map) continue;
+    try {
+      stats[entry.key] =
+          TrackPlayStats.fromJson(Map<String, dynamic>.from(entry.value));
+    } catch (_) {
+      continue;
+    }
+  }
+  return stats;
 }
 
 String _encodeStats(Map<String, TrackPlayStats> stats) =>

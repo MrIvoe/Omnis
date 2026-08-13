@@ -9,9 +9,28 @@ import 'package:path_provider/path_provider.dart';
 /// Decodes a raw JSON string into tracks. A top-level function (not a
 /// method/closure) because [compute] spawns a new isolate to run it in,
 /// which requires a function with no captured state.
+///
+/// Each track entry is decoded independently and a failure skips just
+/// that one entry — `BaseTrack.fromJson` hard-casts several fields
+/// (`id`, `duration`, `type`, ...) and throws on anything malformed. A
+/// single corrupted record among thousands (a bad write, a future schema
+/// change, a hand-edited file) used to throw out of the `.map(...)`
+/// here, which [load] would catch and treat as "the whole file is
+/// unreadable" — silently reverting the *entire* persisted library to
+/// empty over one bad entry. Same rationale as `PlaybackState.fromJson`'s
+/// identical per-entry guard for its queue.
 List<BaseTrack> _decodeTracks(String raw) {
   final decoded = jsonDecode(raw) as List<dynamic>;
-  return decoded.map((e) => BaseTrack.fromJson(e as Map<String, dynamic>)).toList();
+  final tracks = <BaseTrack>[];
+  for (final entry in decoded) {
+    if (entry is! Map) continue;
+    try {
+      tracks.add(BaseTrack.fromJson(Map<String, dynamic>.from(entry)));
+    } catch (_) {
+      continue;
+    }
+  }
+  return tracks;
 }
 
 /// Encodes tracks into a raw JSON string — the [compute]-friendly

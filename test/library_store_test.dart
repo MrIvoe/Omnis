@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -99,6 +100,42 @@ void main() {
     await f.writeAsString('not valid json {{{');
 
     expect(await store.load(), isEmpty);
+  });
+
+  test('a single malformed track record among many valid ones is skipped, '
+      'not fatal to the whole library', () async {
+    final store = LibraryStore.instance;
+    final dir = Directory(tempDir);
+    final f = File('${dir.path}/omnis_library.json');
+    // Two well-formed tracks and one missing every required field
+    // (BaseTrack.fromJson hard-casts id/title/duration/type and throws).
+    await f.writeAsString(jsonEncode([
+      {
+        'id': '1',
+        'title': 'Good One',
+        'artists': ['A'],
+        'album': 'Al',
+        'duration': 10,
+        'genres': [],
+        'type': 'local',
+      },
+      <String, dynamic>{},
+      {
+        'id': '2',
+        'title': 'Good Two',
+        'artists': ['A'],
+        'album': 'Al',
+        'duration': 20,
+        'genres': [],
+        'type': 'local',
+      },
+    ]));
+
+    final loaded = await store.load();
+
+    expect(loaded.map((t) => t.title).toSet(), {'Good One', 'Good Two'},
+        reason: 'the whole library must not revert to empty over one bad '
+            'record');
   });
 
   test('save() writes atomically — no leftover .tmp file, and the real '
