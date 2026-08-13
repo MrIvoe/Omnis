@@ -9,6 +9,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/plugin_api/enrichment_result.dart';
 import 'package:omnis/core/library_repository.dart';
+import 'package:omnis/core/library_search.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -239,6 +240,18 @@ class _LibraryPageState extends State<LibraryPage> {
   LibraryViewMode _viewMode = LibraryViewMode.songs;
   bool _showAlbums = false;
 
+  /// §6 of the Omnis 2.0 product spec ("Search should be one of Omnis'
+  /// killer features") — see `filterTracks` for the query syntax.
+  /// Deliberately filters `_tracks` at read time rather than replacing
+  /// `_tracks` itself: every other piece of state here (selection,
+  /// bulk-action progress, the "currently playing" stream) is keyed off
+  /// track ids independent of the search box, and none of it should
+  /// reset just because the user typed into it.
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  List<BaseTrack> get _visibleTracks => filterTracks(_tracks, _searchQuery);
+
   /// Track ids currently selected for a bulk action (delete duplicates,
   /// delete short files, ...). Selection mode is active whenever this is
   /// non-empty.
@@ -268,6 +281,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _trackSub?.cancel();
     // Stops the next iteration of whichever measurement loop is running —
     // _runDurationMeasurement also checks `mounted` itself, so this is
@@ -1426,7 +1440,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final sections = buildLibrarySections(_tracks,
+    final sections = buildLibrarySections(_visibleTracks,
         viewMode: _viewMode,
         showAlbums: _showAlbums,
         groupArtistsByAlbumArtist:
@@ -1589,6 +1603,28 @@ class _LibraryPageState extends State<LibraryPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              TextField(
+                                controller: _searchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Search library',
+                                  prefixIcon: const Icon(Icons.search),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                  suffixIcon: _searchQuery.isEmpty
+                                      ? null
+                                      : IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          tooltip: 'Clear search',
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            setState(() => _searchQuery = '');
+                                          },
+                                        ),
+                                ),
+                                onChanged: (value) =>
+                                    setState(() => _searchQuery = value),
+                              ),
+                              const SizedBox(height: 8),
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: SegmentedButton<LibraryViewMode>(
@@ -1668,16 +1704,35 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ),
                         Expanded(
-                          child: (_gridCapable &&
-                                  _displayMode == LibraryDisplayMode.grid)
-                              ? _buildGrid()
-                              : ListView.builder(
-                                  itemCount: sections.length,
-                                  itemBuilder: (context, index) {
-                                    final section = sections[index];
-                                    return _buildSection(section, depth: 0);
-                                  },
-                                ),
+                          child: sections.isEmpty && _searchQuery.trim().isNotEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.search_off,
+                                            size: 48,
+                                            color: theme.colorScheme.outline),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                            'No results for '
+                                            '"${_searchController.text}"',
+                                            textAlign: TextAlign.center),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : (_gridCapable &&
+                                      _displayMode == LibraryDisplayMode.grid)
+                                  ? _buildGrid()
+                                  : ListView.builder(
+                                      itemCount: sections.length,
+                                      itemBuilder: (context, index) {
+                                        final section = sections[index];
+                                        return _buildSection(section, depth: 0);
+                                      },
+                                    ),
                         ),
                       ],
                     );
@@ -1751,11 +1806,11 @@ class _LibraryPageState extends State<LibraryPage> {
   /// uses — a grid tile represents one thing you can tap to play.
   List<LibrarySection> _gridSections() {
     if (_viewMode == LibraryViewMode.songs) {
-      return _tracks
+      return _visibleTracks
           .map((t) => LibrarySection(title: t.title, tracks: [t]))
           .toList();
     }
-    return buildLibrarySections(_tracks,
+    return buildLibrarySections(_visibleTracks,
         viewMode: _viewMode,
         showAlbums: false,
         groupArtistsByAlbumArtist:
