@@ -16,6 +16,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
+import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
@@ -1146,6 +1147,34 @@ class _LibraryPageState extends State<LibraryPage> {
     if (mounted) setState(() {});
   }
 
+  RatingsPlugin? get _ratingsPlugin =>
+      widget.pluginManager.bundled<RatingsPlugin>(onlyEnabled: true);
+
+  int _ratingOf(String trackId) => _ratingsPlugin?.ratingOf(trackId) ?? 0;
+
+  /// Opens a 5-star picker for [track] — tapping a star immediately sets
+  /// that rating and closes, tapping the already-selected star (or the
+  /// explicit clear button, when rated) clears it. One tap, no separate
+  /// "confirm" step, matching how the rest of this page's quick actions
+  /// (favorite toggle, playlist add) already work.
+  Future<void> _rateTrack(BaseTrack track) async {
+    final plugin = _ratingsPlugin;
+    if (plugin == null) {
+      _toast('The Ratings plugin is disabled in Settings.');
+      return;
+    }
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Rate "${track.title}"'),
+        content: _StarPicker(initialRating: plugin.ratingOf(track.id)),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await plugin.setRating(track.id, selected);
+    if (mounted) setState(() {});
+  }
+
   /// Adds [trackIds] to a playlist the user picks, or a brand-new one —
   /// used by both the per-track "Add to playlist" menu item and the
   /// multi-select bulk action, so a single track and a batch go through
@@ -2004,6 +2033,19 @@ class _LibraryPageState extends State<LibraryPage> {
                             : 'Add to favorites',
                         onPressed: () => _toggleFavorite(track.id),
                       ),
+                      // Only shown once a track actually has a rating —
+                      // unlike the favorite heart, most tracks stay
+                      // unrated, so reserving row space for every track
+                      // would mostly just be clutter. The full picker
+                      // (any rating, including a first one) is always
+                      // reachable via the "Rate track" menu item below.
+                      if (_ratingOf(track.id) > 0)
+                        IconButton(
+                          icon: const Icon(Icons.star, size: 20),
+                          color: theme.colorScheme.primary,
+                          tooltip: 'Rated ${_ratingOf(track.id)}/5',
+                          onPressed: () => _rateTrack(track),
+                        ),
                       if (_enrichingIds.contains(track.id) ||
                           _analyzingIds.contains(track.id))
                         const Padding(
@@ -2023,6 +2065,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             if (value == 'add_to_playlist') {
                               _addToPlaylist({track.id});
                             }
+                            if (value == 'rate') _rateTrack(track);
                             if (value == 'enrich') _enrichSingle(track);
                             if (value == 'analyze') _analyzeSingle(track);
                             if (value == 'set_ringtone') _setAsRingtone(track);
@@ -2035,6 +2078,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             PopupMenuItem(
                               value: 'add_to_playlist',
                               child: Text('Add to playlist'),
+                            ),
+                            PopupMenuItem(
+                              value: 'rate',
+                              child: Text('Rate track'),
                             ),
                             PopupMenuItem(
                               value: 'enrich',
@@ -2240,6 +2287,39 @@ class _CleanupSheetState extends State<_CleanupSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Five tappable stars for [_LibraryPageState._rateTrack] — tapping a
+/// star immediately pops the dialog with that rating (1-5), no separate
+/// confirm step. A "Clear rating" action only appears once something is
+/// actually rated, popping with 0.
+class _StarPicker extends StatelessWidget {
+  final int initialRating;
+
+  const _StarPicker({required this.initialRating});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          IconButton(
+            icon: Icon(i <= initialRating ? Icons.star : Icons.star_border),
+            color: i <= initialRating ? color : null,
+            tooltip: '$i star${i == 1 ? '' : 's'}',
+            onPressed: () => Navigator.of(context).pop(i),
+          ),
+        if (initialRating > 0)
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Clear rating',
+            onPressed: () => Navigator.of(context).pop(0),
+          ),
+      ],
     );
   }
 }

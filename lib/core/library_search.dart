@@ -29,11 +29,16 @@ import 'package:omnis/core/base_track.dart';
 /// hits"`) is a reasonable follow-up, not part of this cut.
 ///
 /// Deliberately not yet supported (documented gaps, not oversights):
-/// `rating:`/`bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/
-/// `duplicate:` — each depends on a feature or data source that doesn't
-/// exist yet (ratings, audio analysis results being searchable, format/
-/// bitrate metadata, lyrics text, duplicate detection). Natural
-/// follow-ups once those exist, not part of this cut.
+/// `bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:` — each
+/// depends on a feature or data source that doesn't exist yet (audio
+/// analysis results being searchable, format/bitrate metadata, lyrics
+/// text, duplicate detection). `rating:` is a related but distinct gap:
+/// `RatingsPlugin` exists (added alongside this file), but this function
+/// only ever sees a plain `List<BaseTrack>` with no plugin access —
+/// wiring `rating:>=4` in means either the caller pre-joining ratings
+/// onto the query before calling this, or this function growing a
+/// plugin dependency it deliberately doesn't have today. Natural
+/// follow-ups, not part of this cut.
 List<BaseTrack> filterTracks(List<BaseTrack> tracks, String query) {
   final trimmed = query.trim();
   if (trimmed.isEmpty) return tracks;
