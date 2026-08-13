@@ -380,9 +380,6 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
       'album_art_scale',
       'now_playing_background',
       'dynamic_color',
-      'haptic_feedback',
-      'reduce_motion',
-      'reduce_transparency',
       'player_layout',
       'karaoke_mode',
       'lyrics_text_size',
@@ -634,39 +631,6 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               value: settings.dynamicColorFromArtEnabled,
               onChanged: (value) => setState(
                   () => settings.dynamicColorFromArtEnabled = value),
-            ),
-          ),
-          SettingsHighlight(
-            key: _keys['haptic_feedback'],
-            child: SwitchListTile(
-              title: const Text('Haptic feedback'),
-              subtitle: const Text('A light tap for scrubbing, favoriting, '
-                  'and reordering the queue'),
-              value: settings.hapticFeedbackEnabled,
-              onChanged: (value) =>
-                  setState(() => settings.hapticFeedbackEnabled = value),
-            ),
-          ),
-          SettingsHighlight(
-            key: _keys['reduce_motion'],
-            child: SwitchListTile(
-              title: const Text('Reduce motion'),
-              subtitle: const Text(
-                  'Skip or shorten animations throughout the app'),
-              value: settings.reduceMotionEnabled,
-              onChanged: (value) =>
-                  setState(() => settings.reduceMotionEnabled = value),
-            ),
-          ),
-          SettingsHighlight(
-            key: _keys['reduce_transparency'],
-            child: SwitchListTile(
-              title: const Text('Reduce transparency'),
-              subtitle: const Text(
-                  'Turn off blur/backdrop effects, independent of motion'),
-              value: settings.reduceTransparencyEnabled,
-              onChanged: (value) => setState(
-                  () => settings.reduceTransparencyEnabled = value),
             ),
           ),
           const SizedBox(height: 16),

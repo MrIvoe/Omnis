@@ -459,16 +459,35 @@ mini-player bar, the waveform seek bar with custom increase/decrease
 actions, the layout editor's drag handles), `ExcludeSemantics` around
 decorative artwork/icons, and widget tests that actually assert on the
 semantics tree. Working "Reduce motion" (globally collapses animation
-durations to zero via `OmnisMotion`) and "Reduce transparency" settings.
-Gaps: no dedicated Accessibility settings category (buried inside
-Appearance & Layout), no high-contrast mode, no colorblind-safe state
+durations to zero via `OmnisMotion`), "Reduce transparency", and
+"Haptic feedback" settings — now surfaced in a dedicated **Accessibility**
+settings category (`lib/ui/settings/accessibility_settings_page.dart`,
+closed 2026-08-13), per §45's taxonomy (`Appearance, Playback, Audio,
+Library, ..., Accessibility, Keyboard, ...`) explicitly listing it as
+its own top-level category, not a sub-section of Appearance. Moved (not
+duplicated) verbatim from `appearance_settings_page.dart` — same
+`AppSettings` properties, same behavior, only the surfacing location and
+search-index `category` field changed. `AppSettings.reduceMotionEnabled`
+etc. are unchanged. Found and fixed a real regression while adding the
+new category card to `settings_page.dart`'s home list: the extra card
+pushed "Plugins"/"Backup" (now the 6th/7th cards) past the default test
+viewport's `ListView` sliver cache extent, breaking 3 pre-existing
+widget tests in `settings_page_test.dart` that assumed those cards were
+already mounted without scrolling — fixed by adding the same
+`dragUntilVisible`/`ensureVisible` pattern the file's own "Plugins"
+test had already established for exactly this situation (a real UI
+behavior change in the running app too, not just a test artifact: those
+two cards genuinely sit one card's height further down now on a small
+screen). Still gaps: no high-contrast mode, no colorblind-safe state
 option, no app-wide text-scale setting (only a 4-step lyrics-only text
-size), and — significant — **zero keyboard navigation/shortcuts
-anywhere** (no `Shortcuts`/`FocusTraversalGroup`/`CallbackShortcuts`
-usage found), so the UI spec's global Ctrl+K search (§37) and command
-palette (§38) don't exist either, on top of not being an accessibility
-gap in their own right. No voice control, no switch-input support, no
-RTL/localization wiring (`AppLocalizations` isn't used).
+size, `lyricsTextSize`, deliberately left in Appearance — it's a lyrics
+display option, not moved here), and — significant — **zero keyboard
+navigation/shortcuts anywhere** (no `Shortcuts`/`FocusTraversalGroup`/
+`CallbackShortcuts` usage found), so the UI spec's global Ctrl+K search
+(§37) and command palette (§38) don't exist either, on top of not being
+an accessibility gap in their own right. No voice control, no
+switch-input support, no RTL/localization wiring (`AppLocalizations`
+isn't used).
 
 **49. Widgets** — Genuine 0%. This is OS-level home-screen widgets
 (Android App Widgets / iOS WidgetKit), not in-app UI. No `home_widget`-

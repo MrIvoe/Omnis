@@ -5,6 +5,7 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/plugins_page.dart';
+import 'package:omnis/ui/settings/accessibility_settings_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/controls_settings_page.dart';
@@ -99,6 +100,12 @@ class _SettingsPageState extends State<SettingsPage> {
         builder: (_) => ControlsSettingsPage(highlightField: highlightField),
       ));
 
+  void _openAccessibility(BuildContext context, {String? highlightField}) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) =>
+            AccessibilitySettingsPage(highlightField: highlightField),
+      ));
+
   void _openLibrary(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => LibrarySettingsPage(highlightField: highlightField),
@@ -176,24 +183,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 _openAppearance(c, highlightField: 'dynamic_color')),
         _SearchableSetting(
             title: 'Haptic feedback',
-            category: 'Appearance & Layout',
-            categoryIcon: Icons.palette_outlined,
+            category: 'Accessibility',
+            categoryIcon: Icons.accessibility_new_outlined,
             highlightField: 'haptic_feedback',
             navigate: (c) =>
-                _openAppearance(c, highlightField: 'haptic_feedback')),
+                _openAccessibility(c, highlightField: 'haptic_feedback')),
         _SearchableSetting(
             title: 'Reduce motion',
-            category: 'Appearance & Layout',
-            categoryIcon: Icons.palette_outlined,
+            category: 'Accessibility',
+            categoryIcon: Icons.accessibility_new_outlined,
             highlightField: 'reduce_motion',
             navigate: (c) =>
-                _openAppearance(c, highlightField: 'reduce_motion')),
+                _openAccessibility(c, highlightField: 'reduce_motion')),
         _SearchableSetting(
             title: 'Reduce transparency',
-            category: 'Appearance & Layout',
-            categoryIcon: Icons.palette_outlined,
+            category: 'Accessibility',
+            categoryIcon: Icons.accessibility_new_outlined,
             highlightField: 'reduce_transparency',
-            navigate: (c) => _openAppearance(c,
+            navigate: (c) => _openAccessibility(c,
                 highlightField: 'reduce_transparency')),
         _SearchableSetting(
             title: 'Player layout',
@@ -428,6 +435,12 @@ class _SettingsPageState extends State<SettingsPage> {
               title: 'Library',
               subtitle: 'Scan source, folder, duplicate/short-track cleanup',
               onTap: () => _openLibrary(context),
+            ),
+            _CategoryCard(
+              icon: Icons.accessibility_new_outlined,
+              title: 'Accessibility',
+              subtitle: 'Reduce motion, reduce transparency, haptic feedback',
+              onTap: () => _openAccessibility(context),
             ),
             _CategoryCard(
               icon: Icons.extension_outlined,

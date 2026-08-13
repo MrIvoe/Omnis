@@ -5,6 +5,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
+import 'package:omnis/ui/settings/accessibility_settings_page.dart';
 import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
@@ -47,17 +48,51 @@ void main() {
     expect(find.text('Playback & Audio'), findsOneWidget);
     expect(find.text('Controls & Gestures'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Accessibility'), findsOneWidget);
+    // Plugins/Backup sit below the default test viewport's sliver cache
+    // extent — same reasoning as the "tapping Plugins" test's own
+    // dragUntilVisible below: a plain ListView(children:) is still
+    // sliver-backed, so an off-screen child isn't mounted (and thus not
+    // findable) until actually scrolled into view.
+    await tester.dragUntilVisible(
+      find.text('Backup'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
     expect(find.text('Plugins'), findsOneWidget);
     expect(find.text('Backup'), findsOneWidget);
+  });
+
+  testWidgets('tapping Accessibility opens AccessibilitySettingsPage',
+      (tester) async {
+    await pumpSettings(tester);
+
+    await tester.ensureVisible(find.text('Accessibility'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Accessibility'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AccessibilitySettingsPage), findsOneWidget);
+    expect(find.text('Reduce motion'), findsOneWidget);
+    expect(find.text('Reduce transparency'), findsOneWidget);
+    expect(find.text('Haptic feedback'), findsOneWidget);
   });
 
   testWidgets('tapping Backup opens BackupSettingsPage', (tester) async {
     await pumpSettings(tester);
 
-    // Below the fold at the default test viewport — dragUntilVisible only
-    // guarantees partial intersection, which can still land the tap
-    // offset just past the viewport edge, so use ensureVisible (fully
-    // scrolls it into view) instead.
+    // Below the fold at the default test viewport, past the ListView's
+    // sliver cache extent — not mounted at all until scrolled into view
+    // (ensureVisible can't help here: it requires the target to already
+    // be found/mounted, which is exactly what's not true yet).
+    // dragUntilVisible scrolls incrementally until it is, then
+    // ensureVisible finishes centering it so the tap offset lands inside
+    // the viewport, not just barely intersecting its edge.
+    await tester.dragUntilVisible(
+      find.text('Backup'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
     await tester.ensureVisible(find.text('Backup'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Backup'));
@@ -73,6 +108,20 @@ void main() {
       'previously unreachable from anywhere in the running app', (tester) async {
     await pumpSettings(tester);
 
+    // Below the fold at the default test viewport now that Accessibility
+    // sits above it in the list — same sliver-cache-extent reasoning as
+    // "Plugin Health" below, just for the category card itself.
+    // dragUntilVisible only guarantees partial intersection (which can
+    // still land a tap offset just past the viewport edge — see the
+    // "tapping Backup" test above), so ensureVisible finishes centering
+    // it before the actual tap.
+    await tester.dragUntilVisible(
+      find.text('Plugins'),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+    await tester.ensureVisible(find.text('Plugins'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Plugins'));
     await tester.pumpAndSettle();
 
@@ -148,6 +197,24 @@ void main() {
       final page =
           tester.widget<PlaybackSettingsPage>(find.byType(PlaybackSettingsPage));
       expect(page.highlightField, 'crossfade');
+    });
+
+    testWidgets(
+        'searching "Reduce motion" and tapping the result opens '
+        'AccessibilitySettingsPage with that row as the highlight target — '
+        'proves the search index followed the move out of Appearance & '
+        'Layout, not just the settings toggle itself', (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Reduce motion');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Reduce motion'));
+      await tester.pumpAndSettle();
+
+      final page = tester.widget<AccessibilitySettingsPage>(
+          find.byType(AccessibilitySettingsPage));
+      expect(page.highlightField, 'reduce_motion');
+      expect(find.widgetWithText(ListTile, 'Reduce motion'), findsOneWidget);
     });
 
     testWidgets(
