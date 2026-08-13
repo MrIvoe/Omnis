@@ -5,6 +5,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
+import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
@@ -47,6 +48,24 @@ void main() {
     expect(find.text('Controls & Gestures'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
     expect(find.text('Plugins'), findsOneWidget);
+    expect(find.text('Backup'), findsOneWidget);
+  });
+
+  testWidgets('tapping Backup opens BackupSettingsPage', (tester) async {
+    await pumpSettings(tester);
+
+    // Below the fold at the default test viewport — dragUntilVisible only
+    // guarantees partial intersection, which can still land the tap
+    // offset just past the viewport edge, so use ensureVisible (fully
+    // scrolls it into view) instead.
+    await tester.ensureVisible(find.text('Backup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Backup'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BackupSettingsPage), findsOneWidget);
+    expect(find.text('Backup Omnis'), findsOneWidget);
+    expect(find.text('Restore Omnis'), findsOneWidget);
   });
 
   testWidgets(
@@ -143,6 +162,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Install a plugin'), findsOneWidget);
+    });
+
+    testWidgets(
+        'searching "Restore Omnis" navigates to BackupSettingsPage, same '
+        'no-fixed-row shape as the Plugins entries', (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Restore Omnis');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Restore Omnis'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BackupSettingsPage), findsOneWidget);
     });
   });
 }

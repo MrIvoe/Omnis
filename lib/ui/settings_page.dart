@@ -6,6 +6,7 @@ import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/plugins_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
+import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/controls_settings_page.dart';
 import 'package:omnis/ui/settings/library_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
@@ -109,6 +110,11 @@ class _SettingsPageState extends State<SettingsPage> {
           pluginManager: widget.pluginManager,
           sandbox: widget.sandbox,
         ),
+      ));
+
+  void _openBackup(BuildContext context) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const BackupSettingsPage(),
       ));
 
   /// The individual settings a search can match, each pointing back at
@@ -328,6 +334,16 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Plugins',
             categoryIcon: Icons.extension_outlined,
             navigate: _openPlugins),
+        _SearchableSetting(
+            title: 'Backup Omnis',
+            category: 'Backup',
+            categoryIcon: Icons.backup_outlined,
+            navigate: _openBackup),
+        _SearchableSetting(
+            title: 'Restore Omnis',
+            category: 'Backup',
+            categoryIcon: Icons.backup_outlined,
+            navigate: _openBackup),
       ];
 
   @override
@@ -418,6 +434,12 @@ class _SettingsPageState extends State<SettingsPage> {
               title: 'Plugins',
               subtitle: 'Install, enable/disable, and configure every plugin',
               onTap: () => _openPlugins(context),
+            ),
+            _CategoryCard(
+              icon: Icons.backup_outlined,
+              title: 'Backup',
+              subtitle: 'Save or restore your library, playlists, and history',
+              onTap: () => _openBackup(context),
             ),
             OmnisSpacing.gapSm,
             // A generic extension point: any plugin can inject something
