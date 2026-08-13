@@ -1,5 +1,6 @@
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_runtime.dart';
+import 'package:omnis/plugin_api/play_record.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 
 /// Host-authored adapters that let an external (sandboxed) plugin register
@@ -18,18 +19,33 @@ import 'package:omnis/plugin_api/service_interfaces.dart';
 /// manifest's `provides:` list (shown to the user before install, the same
 /// way `permissions:` already is).
 ///
-/// Scoped to the two safest, most naturally value-returning interfaces for
-/// a first cut — [ILyricsProvider] (returns display text only) and
-/// [IQueueBuilder] (returns a list of tracks to queue). `IFileTagWriter`/
-/// `IMetadataProvider`/`IAudioAnalysisProvider` — whose results get
-/// applied back into real library storage or real files — are explicitly
-/// deferred to a future pass with its own review.
+/// Scoped to the interfaces whose results are transient/display-only —
+/// [ILyricsProvider] (display text), [IQueueBuilder] (a list of tracks
+/// to queue, never persisted by the act of building it), and, added in
+/// this pass, [IPlayHistoryProvider] (read-only query results) and
+/// [IArtistImageProvider] (a URL string, not fetched/decoded/persisted
+/// by this adapter). `IFileTagWriter`/`IMetadataProvider`/
+/// `IAudioAnalysisProvider` are deliberately still excluded — their
+/// results get *applied back* into real library storage or written into
+/// real audio files by the caller (`library_page.dart`'s
+/// `_applyEnrichment`/`_applyAnalysis`, `TagEditorPlugin` writes), so a
+/// misbehaving sandboxed provider there could corrupt persisted state at
+/// scale, not just show a wrong string on screen for one call. That's a
+/// materially different trust decision and stays deferred to its own
+/// review, not folded into this pass. [IVisualizerProvider] is also
+/// still excluded, for an unrelated reason: it needs a genuine live
+/// `Stream`, which `PluginRuntime.callHook`'s simple request/response
+/// shape can't cleanly bridge without a polling `Timer` and its own
+/// disposal lifecycle none of these adapters currently need.
 ///
-/// Both interfaces' methods are synchronous, so the guest hook backing
-/// them must be too — an `async` guest hook returns a `Future` from
-/// `PluginRuntime.callHook`, which fails the `is String`/`is List` checks
-/// below and degrades to the safe default, the same as any other
-/// unexpected/malformed hook result.
+/// Every guest hook backing these adapters is called synchronously via
+/// `PluginRuntime.callHook`, which itself never returns a `Future` — an
+/// `async` guest hook would return a `Future` from `callHook`, which
+/// fails the `is String`/`is List`/`is int` checks below and degrades to
+/// the safe default, the same as any other unexpected/malformed hook
+/// result. [IArtistImageProvider.imageUrlFor] being `Future<String?>` on
+/// the *interface* doesn't change this — its adapter just wraps a
+/// synchronous `callHook` result in `async`.
 
 /// `provides:` catalog key → the fixed guest hook name(s) it requires.
 /// Registration checks the runtime's own declared hooks (from
@@ -39,6 +55,12 @@ import 'package:omnis/plugin_api/service_interfaces.dart';
 const providedCapabilityHooks = {
   'lyrics': ['provideLyrics'],
   'queue_builder': ['queueBuilderSupportedQueries', 'buildQueueFor'],
+  'play_history': [
+    'playHistoryRecentlyPlayed',
+    'playHistoryMostPlayedIds',
+    'playHistoryPlayCountFor',
+  ],
+  'artist_image': ['artistImageUrlFor'],
 };
 
 class SandboxedLyricsProvider implements ILyricsProvider {
@@ -106,5 +128,84 @@ class SandboxedQueueBuilder implements IQueueBuilder {
       // for a provider that legitimately has nothing to offer.
     }
     return const [];
+  }
+}
+
+class SandboxedPlayHistoryProvider implements IPlayHistoryProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedPlayHistoryProvider(this.runtime);
+
+  @override
+  List<PlayRecord> recentlyPlayed({int limit = 20}) {
+    try {
+      final result = runtime.callHook('playHistoryRecentlyPlayed', [limit]);
+      if (result is List) {
+        return result
+            .whereType<Map>()
+            .map((m) => PlayRecord.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+      }
+    } catch (_) {
+      // A throwing or misbehaving guest hook degrades to "no history
+      // from this provider" — the same fail-soft contract every other
+      // sandboxed adapter in this file uses.
+    }
+    return const [];
+  }
+
+  @override
+  List<MapEntry<String, int>> mostPlayedIds({int limit = 20}) {
+    try {
+      final result = runtime.callHook('playHistoryMostPlayedIds', [limit]);
+      if (result is List) {
+        final entries = <MapEntry<String, int>>[];
+        for (final item in result) {
+          // Guest code can only return JSON-shaped values through
+          // callHook, not a real Dart MapEntry — a two-element
+          // [trackId, count] list is the natural JSON encoding of one.
+          if (item is List && item.length == 2 && item[1] is int) {
+            entries.add(MapEntry(item[0].toString(), item[1] as int));
+          }
+        }
+        return entries;
+      }
+    } catch (_) {
+      // Falls through to empty below.
+    }
+    return const [];
+  }
+
+  @override
+  int playCountFor(String trackId) {
+    try {
+      final result = runtime.callHook('playHistoryPlayCountFor', [trackId]);
+      if (result is int) return result;
+    } catch (_) {
+      // Falls through to 0 below.
+    }
+    return 0;
+  }
+}
+
+class SandboxedArtistImageProvider implements IArtistImageProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedArtistImageProvider(this.runtime);
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<String?> imageUrlFor(String artistName) async {
+    try {
+      final result = runtime.callHook('artistImageUrlFor', [artistName]);
+      if (result is String && result.isNotEmpty) return result;
+    } catch (_) {
+      // A throwing or misbehaving guest hook degrades to "no photo
+      // found," the same as ArtistImageProvider's own documented
+      // contract for a legitimate miss.
+    }
+    return null;
   }
 }

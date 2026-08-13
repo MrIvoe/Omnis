@@ -1285,6 +1285,135 @@ dynamic buildQueueFor(dynamic tracks, dynamic query) {
 
       expect(builder.buildQueueFor(const [], 'chill'), isEmpty);
     });
+
+    test('SandboxedPlayHistoryProvider forwards to all three hooks and '
+        'parses their results', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'history_test',
+    'name': 'History Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': [
+      'playHistoryRecentlyPlayed',
+      'playHistoryMostPlayedIds',
+      'playHistoryPlayCountFor',
+    ],
+  };
+}
+
+dynamic playHistoryRecentlyPlayed(dynamic limit) {
+  return [
+    {
+      'trackId': 't1',
+      'title': 'Song One',
+      'artist': 'Artist',
+      'playedAtMs': 1000,
+    }
+  ];
+}
+
+dynamic playHistoryMostPlayedIds(dynamic limit) {
+  return [
+    ['t1', 5],
+    ['t2', 3],
+  ];
+}
+
+dynamic playHistoryPlayCountFor(dynamic trackId) {
+  return trackId == 't1' ? 5 : 0;
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedPlayHistoryProvider(runtime);
+
+      final recent = provider.recentlyPlayed(limit: 10);
+      expect(recent, hasLength(1));
+      expect(recent.single.trackId, 't1');
+      expect(recent.single.title, 'Song One');
+
+      final mostPlayed = provider.mostPlayedIds(limit: 10);
+      expect(mostPlayed.map((e) => e.key), ['t1', 't2']);
+      expect(mostPlayed.map((e) => e.value), [5, 3]);
+
+      expect(provider.playCountFor('t1'), 5);
+      expect(provider.playCountFor('t2'), 0);
+    });
+
+    test('SandboxedPlayHistoryProvider degrades to empty/zero when a hook '
+        'throws', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'history_broken',
+    'name': 'History Broken',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': [
+      'playHistoryRecentlyPlayed',
+      'playHistoryMostPlayedIds',
+      'playHistoryPlayCountFor',
+    ],
+  };
+}
+
+dynamic playHistoryRecentlyPlayed(dynamic limit) => throw 'boom';
+dynamic playHistoryMostPlayedIds(dynamic limit) => throw 'boom';
+dynamic playHistoryPlayCountFor(dynamic trackId) => throw 'boom';
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedPlayHistoryProvider(runtime);
+
+      expect(provider.recentlyPlayed(), isEmpty);
+      expect(provider.mostPlayedIds(), isEmpty);
+      expect(provider.playCountFor('t1'), 0);
+    });
+
+    test('SandboxedArtistImageProvider forwards to artistImageUrlFor and '
+        'returns its result', () async {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'artist_image_test',
+    'name': 'Artist Image Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['artistImageUrlFor'],
+  };
+}
+
+dynamic artistImageUrlFor(dynamic artistName) =>
+    'https://example.com/\$artistName.jpg';
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedArtistImageProvider(runtime);
+
+      expect(provider.isAvailable, isTrue);
+      final url = await provider.imageUrlFor('queen');
+      expect(url, 'https://example.com/queen.jpg');
+    });
+
+    test('SandboxedArtistImageProvider degrades to null when the hook '
+        'throws or returns something unexpected', () async {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'artist_image_broken',
+    'name': 'Artist Image Broken',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['artistImageUrlFor'],
+  };
+}
+
+dynamic artistImageUrlFor(dynamic artistName) => throw 'boom';
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedArtistImageProvider(runtime);
+
+      expect(await provider.imageUrlFor('queen'), isNull);
+    });
   });
 
   group('PluginManager — service registration (provides:)', () {
@@ -1337,6 +1466,57 @@ dynamic provideLyrics(dynamic track, dynamic positionMs) => 'sandboxed lyric';
       );
       expect(provider!.currentLyricFor(track, Duration.zero),
           'sandboxed lyric');
+    });
+
+    test(
+        'a plugin declaring provides: [play_history] with matching hooks '
+        'is registered under IPlayHistoryProvider — proves the end-to-end '
+        'manifest -> registration -> ServiceRegistry pipeline works for a '
+        'capability added after lyrics/queue_builder, not just those two',
+        () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_provides_history_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final pluginDir = Directory(p.join(tempRoot, 'history_plugin'));
+      await pluginDir.create(recursive: true);
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: history_plugin
+name: History Plugin
+description: Test
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+provides:
+  - play_history
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'history_plugin',
+    'name': 'History Plugin',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [
+      'playHistoryRecentlyPlayed',
+      'playHistoryMostPlayedIds',
+      'playHistoryPlayCountFor',
+    ],
+  };
+}
+
+dynamic playHistoryRecentlyPlayed(dynamic limit) => [];
+dynamic playHistoryMostPlayedIds(dynamic limit) => [];
+dynamic playHistoryPlayCountFor(dynamic trackId) => 7;
+''');
+
+      final manager = PluginManager();
+      await manager.installFromPath(pluginDir.path, sourceUrl: 'local');
+
+      final provider = manager.services.get<IPlayHistoryProvider>();
+      expect(provider, isNotNull);
+      expect(provider!.playCountFor('anything'), 7);
     });
 
     test(

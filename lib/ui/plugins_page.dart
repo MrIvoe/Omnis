@@ -279,6 +279,10 @@ class _PluginsPageState extends State<PluginsPage> {
       case 'queue_builder':
         return 'Queue suggestions — can build a playback queue for a mood '
             'or preset';
+      case 'play_history':
+        return 'Play history — can supply recently/most played track data';
+      case 'artist_image':
+        return 'Artist photos — can supply a photo URL for an artist';
       default:
         return capability;
     }

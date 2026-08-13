@@ -369,6 +369,14 @@ class PluginManager {
           final adapter = SandboxedQueueBuilder(runtime, queries);
           services.register(IQueueBuilder, adapter);
           plugin.providedServices[IQueueBuilder] = adapter;
+        case 'play_history':
+          final adapter = SandboxedPlayHistoryProvider(runtime);
+          services.register(IPlayHistoryProvider, adapter);
+          plugin.providedServices[IPlayHistoryProvider] = adapter;
+        case 'artist_image':
+          final adapter = SandboxedArtistImageProvider(runtime);
+          services.register(IArtistImageProvider, adapter);
+          plugin.providedServices[IArtistImageProvider] = adapter;
       }
     }
   }
@@ -391,6 +399,8 @@ class PluginManager {
   Type? _capabilityType(String capability) => switch (capability) {
         'lyrics' => ILyricsProvider,
         'queue_builder' => IQueueBuilder,
+        'play_history' => IPlayHistoryProvider,
+        'artist_image' => IArtistImageProvider,
         _ => null,
       };
 
