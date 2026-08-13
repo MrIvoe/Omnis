@@ -33,6 +33,28 @@ List<int> _buildZip(Map<String, String> files) {
   return ZipEncoder().encode(archive)!;
 }
 
+/// A streaming fake client that (unlike `MockClient`/`http.Response.bytes`,
+/// which always forces `contentLength` to the actual body length) can
+/// report a `contentLength` independent of the real byte count — needed to
+/// simulate a server that lies about (or omits) Content-Length, which the
+/// size-limit tests below need to exercise both the upfront header check
+/// and the mid-stream actual-bytes check separately.
+class _FakeStreamingClient extends http.BaseClient {
+  final List<int> bytes;
+  final int? declaredContentLength;
+
+  _FakeStreamingClient(this.bytes, {this.declaredContentLength});
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    return http.StreamedResponse(
+      Stream.value(bytes),
+      200,
+      contentLength: declaredContentLength,
+    );
+  }
+}
+
 const _validManifest = '''
 id: sample_plugin
 name: Sample Plugin
@@ -286,6 +308,105 @@ hooks:
         throwsA(isA<PluginInstallException>()),
       );
       expect(called, isFalse);
+    });
+  });
+
+  group('size limits', () {
+    test(
+        'a download whose declared Content-Length exceeds the cap is '
+        'rejected without streaming the body', () async {
+      final installer = PluginInstaller(
+        maxDownloadBytes: 1024,
+        client: _FakeStreamingClient(List<int>.filled(10, 0),
+            declaredContentLength: 2048),
+      );
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo'),
+        throwsA(isA<PluginInstallException>().having(
+            (e) => e.message, 'message', contains('too large'))),
+      );
+    });
+
+    test(
+        'a download whose actual bytes exceed the cap (no honest '
+        'Content-Length) is aborted mid-stream', () async {
+      final installer = PluginInstaller(
+        maxDownloadBytes: 1024,
+        // No declaredContentLength — simulates a server that omits the
+        // header entirely (e.g. chunked transfer encoding), so the
+        // upfront check can't catch it and the mid-stream running-total
+        // check has to.
+        client: _FakeStreamingClient(List<int>.filled(4096, 0)),
+      );
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo'),
+        throwsA(isA<PluginInstallException>().having(
+            (e) => e.message, 'message', contains('size limit'))),
+      );
+    });
+
+    test(
+        'a zip whose declared (uncompressed) entry sizes exceed the '
+        'extraction cap is rejected before decompressing anything',
+        () async {
+      final archive = Archive()
+        ..addFile(ArchiveFile('repo-main/omnis_plugin.yaml',
+            _validManifest.length, utf8.encode(_validManifest)))
+        // The declared `size` (second constructor arg) is independent of
+        // the actual content bytes supplied — this simulates zip metadata
+        // claiming a huge uncompressed size without needing to really
+        // produce that much data.
+        ..addFile(ArchiveFile('repo-main/bomb.bin', 10 * 1024 * 1024,
+            utf8.encode('tiny actual content')));
+      final zip = ZipEncoder().encode(archive)!;
+      final installer =
+          PluginInstaller(maxExtractedBytes: 1024, client: clientReturning(zip));
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo'),
+        throwsA(isA<PluginInstallException>().having(
+            (e) => e.message, 'message', contains('extract to more than'))),
+      );
+    });
+
+    test(
+        'a zip that lies about a small declared size but actually '
+        'decompresses to more is still caught during extraction',
+        () async {
+      final bigContent = utf8.encode('x' * 5000);
+      final archive = Archive()
+        ..addFile(ArchiveFile('repo-main/omnis_plugin.yaml',
+            _validManifest.length, utf8.encode(_validManifest)))
+        // Declared size (10 bytes) undersells the real content (5000
+        // bytes) — the pass-one declared-size check alone would let this
+        // through; the pass-two actual-bytes check during extraction must
+        // still catch it.
+        ..addFile(ArchiveFile('repo-main/bomb.bin', 10, bigContent));
+      final zip = ZipEncoder().encode(archive)!;
+      final installer =
+          PluginInstaller(maxExtractedBytes: 1000, client: clientReturning(zip));
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo'),
+        throwsA(isA<PluginInstallException>().having(
+            (e) => e.message, 'message', contains('extracted more than'))),
+      );
+    });
+
+    test('a normal small install still succeeds under the real default caps',
+        () async {
+      final zip = _buildZip({
+        'my-plugin-main/omnis_plugin.yaml': _validManifest,
+        'my-plugin-main/plugin.dart': '// entrypoint',
+      });
+      final installer = PluginInstaller(client: clientReturning(zip));
+
+      final result =
+          await installer.installFromUrl('https://github.com/user/my-plugin');
+
+      expect(result.manifest.id, 'sample_plugin');
     });
   });
 

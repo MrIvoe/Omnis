@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:omnis/core/base_track.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -30,12 +31,34 @@ String _encodeTracks(List<BaseTrack> tracks) =>
 /// expensive enough to visibly stutter the UI thread if run inline, and
 /// `save()` is called after nearly every library mutation (add, delete,
 /// tag edit, favorite), not just on load.
+///
+/// Two failure modes this guards against:
+///  - **A write killed partway through.** Android in particular kills
+///    processes aggressively, and a `writeAsString` interrupted mid-write
+///    leaves a truncated/corrupt `omnis_library.json` — the next [load]
+///    would silently fall back to an empty library, discarding the whole
+///    cache. [save] instead writes to a sibling `.tmp` file and
+///    [File.rename]s it over the real path, which is atomic on the
+///    filesystems this app targets: any given [load] sees either the old
+///    complete file or the new complete file, never a partial one.
+///  - **A write storm.** A batch tag edit or bulk favorite touching many
+///    tracks previously called [save] once per track — every mutation
+///    re-encoding and rewriting the *entire* library. [save] now debounces:
+///    calls within [_debounceDelay] of each other collapse into a single
+///    write of whatever the latest tracks were, and every caller's
+///    `Future` still only resolves once that write actually happens (or
+///    is superseded and dropped — see [save]'s doc).
 class LibraryStore {
   LibraryStore._();
 
   static final LibraryStore instance = LibraryStore._();
 
+  static const _debounceDelay = Duration(milliseconds: 500);
+
   File? _file;
+  Timer? _debounceTimer;
+  List<BaseTrack>? _pendingTracks;
+  Completer<void>? _pendingCompleter;
 
   /// The JSON file that holds the library.
   Future<File> _getFile() async {
@@ -59,24 +82,78 @@ class LibraryStore {
     }
   }
 
-  /// Persist the given tracks to disk.
-  Future<void> save(List<BaseTrack> tracks) async {
+  /// Persist the given tracks to disk, debounced by [_debounceDelay].
+  ///
+  /// A call within the debounce window of a previous, not-yet-flushed
+  /// call replaces its pending tracks rather than queuing a second write
+  /// — only the most recent snapshot ever actually reaches disk. Every
+  /// caller in that window shares one `Future` that resolves once that
+  /// single write completes, so `await save(tracks)` still means "this
+  /// (or a newer) snapshot is now persisted," not "immediately."
+  Future<void> save(List<BaseTrack> tracks) {
+    _pendingTracks = tracks;
+    _debounceTimer?.cancel();
+    _pendingCompleter ??= Completer<void>();
+    _debounceTimer = Timer(_debounceDelay, _flushPending);
+    return _pendingCompleter!.future;
+  }
+
+  /// Cancels any pending debounce timer and writes immediately — call this
+  /// before something that needs the on-disk file to genuinely be current
+  /// right now (there is currently no caller; exposed for that future
+  /// need and for tests).
+  Future<void> flushPending() async {
+    if (_debounceTimer == null) return;
+    _debounceTimer!.cancel();
+    await _flushPending();
+  }
+
+  Future<void> _flushPending() async {
+    final tracks = _pendingTracks;
+    final completer = _pendingCompleter;
+    _pendingTracks = null;
+    _pendingCompleter = null;
+    _debounceTimer = null;
+    if (tracks == null) {
+      completer?.complete();
+      return;
+    }
     try {
       final file = await _getFile();
       final json = await compute(_encodeTracks, tracks);
-      await file.writeAsString(json);
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(json, flush: true);
+      await tmp.rename(file.path);
     } catch (e) {
       // Best-effort persistence; a failure here must never crash the app.
     }
+    completer?.complete();
   }
 
   /// Clear the persisted library.
   Future<void> clear() async {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _pendingTracks = null;
+    _pendingCompleter?.complete();
+    _pendingCompleter = null;
     try {
       final file = await _getFile();
       if (await file.exists()) {
         await file.delete();
       }
     } catch (_) {}
+  }
+
+  /// Test-only: cancels any pending debounced write and drops the cached
+  /// file handle, so each test file starts clean regardless of what an
+  /// earlier test left pending — mirrors `LibraryRepository.resetForTesting`.
+  @visibleForTesting
+  void resetForTesting() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _pendingTracks = null;
+    _pendingCompleter = null;
+    _file = null;
   }
 }

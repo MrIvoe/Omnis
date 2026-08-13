@@ -1,0 +1,121 @@
+# Omnis 2.0 — Build Progress Tracker
+
+> **Status:** Live build tracker for the Omnis 2.0 implementation.
+> This document tracks what has been built, what is in progress, and what
+> remains. It is the single source of truth for build progress.
+>
+> **References (read-only, never edited):**
+> 1. [OMNIS_2_0_SPEC.md](OMNIS_2_0_SPEC.md) — product specification
+> 2. [OMNIS_2_0_UI_SPEC.md](OMNIS_2_0_UI_SPEC.md) — UI/UX specification
+> 3. [OMNIS_2_0_PLUGINS.md](OMNIS_2_0_PLUGINS.md) — plugin architecture & developer guide
+
+---
+
+## Phase 1 — Reliability
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Playback engine | 🟡 In progress — `AudioEngine` covers play/pause/seek/next/prev/gapless/crossfade/speed/pitch/skip-silence/shuffle/repeat/volume. Started §51.2's split (OS media-session integration → `playback_os_integration.dart`; A-B repeat → a decoupled, unit-tested `AbRepeatController`), shrinking the file from 1208 to ~880 lines. Also introduced `PlaybackEngine` (§51.3 capability interface) — `AudioEngine` now `implements` it, and `PlaybackWatchdog`/`PlaybackRecovery` depend on the interface, not the concrete class. Still owes the bigger `QueueController`/`OutputController`/`AudioSessionController` split — queue mutation and the crossfade state machine are still interleaved in the facade, and splitting those safely needs a real-device smoke test this environment can't do (Windows build is blocked — see `docs/BUILDING.md`). |
+| 2 | Queue | 🟡 In progress — manual queue (add/remove/reorder via `setQueue`/`addTrack`/`removeTrack`/`playAt`), shuffle, repeat. Added `playNext()` (§7's "play next" vs "add to queue" distinction) to the engine — not yet wired into `PluginContext` (a cross-repo `omnis_plugin_api` change) or a track context menu in the UI. Still no queue history/snapshots or smart/rule-based continuation. |
+| 3 | Recovery | ✅ Solid for Phase 1 — `PlaybackWatchdog` (stuck loading, position stall, impossible position, decoder exceptions, output loss) + `PlaybackRecovery` (reload → retry → advance → stop) + `RecoveryJournal` (crash/power-loss resume) are now wired end-to-end in `MainCore`: watchdog starts with the engine, counters reset on a healthy track start, journal saves on pause/track-change/20s-heartbeat, and a "Resume where you left off?" prompt offers restoration on launch. Untrusted-plugin isolation (isolates) is still future work per the plugin architecture doc. |
+| 4 | Database | 🟡 In progress — still JSON-file storage (`LibraryStore`, playlists, history), not an indexed DB. `LibraryStore.save()` now writes atomically (temp file + rename) and debounces write storms. No multi-source libraries, no SQL-like query layer yet. |
+| 5 | Library scanning | 🟡 In progress — local-folder `MediaScanner` scan/rescan exists (pre-existing). No filesystem watchers, scheduled scans, duplicate/corrupt detection, or fingerprint-based identity (§5) yet — tracks are still identified primarily by path. |
+| 6 | Persistence | ✅ Solid for Phase 1 — playback state now survives crash/power-loss via `RecoveryJournal` (atomic writes, staleness cutoff); library and plugin-installer writes are atomic. Settings persistence (`AppSettings`) predates this session and is unchanged. |
+| 7 | OS media integration | 🟡 In progress — Windows SMTC + `audio_service` notification/lock-screen controls exist (pre-existing). Not verified this session on macOS/Linux/mobile OS media session behavior. |
+| 8 | Error handling | 🟡 In progress — decoder-error auto-skip, plugin-call sandboxing, and (new) plugin-installer download/zip-bomb size limits are in place. The spec's full failure-mode checklist (§60) hasn't been run exhaustively against every subsystem. |
+| 9 | Tests | 🟡 In progress, meaningfully better — 478 tests passing (`flutter test`, `flutter analyze` clean; started this session at 433). New this session: `recovery_journal_test.dart`, a `MainCore` resumable-state group, `ab_repeat_controller_test.dart` (10 tests), and — via the new `PlaybackEngine` interface + `test/fakes/fake_playback_engine.dart` — `playback_watchdog_test.dart` (13 tests: every detection path) and `playback_recovery_test.dart` (10 tests: every failure-type branch, retry-then-advance behavior, custom retry limits). The recovery system, arguably the single most safety-critical subsystem per §43 of the spec, now has direct coverage for the first time. Remaining gap: `AudioEngine` itself (queue mutation, crossfade math beyond the pure `crossfadeVolumes` function, gapless/shuffle/repeat) is still untested — it needs either a real device/CI runner or an injectable-player seam of its own. |
+
+> **Note on Phases 2–7 below:** this repo already had a mature Omnis app
+> (library/playlist/settings pages, a plugin marketplace-style installer,
+> a declarative theme/layout system, an accessibility pass, ~20 bundled
+> plugins in `omnis_plugins`) before these Omnis 2.0 reference docs were
+> added. The blanket "Not started" statuses below predate an actual
+> audit against that existing code and should not be trusted as-is —
+> most items likely have *some* pre-existing coverage. They need a
+> dedicated audit pass (mapping existing code to each spec item) before
+> being graded individually; that audit hasn't happened yet.
+
+## Phase 2 — Library
+
+| # | Item | Status |
+|---|------|--------|
+| 10 | Search | ⬜ Not started |
+| 11 | Metadata | ⬜ Not started |
+| 12 | Artwork | ⬜ Not started |
+| 13 | Playlists | ⬜ Not started |
+| 14 | Favorites | ⬜ Not started |
+| 15 | Ratings | ⬜ Not started |
+| 16 | History | ⬜ Not started |
+| 17 | Tag editor | ⬜ Not started |
+
+## Phase 3 — Audio
+
+| # | Item | Status |
+|---|------|--------|
+| 18 | DSP pipeline | ⬜ Not started |
+| 19 | ReplayGain | ⬜ Not started |
+| 20 | EQ | ⬜ Not started |
+| 21 | Output devices | ⬜ Not started |
+| 22 | Bit-perfect | ⬜ Not started |
+| 23 | Audio analysis | ⬜ Not started |
+
+## Phase 4 — Plugin platform
+
+| # | Item | Status |
+|---|------|--------|
+| 24 | Capability interfaces | ⬜ Not started |
+| 25 | Plugin lifecycle | ⬜ Not started |
+| 26 | Dependency resolution | ⬜ Not started |
+| 27 | Permissions | ⬜ Not started |
+| 28 | Plugin health | ⬜ Not started |
+| 29 | Plugin updates | ⬜ Not started |
+| 30 | Marketplace/catalog | ⬜ Not started |
+
+## Phase 5 — Connectivity
+
+| # | Item | Status |
+|---|------|--------|
+| 31 | OpenSubsonic | ⬜ Not started |
+| 32 | Navidrome | ⬜ Not started |
+| 33 | Jellyfin | ⬜ Not started |
+| 34 | Plex | ⬜ Not started |
+| 35 | DLNA/UPnP | ⬜ Not started |
+| 36 | Spotify | ⬜ Not started |
+| 37 | YouTube | ⬜ Not started |
+| 38 | Other providers | ⬜ Not started |
+
+## Phase 6 — Discovery
+
+| # | Item | Status |
+|---|------|--------|
+| 39 | Recommendations | ⬜ Not started |
+| 40 | Sonic similarity | ⬜ Not started |
+| 41 | Radio | ⬜ Not started |
+| 42 | Smart playlists | ⬜ Not started |
+| 43 | AI | ⬜ Not started |
+
+## Phase 7 — Advanced UX
+
+| # | Item | Status |
+|---|------|--------|
+| 44 | Themes | ⬜ Not started |
+| 45 | Layout builder | ⬜ Not started |
+| 46 | Car mode | ⬜ Not started |
+| 47 | TV mode | ⬜ Not started |
+| 48 | Accessibility | ⬜ Not started |
+| 49 | Widgets | ⬜ Not started |
+| 50 | Automation | ⬜ Not started |
+
+---
+
+## Build log
+
+| Date | Phase | Item | Notes |
+|------|-------|------|-------|
+| 2026-08-12 | — | Tracker created | Build tracker initialized. |
+| 2026-08-12 | 1 | Recovery, Persistence | Wired `PlaybackWatchdog`/`PlaybackRecovery`/`RecoveryJournal` (built in a prior session but never connected) into `MainCore`: watchdog now actually starts, failure counters reset on a healthy track, the journal saves on pause/track-change/20s heartbeat, and `HomePage` offers a "Resume where you left off?" prompt on launch. Removed a stray leftover file (`lib/core/playback_d`, an interrupted write from the prior session). |
+| 2026-08-12 | 1 | Tests | Added `test/recovery_journal_test.dart` and a resumable-state test group in `test/main_core_test.dart`. Full suite: 445 passing, `flutter analyze` clean. |
+| 2026-08-12 | 1 | Playback engine | Split `AudioEngine` per §51.2: extracted `OmnisAudioHandler`/`OmnisWindowsMediaHandler` (audio_service + Windows SMTC) into `lib/core/playback_os_integration.dart` with zero behavior change, and extracted A-B repeat into `lib/core/ab_repeat_controller.dart` as a player-decoupled, unit-testable `AbRepeatController`. Added `test/ab_repeat_controller_test.dart` (10 tests). |
+| 2026-08-12 | 2 | Queue | Added `AudioEngine.playNext()` — inserts right after the current track, distinct from `addTrack()` (append) per §7. Not yet exposed through `PluginContext` or a UI context menu. |
+| 2026-08-12 | 1, 2 | Tests | Full suite: 455 passing, `flutter analyze` clean. |
+| 2026-08-12 | 1, 9 | Playback engine, Tests | Introduced `lib/core/playback_engine.dart` (`PlaybackEngine`, §51.3 capability interface); `AudioEngine implements PlaybackEngine`; `PlaybackWatchdog`/`PlaybackRecovery` now depend on the interface instead of the concrete engine. Added `test/fakes/fake_playback_engine.dart`, `test/playback_watchdog_test.dart` (13 tests), `test/playback_recovery_test.dart` (10 tests) — first direct unit coverage for the watchdog/recovery system. Full suite: 478 passing, `flutter analyze` clean. |

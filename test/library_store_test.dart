@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,7 @@ void main() {
   setUp(() async {
     tempDir = (await Directory.systemTemp.createTemp('omnis_test')).path;
     PathProviderPlatform.instance = _FakePathProvider(tempDir);
+    LibraryStore.instance.resetForTesting();
   });
 
   test('LibraryStore saves and reloads tracks', () async {
@@ -97,5 +99,62 @@ void main() {
     await f.writeAsString('not valid json {{{');
 
     expect(await store.load(), isEmpty);
+  });
+
+  test('save() writes atomically — no leftover .tmp file, and the real '
+      'file is only ever the old or new complete content', () async {
+    final store = LibraryStore.instance;
+    await store.save([
+      BaseTrack(
+        id: '1',
+        title: 'T',
+        artists: const ['A'],
+        album: 'Al',
+        duration: 10,
+        type: TrackType.local,
+      ),
+    ]);
+
+    final tmp = File('$tempDir/omnis_library.json.tmp');
+    expect(await tmp.exists(), isFalse,
+        reason: 'the .tmp file must be renamed away, never left behind');
+    final real = File('$tempDir/omnis_library.json');
+    expect(await real.exists(), isTrue);
+    expect(await store.load(), hasLength(1));
+  });
+
+  test(
+      'save() debounces rapid successive calls into a single write of the '
+      'latest tracks, and every caller\'s Future resolves once that '
+      'write actually happens', () async {
+    final store = LibraryStore.instance;
+    BaseTrack track(String id) => BaseTrack(
+          id: id,
+          title: 'T$id',
+          artists: const ['A'],
+          album: 'Al',
+          duration: 10,
+          type: TrackType.local,
+        );
+
+    final first = store.save([track('1')]);
+    final second = store.save([track('2')]);
+    final third = store.save([track('3')]);
+
+    // All three share one debounced write — none of them should resolve
+    // (and nothing should be on disk yet) before that write actually runs.
+    var firstResolved = false;
+    unawaited(first.then((_) => firstResolved = true));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(firstResolved, isFalse,
+        reason: 'the debounce window (500ms) has not elapsed yet');
+
+    await Future.wait([first, second, third]);
+
+    final loaded = await store.load();
+    expect(loaded, hasLength(1),
+        reason: 'only the latest snapshot is ever actually written, not '
+            'all three');
+    expect(loaded.single.id, '3');
   });
 }

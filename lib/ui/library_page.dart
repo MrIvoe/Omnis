@@ -269,6 +269,12 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void dispose() {
     _trackSub?.cancel();
+    // Stops the next iteration of whichever measurement loop is running —
+    // _runDurationMeasurement also checks `mounted` itself, so this is
+    // belt-and-suspenders for the automatic pass specifically, which (being
+    // unawaited) can otherwise keep running well after this State is gone.
+    _bulkMeasureCancelled = true;
+    _autoMeasureCancelled = true;
     super.dispose();
   }
 
@@ -357,6 +363,10 @@ class _LibraryPageState extends State<LibraryPage> {
       // action, and previously did both: every scan silently replaced
       // whatever queue was playing and started a random track.
       await LibraryRepository.instance.save(_tracks);
+      // Silent, low-priority, unawaited — see _autoMeasureDurationsAfterScan's
+      // doc comment. Must not block this method (or the "loading" spinner
+      // it drives) on opening potentially hundreds of files.
+      unawaited(_autoMeasureDurationsAfterScan());
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not load audio files: $e');
     } finally {
@@ -757,11 +767,23 @@ class _LibraryPageState extends State<LibraryPage> {
   // duration 0 forever. That silently defeated "short tracks" cleanup on
   // desktop: 0 is treated as "unknown," not "confirmed short" (see
   // findShortTracks), so nothing was ever found. This measures the real
-  // duration for whatever's still unknown, once, by actually opening each
-  // file — that's too slow to do during a bulk scan (see MediaScanner's
-  // own doc on why it doesn't), so it's a separate, explicit, cancellable
-  // pass instead.
+  // duration for whatever's still unknown by actually opening each file —
+  // too slow to do inline during a bulk scan (see MediaScanner's own doc
+  // on why it doesn't) — so every scan that adds new local tracks kicks
+  // off _autoMeasureDurationsAfterScan() as a silent, unawaited background
+  // pass afterward (see _pickAndAdd), instead of requiring the user to
+  // find this manual action themselves. The manual "Measure durations"
+  // menu item still exists for a deliberate re-run (e.g. after cancelling
+  // an earlier pass) and shares the same underlying loop.
   bool _bulkMeasureCancelled = false;
+  bool _autoMeasureCancelled = false;
+
+  /// Whether a duration-measurement pass (manual or automatic) is already
+  /// running — guards against two passes opening `AudioPlayer` on the same
+  /// file concurrently and racing on `_tracks`/the persisted library if,
+  /// say, the user taps "Measure durations" while the post-scan automatic
+  /// pass is still going.
+  bool _measurementInProgress = false;
 
   Future<int> _probeDurationSeconds(String path) async {
     final player = AudioPlayer();
@@ -776,7 +798,65 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Measures [candidates] one at a time via [_probeDurationSeconds],
+  /// updating `_tracks` and calling [onProgress] after each, then persists
+  /// once at the end. Shared by the manual dialog-driven flow and the
+  /// silent automatic post-scan pass — [isCancelled] is checked before
+  /// every file so either caller can stop it early.
+  Future<int> _runDurationMeasurement(
+    List<BaseTrack> candidates, {
+    required bool Function() isCancelled,
+    void Function(int done)? onProgress,
+  }) async {
+    var done = 0;
+    for (final track in candidates) {
+      if (isCancelled() || !mounted) break;
+      final seconds = await _probeDurationSeconds(track.localPath!);
+      if (seconds > 0) {
+        final index = _tracks.indexWhere((t) => t.id == track.id);
+        if (index >= 0) {
+          final updated = _tracks[index].copyWith(duration: seconds);
+          if (mounted) {
+            setState(() => _tracks[index] = updated);
+          } else {
+            _tracks[index] = updated;
+          }
+        }
+      }
+      done++;
+      onProgress?.call(done);
+    }
+    await LibraryRepository.instance.save(_tracks);
+    return done;
+  }
+
+  /// Kicked off unawaited right after a scan persists new tracks (see
+  /// _pickAndAdd) — turns "duration unknown" into a real value for
+  /// whatever the scan couldn't get one for, with no dialog and nothing
+  /// for the user to discover or trigger themselves. Silently does
+  /// nothing if a measurement pass is already running or there's nothing
+  /// left to measure.
+  Future<void> _autoMeasureDurationsAfterScan() async {
+    if (_measurementInProgress) return;
+    final unmeasured =
+        _tracks.where((t) => t.duration <= 0 && t.localPath != null).toList();
+    if (unmeasured.isEmpty) return;
+
+    _measurementInProgress = true;
+    _autoMeasureCancelled = false;
+    try {
+      await _runDurationMeasurement(unmeasured,
+          isCancelled: () => _autoMeasureCancelled || !mounted);
+    } finally {
+      _measurementInProgress = false;
+    }
+  }
+
   Future<void> _measureDurations() async {
+    if (_measurementInProgress) {
+      _toast('Already measuring durations in the background — hang on.');
+      return;
+    }
     final unmeasured =
         _tracks.where((t) => t.duration <= 0 && t.localPath != null).toList();
     if (unmeasured.isEmpty) {
@@ -808,6 +888,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (confirmed != true || !mounted) return;
 
     _bulkMeasureCancelled = false;
+    _measurementInProgress = true;
     final total = unmeasured.length;
     final doneNotifier = ValueNotifier<int>(0);
 
@@ -844,26 +925,11 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     ));
 
-    var done = 0;
-    for (final track in unmeasured) {
-      if (_bulkMeasureCancelled || !mounted) break;
-      final seconds = await _probeDurationSeconds(track.localPath!);
-      if (seconds > 0) {
-        final index = _tracks.indexWhere((t) => t.id == track.id);
-        if (index >= 0) {
-          final updated = _tracks[index].copyWith(duration: seconds);
-          if (mounted) {
-            setState(() => _tracks[index] = updated);
-          } else {
-            _tracks[index] = updated;
-          }
-        }
-      }
-      done++;
-      doneNotifier.value = done;
-    }
+    final done = await _runDurationMeasurement(unmeasured,
+        isCancelled: () => _bulkMeasureCancelled,
+        onProgress: (n) => doneNotifier.value = n);
 
-    await LibraryRepository.instance.save(_tracks);
+    _measurementInProgress = false;
     doneNotifier.dispose();
     if (mounted) {
       Navigator.of(context, rootNavigator: false).pop();

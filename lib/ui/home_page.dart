@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
@@ -65,8 +67,9 @@ class _HomePageState extends State<HomePage> {
     // `main()` normally has the core (and the layout manager) up before
     // this widget ever builds; both are idempotent and cover the cases
     // where they aren't (tests, deep links, hot restart).
+    MainCore? core;
     try {
-      await ensureCoreReady();
+      core = await ensureCoreReady();
       await ensureLayoutManagerReady();
       await ensureThemeManagerReady();
     } catch (e) {
@@ -75,6 +78,48 @@ class _HomePageState extends State<HomePage> {
       if (mounted) {
         setState(() => _coreReady = true);
       }
+    }
+    if (core != null) {
+      // Deliberately after the first frame with _coreReady painted, not
+      // before: the resume prompt is a dialog *over* the real UI, per §42
+      // of the product spec ("the user should reopen Omnis and see:
+      // Resume where you left off?"), not a blocker in front of it.
+      unawaited(_offerResumeIfAvailable(core));
+    }
+  }
+
+  /// Checks the recovery journal and, if there's something worth
+  /// resuming, asks the user before touching playback — the journal can
+  /// be stale or from a session the user doesn't care about, so this
+  /// never auto-resumes silently.
+  Future<void> _offerResumeIfAvailable(MainCore core) async {
+    final state = await core.loadResumableState();
+    if (state == null || !mounted) return;
+    final track = state.currentTrack;
+    if (track == null) return;
+
+    final resume = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Resume where you left off?'),
+        content: Text('${track.title} — ${track.artists.join(', ')}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Dismiss'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Resume'),
+          ),
+        ],
+      ),
+    );
+
+    if (resume == true) {
+      await core.resumePlayback(state);
+    } else {
+      await core.dismissResumableState();
     }
   }
 

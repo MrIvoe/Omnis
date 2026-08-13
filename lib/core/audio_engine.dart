@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:audio_service/audio_service.dart';
+import 'package:audio_service/audio_service.dart' hide PlaybackState;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart' show RepeatMode;
+import 'package:omnis/core/ab_repeat_controller.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/playback_engine.dart';
+import 'package:omnis/core/playback_os_integration.dart';
+import 'package:omnis/core/playback_state.dart';
 import 'package:omnis_plugin_api/hardware_eq_band.dart';
-import 'package:smtc_windows/smtc_windows.dart' hide RepeatMode;
 
 // `HardwareEqBand` moved to `omnis_plugin_api` (see that package's
 // `hardware_eq_band.dart`) so `EqualizerPlugin` can name it without
@@ -43,10 +46,13 @@ export 'package:omnis_plugin_api/hardware_eq_band.dart' show HardwareEqBand;
 /// discontinuity. A manual skip/seek abandons any in-flight crossfade
 /// immediately; crossfade only ever applies to the automatic
 /// end-of-track transition it was designed for.
-class AudioEngine {
+class AudioEngine implements PlaybackEngine {
   late final AudioPlayer _player;
   final AndroidEqualizer? _androidEqualizer;
   AudioPlayer? _crossfadePlayer;
+
+  /// A-B repeat state machine — see [AbRepeatController].
+  late final AbRepeatController _abRepeat;
 
   final List<BaseTrack> _queue = [];
 
@@ -62,7 +68,7 @@ class AudioEngine {
   /// integration (System Media Transport Controls) — the platform
   /// audio_service doesn't support. `null` everywhere else, or on
   /// Windows if SMTC failed to initialize (see [initialize]).
-  _OmnisWindowsMediaHandler? _windowsMediaHandler;
+  OmnisWindowsMediaHandler? _windowsMediaHandler;
 
   /// Guards against reacting to index events emitted while we are swapping
   /// the audio source out from under the player.
@@ -80,6 +86,10 @@ class AudioEngine {
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<PlaybackEvent>? _eventSub;
   StreamSubscription<Duration>? _crossfadeWatchSub;
+
+  /// Broadcast sink for native playback errors ([playbackErrors]).
+  final StreamController<Object> _playbackErrorController =
+      StreamController.broadcast();
 
   /// Global volume (0..1).
   double _volume = 1.0;
@@ -142,10 +152,79 @@ class AudioEngine {
       audioPipeline:
           eq != null ? AudioPipeline(androidAudioEffects: [eq]) : null,
     );
+    _abRepeat = AbRepeatController(
+      positionStream: _player.positionStream,
+      currentPosition: () => _player.position,
+      seek: (position) => _player.seek(position),
+    );
   }
 
   /// The underlying just_audio player (exposed for low-level access).
   AudioPlayer get player => _player;
+
+  /// Current track duration, or `null` if unknown/not loaded.
+  @override
+  Duration? get duration => _player.duration;
+
+  /// Current position within the current track.
+  @override
+  Duration get position => _player.position;
+
+  /// Whether the engine believes the queue is exhaustively unplayable —
+  /// every remaining track failed to load. Read by the recovery policy to
+  /// stop instead of spinning.
+  bool get queueExhausted => _consecutiveErrors > _sourceToQueue.length;
+
+  /// Consecutive load failures since the last successful `ready`.
+  int get consecutiveErrors => _consecutiveErrors;
+
+  /// Build a [PlaybackState] snapshot of the whole playback subsystem —
+  /// the raw material the recovery journal persists and resume restores.
+  @override
+  PlaybackState captureState() {
+    return PlaybackState(
+      queue: List.of(_queue),
+      currentIndex: _currentIndex,
+      position: _player.position,
+      wasPlaying: _player.playing,
+      shuffleEnabled: _shuffleEnabled,
+      repeatMode: _repeatMode,
+      volume: _volume,
+      speed: _player.speed,
+      pitch: _player.pitch,
+      skipSilenceEnabled: _player.skipSilenceEnabled,
+      gaplessEnabled: _gaplessEnabled,
+      crossfadeDuration: _crossfadeDuration,
+    );
+  }
+
+  /// Reload the currently loaded queue source — the "reinitialize the
+  /// decoder" step of the playback recovery flow. Rebuilds the same
+  /// concatenated source at the current index (or [position] past it).
+  /// Never throws: a failed rebuild logs and leaves the previous source
+  /// untouched, failing soft exactly like every other engine operation.
+  @override
+  Future<void> reloadCurrentSource({Duration? position}) async {
+    if (_queue.isEmpty) return;
+    final target = _currentIndex < 0 ? 0 : _currentIndex;
+    await _rebuildQueueSource(
+      initialQueueIndex: target,
+      initialPosition: position ?? _player.position,
+    );
+  }
+
+  /// Best-effort output-device reset (headphones/DAC vanished). Today every
+  /// platform reports the default device, so this is a no-op that exists as
+  /// the forward-compatible seam for the hardware capability layer (§25 of
+  /// the product spec) — when a real output controller exists, this resets
+  /// to the system default and reloads the source so audio actually routes
+  /// to it.
+  @override
+  Future<void> setOutputDeviceToDefault() async {
+    // No device selection layer yet — store everything as 'default' and no-op.
+    // A future OutputController replaces this body; captureState() continues
+    // to record `outputDeviceId: 'default'` and recovery naturally falls back.
+  }
 
   /// Current track, or null when the queue is empty.
   BaseTrack? get currentTrack => _currentTrack;
@@ -157,13 +236,24 @@ class AudioEngine {
   int get currentIndex => _currentIndex;
 
   /// Position stream (ticks at ~200ms).
+  @override
   Stream<Duration> get positionStream => _player.positionStream;
 
   /// Duration stream.
   Stream<Duration?> get durationStream => _player.durationStream;
 
   /// Playback state stream.
+  @override
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
+
+  /// Broadcast stream of raw playback errors from the native player
+  /// (`playbackEventStream` errors — corrupt/missing/unsupported files).
+  /// The playback watchdog subscribes here so a decoder failure becomes a
+  /// recoverable diagnostic instead of a silent hang. The engine's own
+  /// error path (`_skipAfterError`) already advances the queue; this
+  /// stream is the *observation* half that lets the watchdog/UI see it.
+  @override
+  Stream<Object> get playbackErrors => _playbackErrorController.stream;
 
   /// Current track stream (emits when the track changes).
   Stream<BaseTrack?> get trackStream => _trackController.stream;
@@ -290,9 +380,10 @@ class AudioEngine {
       _bindPlayerStreams();
       // audio_service has no Windows implementation at all (only
       // Android/iOS/macOS) — routing Windows through
-      // _OmnisWindowsMediaHandler/SMTCWindows instead of letting this
-      // throw-and-get-caught is the actual fix for "no notification/
-      // media-key controls on Windows", not just a defensive skip.
+      // OmnisWindowsMediaHandler/SMTCWindows (playback_os_integration.dart)
+      // instead of letting this throw-and-get-caught is the actual fix for
+      // "no notification/media-key controls on Windows", not just a
+      // defensive skip.
       //
       // This used to sit behind `await _player.load()`, which throws
       // ("no audio source") because nothing is loaded at boot. The throw
@@ -301,7 +392,7 @@ class AudioEngine {
       // controls, on any platform.
       if (!kIsWeb && Platform.isWindows) {
         try {
-          _windowsMediaHandler = await _OmnisWindowsMediaHandler.create(this);
+          _windowsMediaHandler = await OmnisWindowsMediaHandler.create(this);
         } catch (e) {
           debugPrint('Omnis: Windows media controls (SMTC) unavailable, '
               'continuing without them: $e');
@@ -309,7 +400,7 @@ class AudioEngine {
       } else {
         try {
           await AudioService.init(
-            builder: () => _OmnisAudioHandler(this),
+            builder: () => OmnisAudioHandler(this),
             config: const AudioServiceConfig(
               androidNotificationChannelId: 'com.omnis.music.channel',
               androidNotificationChannelName: 'Omnis Playback',
@@ -369,6 +460,9 @@ class AudioEngine {
       onError: (Object e, StackTrace st) {
         if (_disposed) return;
         debugPrint('Omnis: playback error: $e');
+        if (!_playbackErrorController.isClosed) {
+          _playbackErrorController.add(e);
+        }
         _skipAfterError();
       },
     );
@@ -397,7 +491,7 @@ class AudioEngine {
     await _stateSub?.cancel();
     await _eventSub?.cancel();
     await _crossfadeWatchSub?.cancel();
-    await _abRepeatSub?.cancel();
+    await _abRepeat.dispose();
     await _player.dispose();
     final fadePlayer = _crossfadePlayer;
     if (fadePlayer != null) {
@@ -408,6 +502,9 @@ class AudioEngine {
     }
     if (!_queueController.isClosed) {
       await _queueController.close();
+    }
+    if (!_playbackErrorController.isClosed) {
+      await _playbackErrorController.close();
     }
     await _windowsMediaHandler?.dispose();
   }
@@ -430,6 +527,27 @@ class AudioEngine {
   /// Add a track to the end of the queue, preserving current playback.
   Future<void> addTrack(BaseTrack track) async {
     _queue.add(track);
+    _emitQueue();
+    if (_currentIndex < 0) {
+      await _rebuildQueueSource(initialQueueIndex: 0);
+    } else {
+      await _rebuildQueueSource(
+        initialQueueIndex: _currentIndex,
+        initialPosition: _player.position,
+      );
+    }
+  }
+
+  /// Insert a track to play immediately after the current one — the
+  /// "Play next" queue action (§7 of the Omnis 2.0 product spec, which
+  /// calls out "play next" and "add to queue" as distinct actions;
+  /// [addTrack] is "add to queue," this is "play next"). Preserves
+  /// current playback, exactly like [addTrack]; with nothing currently
+  /// playing, "next" is the very front of the queue, so it behaves the
+  /// same as [addTrack] in that case.
+  Future<void> playNext(BaseTrack track) async {
+    final insertAt = _currentIndex < 0 ? 0 : _currentIndex + 1;
+    _queue.insert(insertAt, track);
     _emitQueue();
     if (_currentIndex < 0) {
       await _rebuildQueueSource(initialQueueIndex: 0);
@@ -484,6 +602,7 @@ class AudioEngine {
   }
 
   /// Start playing (resume).
+  @override
   Future<void> play() async {
     if (_queue.isEmpty) return;
     if (_currentIndex < 0) {
@@ -497,6 +616,7 @@ class AudioEngine {
   Future<void> pause() async => _player.pause();
 
   /// Stop playback.
+  @override
   Future<void> stop() async {
     _cancelCrossfade(restoreVolume: true);
     await _player.stop();
@@ -514,6 +634,7 @@ class AudioEngine {
   /// repeat — just_audio ties both to the same loop-mode-aware index, and
   /// diverging from that would mean tracking a second, parallel notion of
   /// "next" that could drift out of sync with it.
+  @override
   Future<bool> next({bool wrap = false}) async {
     if (_sourceToQueue.isEmpty) return false;
     _cancelCrossfade(restoreVolume: true);
@@ -557,6 +678,7 @@ class AudioEngine {
   }
 
   /// Seek within the current track.
+  @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   /// Set the global master volume.
@@ -658,63 +780,33 @@ class AudioEngine {
 
   // --- A-B repeat ---
   //
-  // Loops a marked section [_loopA, _loopB] of the current track
-  // indefinitely — set point A, set point B, playback jumps back to A
-  // every time it reaches B, until cleared. A common practicing/DJ
-  // feature (Poweramp, Musicolet, most desktop players all have it) that
-  // just_audio has no built-in concept of, so it's driven off the same
-  // positionStream-watcher pattern the crossfade state machine already
-  // uses in this class.
-
-  Duration? _loopA;
-  Duration? _loopB;
-  StreamSubscription<Duration>? _abRepeatSub;
+  // A common practicing/DJ feature (Poweramp, Musicolet, most desktop
+  // players all have it) that just_audio has no built-in concept of. The
+  // actual state machine lives in [AbRepeatController] (see its class
+  // doc for why it was split out); these are thin delegating wrappers so
+  // every existing caller of markLoopA/markLoopB/clearLoop/abRepeatRange/
+  // loopAMarker keeps working unchanged.
 
   /// The current A-B loop points, or `null` if A-B repeat is off.
-  (Duration a, Duration b)? get abRepeatRange =>
-      (_loopA != null && _loopB != null) ? (_loopA!, _loopB!) : null;
+  (Duration a, Duration b)? get abRepeatRange => _abRepeat.range;
 
   /// Point A, once marked — set even before B is marked (and thus before
   /// looping actually starts), so UI can show a mid-way "A marked, tap
   /// again for B" state distinct from both "off" and "looping."
-  Duration? get loopAMarker => _loopA;
+  Duration? get loopAMarker => _abRepeat.markerA;
 
   /// Marks point A at [position] (defaults to the current position).
   /// Clears any previously completed loop until [markLoopB] is also
   /// called — a lone A point does nothing yet.
-  void markLoopA([Duration? position]) {
-    _loopA = position ?? _player.position;
-    _loopB = null;
-  }
+  void markLoopA([Duration? position]) => _abRepeat.markA(position);
 
   /// Marks point B and, if it's after A, starts looping between them
   /// immediately. B at or before A is rejected (a zero/negative loop
   /// makes no sense) rather than silently doing nothing useful.
-  bool markLoopB([Duration? position]) {
-    final a = _loopA;
-    if (a == null) return false;
-    final b = position ?? _player.position;
-    if (b <= a) return false;
-    _loopB = b;
-    _abRepeatSub ??= _player.positionStream.listen(_onPositionForAbRepeat);
-    return true;
-  }
+  bool markLoopB([Duration? position]) => _abRepeat.markB(position);
 
   /// Clears A-B repeat and lets playback continue normally.
-  void clearLoop() {
-    _loopA = null;
-    _loopB = null;
-    _abRepeatSub?.cancel();
-    _abRepeatSub = null;
-  }
-
-  void _onPositionForAbRepeat(Duration position) {
-    final b = _loopB;
-    if (b == null || _disposed) return;
-    if (position >= b) {
-      unawaited(_player.seek(_loopA));
-    }
-  }
+  void clearLoop() => _abRepeat.clear();
 
   /// Resolve a track to a playable URI.
   ///
@@ -947,188 +1039,5 @@ class AudioEngine {
     if (restoreVolume) {
       unawaited(_applyVolumes());
     }
-  }
-}
-
-/// Minimal AudioHandler used by audio_service when available on the
-/// platform. It forwards to [AudioEngine].
-class _OmnisAudioHandler extends BaseAudioHandler {
-  final AudioEngine _engine;
-
-  _OmnisAudioHandler(this._engine) {
-    _engine.playerStateStream.listen((state) {
-      final playing = state.playing;
-      final processing = state.processingState;
-      playbackState.add(playbackState.value.copyWith(
-        playing: playing,
-        controls: [
-          MediaControl.skipToPrevious,
-          if (playing) MediaControl.pause else MediaControl.play,
-          MediaControl.skipToNext,
-        ],
-        processingState: switch (processing) {
-          ProcessingState.idle => AudioProcessingState.idle,
-          ProcessingState.loading => AudioProcessingState.loading,
-          ProcessingState.buffering => AudioProcessingState.buffering,
-          ProcessingState.ready => AudioProcessingState.ready,
-          ProcessingState.completed => AudioProcessingState.completed,
-        },
-      ));
-    });
-    _engine.positionStream.listen((pos) {
-      playbackState.add(playbackState.value.copyWith(
-        updatePosition: pos,
-      ));
-    });
-    _engine.trackStream.listen((track) {
-      if (track == null) return;
-      mediaItem.add(MediaItem(
-        id: track.id,
-        title: track.title,
-        artist: track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown',
-        album: track.album,
-        // BaseTrack.duration is in seconds everywhere else in the app; this
-        // used to be read as milliseconds, so the notification showed a
-        // ~3-minute song as 3 seconds long.
-        duration: Duration(seconds: track.duration),
-        artUri: _artUri(track.coverArt),
-      ));
-    });
-  }
-
-  /// Only hand audio_service artwork URIs it can actually fetch.
-  ///
-  /// `MediaScanner` stores Android artwork as `mediastore://<id>`, which is
-  /// a marker for `QueryArtworkWidget`, not a resolvable URI — passing it
-  /// through made the media notification try (and fail) to load it.
-  static Uri? _artUri(String? coverArt) {
-    if (coverArt == null || coverArt.isEmpty) return null;
-    final uri = Uri.tryParse(coverArt);
-    if (uri == null) return null;
-    const loadable = {'http', 'https', 'file', 'content', 'asset'};
-    if (!loadable.contains(uri.scheme)) return null;
-    return uri;
-  }
-
-  @override
-  Future<void> play() => _engine.play();
-
-  @override
-  Future<void> pause() => _engine.pause();
-
-  @override
-  Future<void> stop() => _engine.stop();
-
-  @override
-  Future<void> seek(Duration position) => _engine.seek(position);
-
-  @override
-  Future<void> skipToNext() async {
-    await _engine.next();
-  }
-
-  @override
-  Future<void> skipToPrevious() async {
-    await _engine.previous();
-  }
-}
-
-/// Windows System Media Transport Controls integration — the
-/// notification-center / lock-screen / hardware-media-key surface
-/// [_OmnisAudioHandler]/audio_service provides on Android/iOS/macOS but
-/// has no Windows implementation of at all. Same shape as
-/// [_OmnisAudioHandler]: forwards engine state out to SMTC, forwards
-/// SMTC button presses back into the engine.
-///
-/// Uses `smtc_windows`, a Flutter Windows plugin that bundles a compiled
-/// Rust component (via cargokit) for the actual SMTC/WinRT calls —
-/// building it requires a Rust toolchain (`cargo`) on the machine doing
-/// the Windows build, on top of the usual Flutter/Visual Studio
-/// requirements. See docs/BUILDING.md.
-///
-/// **Verification status**: implemented against smtc_windows' documented
-/// public API; not exercised against a real Windows build in this
-/// environment — a pre-existing Visual Studio/Flutter tooling version
-/// mismatch blocks Windows builds here entirely (see docs/BUILDING.md),
-/// unrelated to this feature specifically. [AudioEngine.initialize]'s
-/// try/catch around [create] means a failure here degrades to "no
-/// Windows media controls," the same fail-soft contract audio_service
-/// already has on platforms it doesn't support.
-class _OmnisWindowsMediaHandler {
-  final AudioEngine _engine;
-  final SMTCWindows _smtc;
-  final List<StreamSubscription<void>> _subs = [];
-
-  _OmnisWindowsMediaHandler._(this._engine, this._smtc) {
-    _subs.add(_engine.playerStateStream.listen((state) {
-      _smtc.setPlaybackStatus(
-          state.playing ? PlaybackStatus.playing : PlaybackStatus.paused);
-    }));
-    _subs.add(_engine.positionStream.listen(_smtc.setPosition));
-    _subs.add(_engine.trackStream.listen((track) {
-      if (track == null) {
-        _smtc.clearMetadata();
-        return;
-      }
-      _smtc.updateMetadata(MusicMetadata(
-        title: track.title,
-        artist:
-            track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown',
-        album: track.album,
-        thumbnail: _thumbnailFor(track.coverArt),
-      ));
-      _smtc.setStartTime(Duration.zero);
-      _smtc.setEndTime(Duration(seconds: track.duration));
-    }));
-    _subs.add(_smtc.buttonPressStream.listen((button) {
-      switch (button) {
-        case PressedButton.play:
-          _engine.play();
-        case PressedButton.pause:
-          _engine.pause();
-        case PressedButton.next:
-          _engine.next();
-        case PressedButton.previous:
-          _engine.previous();
-        case PressedButton.stop:
-          _engine.stop();
-        case PressedButton.fastForward:
-        case PressedButton.rewind:
-        case PressedButton.record:
-        case PressedButton.channelUp:
-        case PressedButton.channelDown:
-          break; // Not surfaced in Omnis's transport controls.
-      }
-    }));
-  }
-
-  static Future<_OmnisWindowsMediaHandler> create(AudioEngine engine) async {
-    await SMTCWindows.initialize();
-    final smtc = SMTCWindows(
-      config: const SMTCConfig(
-        playEnabled: true,
-        pauseEnabled: true,
-        nextEnabled: true,
-        prevEnabled: true,
-        stopEnabled: false,
-        fastForwardEnabled: false,
-        rewindEnabled: false,
-      ),
-    );
-    return _OmnisWindowsMediaHandler._(engine, smtc);
-  }
-
-  /// SMTC's thumbnail wants a local file path or a resolvable URI.
-  /// `mediastore://` markers ([_OmnisAudioHandler._artUri]'s Android-only
-  /// concern) never occur on Windows — `MediaScanner`'s desktop path
-  /// always produces a real local path or nothing.
-  static String? _thumbnailFor(String? coverArt) =>
-      (coverArt == null || coverArt.isEmpty) ? null : coverArt;
-
-  Future<void> dispose() async {
-    for (final sub in _subs) {
-      await sub.cancel();
-    }
-    await _smtc.dispose();
   }
 }

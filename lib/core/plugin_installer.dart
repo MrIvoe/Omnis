@@ -46,7 +46,48 @@ class InstalledPluginInfo {
 class PluginInstaller {
   final http.Client _client;
 
-  PluginInstaller({http.Client? client}) : _client = client ?? http.Client();
+  /// Hard cap on a downloaded plugin zip's size (as transferred, i.e.
+  /// compressed) — a plugin repo has no legitimate reason to be this
+  /// large. Without this, a huge or malicious download had no limit at
+  /// all: nothing stopped it from hanging the install indefinitely or
+  /// filling the device's storage. Overridable (like [_client]) so a
+  /// test can exercise the limit without actually transferring 50MB.
+  final int maxDownloadBytes;
+  static const _defaultMaxDownloadBytes = 50 * 1024 * 1024; // 50 MB
+
+  /// Hard cap on total *uncompressed* bytes extracted from one plugin
+  /// archive — the zip-bomb defense a compressed-size cap alone doesn't
+  /// cover, since a small download can still expand to gigabytes on
+  /// disk. Checked twice: against the archive's own declared per-entry
+  /// size before decompressing anything (cheap, but trusts zip
+  /// metadata), and again against actual bytes as each file is
+  /// extracted (catches a maliciously mislabeled entry, just after that
+  /// one file's worth of memory has already been decompressed — see
+  /// [installFromUrl]).
+  final int maxExtractedBytes;
+  static const _defaultMaxExtractedBytes = 200 * 1024 * 1024; // 200 MB
+
+  /// Applied to both the initial response (so a server that never
+  /// answers doesn't hang the install forever) and every chunk of the
+  /// download stream (so a connection that stalls partway through does
+  /// the same) — not one timeout over the whole transfer, since a large
+  /// but genuinely slow download that keeps making progress shouldn't be
+  /// punished the same as a stalled one.
+  static const _downloadTimeout = Duration(seconds: 30);
+
+  PluginInstaller({
+    http.Client? client,
+    this.maxDownloadBytes = _defaultMaxDownloadBytes,
+    this.maxExtractedBytes = _defaultMaxExtractedBytes,
+  }) : _client = client ?? http.Client();
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    return '${bytes}B';
+  }
 
   /// The directory where all plugins are stored on disk.
   Future<Directory> _pluginsRoot() async {
@@ -81,15 +122,47 @@ class PluginInstaller {
     );
     final zipFile = File(zipPath);
 
-    // Download
+    // Download — streamed rather than a single `_client.get()`, so a
+    // size cap can be enforced as bytes arrive instead of only after the
+    // whole (potentially huge) response has already been buffered in
+    // memory.
     try {
-      final resp = await _client.get(resolved.downloadUri);
-      if (resp.statusCode != 200) {
+      final request = http.Request('GET', resolved.downloadUri);
+      final response = await _client.send(request).timeout(_downloadTimeout);
+      if (response.statusCode != 200) {
         throw PluginInstallException(
-            'Download failed (HTTP ${resp.statusCode})');
+            'Download failed (HTTP ${response.statusCode})');
       }
-      await zipFile.writeAsBytes(resp.bodyBytes);
+      final declaredLength = response.contentLength;
+      if (declaredLength != null && declaredLength > maxDownloadBytes) {
+        throw PluginInstallException(
+          'Plugin download is too large '
+          '(${_formatBytes(declaredLength)}, limit is '
+          '${_formatBytes(maxDownloadBytes)}).',
+        );
+      }
+      final sink = zipFile.openWrite();
+      var received = 0;
+      try {
+        await response.stream.timeout(_downloadTimeout).forEach((chunk) {
+          received += chunk.length;
+          if (received > maxDownloadBytes) {
+            throw PluginInstallException(
+              'Plugin download exceeded the '
+              '${_formatBytes(maxDownloadBytes)} size limit.',
+            );
+          }
+          sink.add(chunk);
+        });
+      } finally {
+        await sink.close();
+      }
     } catch (e) {
+      if (await zipFile.exists()) {
+        try {
+          await zipFile.delete();
+        } catch (_) {}
+      }
       if (e is PluginInstallException) rethrow;
       throw PluginInstallException('Could not download plugin: $e');
     }
@@ -99,6 +172,20 @@ class PluginInstaller {
     final files = archive.files;
     if (files.isEmpty) {
       throw PluginInstallException('Zip archive is empty.');
+    }
+
+    // Zip-bomb guard, pass one: reject before decompressing anything if
+    // the archive's own declared (uncompressed) sizes already exceed the
+    // cap. `ArchiveFile.size` reads zip metadata only — unlike `.content`,
+    // reading it doesn't trigger decompression — so this check stays
+    // cheap even for a maliciously huge archive.
+    final declaredTotal = files.fold<int>(0, (sum, f) => sum + f.size);
+    if (declaredTotal > maxExtractedBytes) {
+      throw PluginInstallException(
+        'Plugin archive would extract to more than '
+        '${_formatBytes(maxExtractedBytes)} (declared '
+        '${_formatBytes(declaredTotal)}) — refusing to install.',
+      );
     }
 
     // Find the top-level folder name inside the zip (github wraps in one).
@@ -126,6 +213,7 @@ class PluginInstaller {
     // filesystem (Windows, and macOS's default HFS+/APFS mode), rejecting
     // every install as a false-positive "path traversal attempt."
     final targetRoot = p.normalize(targetDir.path);
+    var extractedBytes = 0;
     for (final file in files) {
       if (file.isFile) {
         // Remove the top-level prefix from the stored path.
@@ -165,9 +253,24 @@ class PluginInstaller {
         }
         // ---------------------------------------------------------------
 
+        final content = file.content as List<int>;
+        // Zip-bomb guard, pass two: the declared-size check above only
+        // trusted zip metadata — a maliciously mislabeled entry can still
+        // decompress to more than it claimed. This catches that after
+        // the fact, bounding the damage to at most one oversized entry's
+        // worth of memory (already decompressed by `file.content` above)
+        // before aborting, rather than writing gigabytes of it to disk.
+        extractedBytes += content.length;
+        if (extractedBytes > maxExtractedBytes) {
+          throw PluginInstallException(
+            'Plugin archive extracted more than '
+            '${_formatBytes(maxExtractedBytes)} — refusing to continue.',
+          );
+        }
+
         final out = File(candidateNormalized);
         await out.create(recursive: true);
-        await out.writeAsBytes(file.content as List<int>);
+        await out.writeAsBytes(content);
       }
     }
 
