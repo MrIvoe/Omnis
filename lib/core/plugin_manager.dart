@@ -13,6 +13,7 @@ import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
 import 'package:omnis/core/plugin_sandbox_services.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/core/semver.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -93,6 +94,20 @@ class ManagedPlugin {
 
   /// True for plugins compiled into the app (`lib/plugins/`).
   bool get isBundled => sourceUrl == 'bundled';
+}
+
+/// A newer version is available for an installed external plugin — the
+/// result of [PluginManager.checkForUpdates].
+class PluginUpdateInfo {
+  final String pluginId;
+  final String currentVersion;
+  final String latestVersion;
+
+  const PluginUpdateInfo({
+    required this.pluginId,
+    required this.currentVersion,
+    required this.latestVersion,
+  });
 }
 
 /// PluginManager is the heart of the micro-kernel plugin ecosystem.
@@ -419,6 +434,72 @@ class PluginManager {
   Future<ManagedPlugin> installFromUrl(String url) async {
     final installed = await _installer.installFromUrl(url);
     return registerInstalled(installed, sourceUrl: url);
+  }
+
+  /// Checks every installed *external* (downloaded) plugin's source URL
+  /// for a newer published version than what's currently installed.
+  /// Bundled plugins are never checked — they ship with the app itself,
+  /// updated by an app update, not this mechanism.
+  ///
+  /// Best-effort per plugin: a plugin whose source URL isn't a
+  /// resolvable GitHub repo (a direct `.zip` link), or whose manifest
+  /// can't be fetched right now (network failure, repo gone private/
+  /// renamed), is silently skipped rather than aborting the whole check
+  /// — see [PluginInstaller.fetchRemoteManifest].
+  Future<List<PluginUpdateInfo>> checkForUpdates() async {
+    final updates = <PluginUpdateInfo>[];
+    for (final plugin in List<ManagedPlugin>.from(_plugins)) {
+      if (!plugin.isExternal) continue;
+      final remote = await _installer.fetchRemoteManifest(plugin.sourceUrl);
+      if (remote == null) continue;
+      if (compareVersions(remote.version, plugin.version) > 0) {
+        updates.add(PluginUpdateInfo(
+          pluginId: plugin.id,
+          currentVersion: plugin.version,
+          latestVersion: remote.version,
+        ));
+      }
+    }
+    return updates;
+  }
+
+  /// Updates an installed external plugin to whatever is currently
+  /// published at its own source URL — a fresh download, not just a
+  /// version-string swap, so this also picks up any code/manifest
+  /// change alongside a version bump.
+  ///
+  /// Tears down the old instance's live registrations first (its
+  /// `dispose` hook, its `ServiceRegistry` entries) without touching
+  /// [AppSettings]'s persisted enabled/disabled choice for this plugin
+  /// id — this is a replace, not a real disable, so a previously
+  /// disabled plugin stays disabled after updating and a previously
+  /// enabled one stays enabled, exactly as [disablePlugin] would *not*
+  /// preserve (it explicitly persists "disabled," which an update must
+  /// never do on the user's behalf).
+  Future<ManagedPlugin> updatePlugin(String pluginId) async {
+    final existing = byId(pluginId);
+    if (existing == null) {
+      throw PluginInstallException('Plugin "$pluginId" is not installed.');
+    }
+    if (!existing.isExternal) {
+      throw PluginInstallException('Only downloaded plugins can be updated.');
+    }
+    if (existing.initialized) {
+      await _sandbox.run(
+        pluginId: existing.id,
+        pluginName: existing.name,
+        hook: 'dispose',
+        operation: () async {
+          if (existing.external != null &&
+              existing.external!.hasHook('dispose')) {
+            existing.external!.callHook('dispose', const []);
+          }
+          return null;
+        },
+      );
+    }
+    _unregisterProvidedServices(existing);
+    return installFromUrl(existing.sourceUrl);
   }
 
   /// Registers and executes an already-downloaded plugin (the manifest has

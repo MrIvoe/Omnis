@@ -79,6 +79,14 @@ class _PluginsPageState extends State<PluginsPage> {
   StreamSubscription<List<ManagedPlugin>>? _pluginsSub;
   late final void Function(List<PluginHealthRecord>) _healthListener;
 
+  /// Updates found by the last [_checkForUpdates] run, keyed by plugin id
+  /// — cleared whenever a plugin is actually updated (that entry, not the
+  /// whole map) or a fresh check replaces it. `null` until a check has
+  /// ever run, distinct from "checked, found nothing."
+  Map<String, PluginUpdateInfo>? _availableUpdates;
+  bool _checkingUpdates = false;
+  final Set<String> _updatingPluginIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -165,6 +173,48 @@ class _PluginsPageState extends State<PluginsPage> {
       if (mounted) setState(() => _installError = 'Install failed: $e');
     } finally {
       if (mounted) setState(() => _installing = false);
+    }
+  }
+
+  /// Checks every installed external plugin's own source URL for a
+  /// newer published version — see `PluginManager.checkForUpdates`'s doc
+  /// comment for what "best-effort" means here (a plugin whose source
+  /// doesn't support this, or that can't be reached right now, is
+  /// silently skipped, not reported as an error).
+  Future<void> _checkForUpdates() async {
+    setState(() => _checkingUpdates = true);
+    try {
+      final updates = await widget.pluginManager.checkForUpdates();
+      if (!mounted) return;
+      setState(() {
+        _availableUpdates = {for (final u in updates) u.pluginId: u};
+      });
+    } finally {
+      if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
+
+  Future<void> _updatePlugin(ManagedPlugin plugin) async {
+    setState(() => _updatingPluginIds.add(plugin.id));
+    try {
+      final updated = await widget.pluginManager.updatePlugin(plugin.id);
+      if (!mounted) return;
+      setState(() {
+        _availableUpdates?.remove(plugin.id);
+      });
+      OmnisHaptics.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Updated ${updated.name} to v${updated.version}.'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Update failed: $e'),
+      ));
+    } finally {
+      if (mounted) {
+        setState(() => _updatingPluginIds.remove(plugin.id));
+      }
     }
   }
 
@@ -391,6 +441,19 @@ class _PluginsPageState extends State<PluginsPage> {
             children: [
               Text('Installed plugins', style: theme.textTheme.titleMedium),
               const Spacer(),
+              if (_plugins.any((p) => p.isExternal))
+                TextButton.icon(
+                  onPressed: _checkingUpdates ? null : _checkForUpdates,
+                  icon: _checkingUpdates
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.update, size: 18),
+                  label: Text(
+                      _checkingUpdates ? 'Checking…' : 'Check for updates'),
+                ),
               if (_plugins.any(
                   (p) => p.enabled && (p.inProcess?.usesNetwork ?? false)))
                 TextButton.icon(
@@ -400,6 +463,14 @@ class _PluginsPageState extends State<PluginsPage> {
                 ),
             ],
           ),
+          if (_availableUpdates != null && _availableUpdates!.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Everything is up to date.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
           const SizedBox(height: 8),
           if (_plugins.isEmpty)
             const Card(
@@ -409,47 +480,86 @@ class _PluginsPageState extends State<PluginsPage> {
               ),
             )
           else
-            ..._plugins.map((p) => Card(
-                  child: ListTile(
-                    leading: Icon(
-                      p.isExternal ? Icons.extension : Icons.build_circle,
-                      color: theme.colorScheme.primary,
-                    ),
-                    title: Text(p.name),
-                    subtitle:
-                        Text('${p.description}\nv${p.version} · ${p.author}'),
-                    isThreeLine: true,
-                    // Tapping the plugin opens its own settings page — the
-                    // RuneLite-style "click the plugin to configure it"
-                    // model, so a plugin's settings never need a section
-                    // added to the shared Settings page.
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PluginSettingsPage(
-                        pluginManager: widget.pluginManager,
-                        plugin: p,
+            ..._plugins.map((p) {
+              final update = _availableUpdates?[p.id];
+              final updating = _updatingPluginIds.contains(p.id);
+              return Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        p.isExternal ? Icons.extension : Icons.build_circle,
+                        color: theme.colorScheme.primary,
                       ),
-                    )),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Switch(
-                          value: p.enabled,
-                          onChanged: (v) => v
-                              ? widget.pluginManager.enablePlugin(p)
-                              : widget.pluginManager.disablePlugin(p),
+                      title: Text(p.name),
+                      subtitle: Text(
+                          '${p.description}\nv${p.version} · ${p.author}'),
+                      isThreeLine: true,
+                      // Tapping the plugin opens its own settings page — the
+                      // RuneLite-style "click the plugin to configure it"
+                      // model, so a plugin's settings never need a section
+                      // added to the shared Settings page.
+                      onTap: () =>
+                          Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => PluginSettingsPage(
+                          pluginManager: widget.pluginManager,
+                          plugin: p,
                         ),
-                        if (p.isExternal)
-                          IconButton(
-                            icon: const Icon(Icons.delete),
-                            tooltip: 'Uninstall',
-                            onPressed: () =>
-                                widget.pluginManager.uninstallPlugin(p),
+                      )),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: p.enabled,
+                            onChanged: (v) => v
+                                ? widget.pluginManager.enablePlugin(p)
+                                : widget.pluginManager.disablePlugin(p),
                           ),
-                        const Icon(Icons.chevron_right),
-                      ],
+                          if (p.isExternal)
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              tooltip: 'Uninstall',
+                              onPressed: () =>
+                                  widget.pluginManager.uninstallPlugin(p),
+                            ),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
                     ),
-                  ),
-                )),
+                    if (update != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.new_releases_outlined,
+                                size: 18, color: theme.colorScheme.primary),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Update available: v${update.latestVersion}',
+                                style: TextStyle(
+                                    color: theme.colorScheme.primary),
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              onPressed:
+                                  updating ? null : () => _updatePlugin(p),
+                              child: updating
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    )
+                                  : const Text('Update'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
           const SizedBox(height: 24),
 
           // --- Health dashboard ---

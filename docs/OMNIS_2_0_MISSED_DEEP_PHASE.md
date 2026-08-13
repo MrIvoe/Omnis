@@ -276,11 +276,37 @@ reactive — a silently-hung plugin that never throws is never detected),
 no per-plugin retry/reset action, no auto-disable/auto-retry on
 repeated failure.
 
-**29. Plugin updates** — Genuine 0%. Reinstalling the same URL
-deletes-and-replaces the plugin directory, but there's no version
-comparison against any remote/catalog version, no update-check, no
-backup-before-update, no rollback-on-failed-update, no "update
-available" UI.
+**29. Plugin updates** — Partial (was genuine 0%, closed 2026-08-13).
+Real update detection now exists: `PluginInstaller.fetchRemoteManifest`
+resolves a plugin's GitHub source URL to its raw
+`raw.githubusercontent.com/.../omnis_plugin.yaml` location and fetches
+just that one file — orders of magnitude lighter than the full zip
+`installFromUrl` downloads, since a version check has no reason to pull
+an entire repo. `PluginManager.checkForUpdates()` compares the fetched
+manifest's version against every installed *external* plugin's own
+`version` (bundled plugins are never checked — they update with the app
+itself) using a new `lib/core/semver.dart` numeric comparison (`"1.10.0"
+> "1.9.0"`, unlike a plain string compare, which gets that backwards).
+`updatePlugin(id)` re-downloads and replaces the plugin — a fresh
+install, not just a version-string swap, so it also picks up any code
+change alongside a version bump — while explicitly *not* touching
+`AppSettings`'s persisted enabled/disabled choice for that plugin id (a
+real bug avoided during design: naively reusing `disablePlugin()` to
+tear down the old instance would have persisted "disabled" and
+silently left a previously-enabled plugin disabled after every update).
+Wired into a "Check for updates" button and a per-plugin "Update
+available: vX" banner + button on the Plugins page.
+
+Gaps: no backup-before-update (a bad update isn't reversible — no
+snapshot of the old, working plugin directory is kept), no
+rollback-on-failed-update, no automatic/background/scheduled checking
+(purely user-initiated, one tap at a time), and — a real, structural
+limit, not a missed detail — update detection only works for a GitHub
+`tree/branch[/subfolder]` or bare-repo source URL; a plugin installed
+from a direct `.zip` link has no general way to derive a single raw
+file's location from an arbitrary zip URL, so `fetchRemoteManifest`
+returns `null` for those (silently skipped in `checkForUpdates`, not
+reported as a failure).
 
 **30. Marketplace/catalog** — Partial. A real permission-confirmation
 install flow exists for two paths: a hardcoded `officialPluginCatalog`

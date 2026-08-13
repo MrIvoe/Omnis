@@ -318,6 +318,72 @@ class PluginInstaller {
     );
   }
 
+  /// Fetches just the manifest currently published at [sourceUrl], for an
+  /// update check — never the full zip [installFromUrl] downloads.
+  /// GitHub's raw-content CDN serves one file directly, which is orders
+  /// of magnitude lighter than downloading and extracting an entire repo
+  /// archive just to read one version string.
+  ///
+  /// Returns `null` (never throws) for anything that isn't a GitHub
+  /// `tree`/bare-repo URL this can resolve to a raw manifest path, a
+  /// network failure, a non-200 response, or an unparseable manifest —
+  /// an update check is inherently best-effort, and one plugin's source
+  /// URL not supporting it must not abort checking the rest.
+  Future<PluginManifest?> fetchRemoteManifest(String sourceUrl) async {
+    final rawUri = _resolveManifestRawUrl(sourceUrl);
+    if (rawUri == null) return null;
+    try {
+      final response =
+          await _client.get(rawUri).timeout(_downloadTimeout);
+      if (response.statusCode != 200) return null;
+      return PluginManifest.parse(response.body, sourceUrl: sourceUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Resolves a GitHub repo URL (the same shapes [_resolveDownloadUrl]
+  /// accepts) to a direct `raw.githubusercontent.com` URL for its
+  /// `omnis_plugin.yaml`. Returns `null` for a direct `.zip` URL — there
+  /// is no general way to derive a single raw file's location from an
+  /// arbitrary zip download link, so those plugins simply aren't
+  /// update-checkable this way.
+  static Uri? _resolveManifestRawUrl(String input) {
+    final url = input.trim();
+
+    final treeMatch =
+        RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.+))?$')
+            .firstMatch(url);
+    if (treeMatch != null) {
+      final user = treeMatch.group(1)!;
+      final repo = treeMatch.group(2)!;
+      final branch = treeMatch.group(3)!;
+      final subPath = treeMatch.group(4);
+      final manifestPath = subPath == null || subPath.isEmpty
+          ? 'omnis_plugin.yaml'
+          : '$subPath/omnis_plugin.yaml';
+      return Uri.parse(
+        'https://raw.githubusercontent.com/$user/$repo/$branch/$manifestPath',
+      );
+    }
+
+    final bareMatch =
+        RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/?$').firstMatch(url);
+    if (bareMatch != null) {
+      final user = bareMatch.group(1)!;
+      final repo = bareMatch.group(2)!;
+      // Same "main" assumption _resolveDownloadUrl's bare-repo case
+      // already makes — a repo whose default branch is actually
+      // "master" (or anything else) isn't resolvable here either way,
+      // a pre-existing simplification this doesn't newly introduce.
+      return Uri.parse(
+        'https://raw.githubusercontent.com/$user/$repo/main/omnis_plugin.yaml',
+      );
+    }
+
+    return null;
+  }
+
   /// Lists all previously installed plugins (manifest + directory path).
   Future<List<InstalledPluginInfo>> listInstalled() async {
     final root = await _pluginsRoot();

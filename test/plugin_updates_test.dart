@@ -1,0 +1,212 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:archive/archive.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/plugin_installer.dart';
+import 'package:omnis/core/plugin_manager.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Same fake path_provider plugin_installer_test.dart uses.
+class _FakePathProvider extends PathProviderPlatform
+    with MockPlatformInterfaceMixin {
+  final String tempDir;
+  _FakePathProvider(this.tempDir);
+
+  @override
+  Future<String?> getApplicationSupportPath() async => tempDir;
+}
+
+List<int> _buildZip(Map<String, String> files) {
+  final archive = Archive();
+  for (final entry in files.entries) {
+    final bytes = utf8.encode(entry.value);
+    archive.addFile(ArchiveFile(entry.key, bytes.length, bytes));
+  }
+  return ZipEncoder().encode(archive)!;
+}
+
+String _manifest({String version = '1.0.0'}) => '''
+id: sample_plugin
+name: Sample Plugin
+description: A test plugin
+version: $version
+author: Tester
+entrypoint: plugin.dart
+''';
+
+// ManagedPlugin.version comes from the runtime's own createPlugin()
+// result, not the omnis_plugin.yaml manifest's version: field — so a
+// test simulating a version bump must vary both in lockstep, the same
+// as a real plugin author bumping their own plugin.dart.
+String _entrypoint({String version = '1.0.0'}) => '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'sample_plugin',
+    'name': 'Sample Plugin',
+    'version': '$version',
+    'author': 'Tester',
+    'hooks': [],
+  };
+}
+''';
+
+/// Routes by host: `codeload.github.com` (the zip download `installFromUrl`
+/// itself uses) gets [zipBytes] at whatever [zipVersion] is current;
+/// `raw.githubusercontent.com` (the manifest-only fetch
+/// `checkForUpdates`/`fetchRemoteManifest` uses) gets a manifest text at
+/// [manifestVersion] — independently settable so a test can simulate "the
+/// published manifest says a newer version exists" before actually
+/// downloading it.
+class _RoutingClient extends http.BaseClient {
+  String manifestVersion;
+  String zipVersion;
+
+  _RoutingClient({required this.manifestVersion, required this.zipVersion});
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (request.url.host == 'raw.githubusercontent.com') {
+      final body = utf8.encode(_manifest(version: manifestVersion));
+      return http.StreamedResponse(Stream.value(body), 200);
+    }
+    final zip = _buildZip({
+      'repo-main/omnis_plugin.yaml': _manifest(version: zipVersion),
+      'repo-main/plugin.dart': _entrypoint(version: zipVersion),
+    });
+    return http.StreamedResponse(Stream.value(zip), 200);
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late String tempDir;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+    tempDir =
+        (await Directory.systemTemp.createTemp('omnis_plugin_updates_test'))
+            .path;
+    PathProviderPlatform.instance = _FakePathProvider(tempDir);
+  });
+
+  tearDown(() async {
+    final dir = Directory(tempDir);
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
+  });
+
+  group('checkForUpdates', () {
+    test('reports an available update when the published manifest has a '
+        'newer version than what is installed', () async {
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+
+      client.manifestVersion = '2.0.0';
+      final updates = await manager.checkForUpdates();
+
+      expect(updates, hasLength(1));
+      expect(updates.single.pluginId, 'sample_plugin');
+      expect(updates.single.currentVersion, '1.0.0');
+      expect(updates.single.latestVersion, '2.0.0');
+    });
+
+    test('reports nothing when the installed version is already current',
+        () async {
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+
+      final updates = await manager.checkForUpdates();
+
+      expect(updates, isEmpty);
+    });
+
+    test('never flags an update for a bundled (in-process) plugin',
+        () async {
+      final client =
+          _RoutingClient(manifestVersion: '9.9.9', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      // No external plugin installed at all — checkForUpdates must not
+      // try to network-check anything, since only external plugins have
+      // a real, checkable sourceUrl.
+      final updates = await manager.checkForUpdates();
+
+      expect(updates, isEmpty);
+    });
+  });
+
+  group('updatePlugin', () {
+    test('throws for a plugin id that is not installed', () async {
+      final manager = PluginManager(
+        installer: PluginInstaller(
+          client: _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0'),
+        ),
+      );
+
+      await expectLater(
+        manager.updatePlugin('does_not_exist'),
+        throwsA(isA<PluginInstallException>()),
+      );
+    });
+
+    test('re-downloads and replaces the plugin with the newly published '
+        'version', () async {
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      expect(manager.byId('sample_plugin')!.version, '1.0.0');
+
+      client.zipVersion = '2.0.0';
+      final updated = await manager.updatePlugin('sample_plugin');
+
+      expect(updated.version, '2.0.0');
+      expect(manager.byId('sample_plugin')!.version, '2.0.0');
+      // Still exactly one entry for this id — updating must replace, not
+      // duplicate, the managed plugin.
+      expect(manager.plugins.where((p) => p.id == 'sample_plugin'), hasLength(1));
+    });
+
+    test('a previously-disabled plugin stays disabled after updating — '
+        'update must not silently re-enable it', () async {
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      await manager.disablePlugin(manager.byId('sample_plugin')!);
+      expect(manager.byId('sample_plugin')!.enabled, isFalse);
+
+      client.zipVersion = '2.0.0';
+      final updated = await manager.updatePlugin('sample_plugin');
+
+      expect(updated.version, '2.0.0');
+      expect(updated.enabled, isFalse);
+    });
+
+    test('a previously-enabled plugin stays enabled after updating',
+        () async {
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      expect(manager.byId('sample_plugin')!.enabled, isTrue);
+
+      client.zipVersion = '2.0.0';
+      final updated = await manager.updatePlugin('sample_plugin');
+
+      expect(updated.enabled, isTrue);
+      expect(updated.initialized, isTrue);
+    });
+  });
+}

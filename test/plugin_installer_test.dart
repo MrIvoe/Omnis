@@ -431,4 +431,98 @@ hooks:
       expect(listedAfter.any((p) => p.manifest.id == 'sample_plugin'), isFalse);
     });
   });
+
+  group('fetchRemoteManifest (update checking)', () {
+    test('hits the raw.githubusercontent.com manifest URL for a "tree" '
+        'catalog-style URL, not the codeload zip endpoint', () async {
+      Uri? capturedUri;
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          capturedUri = request.url;
+          return http.Response(_validManifest, 200);
+        }),
+      );
+
+      final manifest = await installer.fetchRemoteManifest(
+        'https://github.com/MrIvoe/Omnis-Plugins/tree/main/sample_logger',
+      );
+
+      expect(capturedUri.toString(),
+          'https://raw.githubusercontent.com/MrIvoe/Omnis-Plugins/main/'
+          'sample_logger/omnis_plugin.yaml');
+      expect(manifest?.id, 'sample_plugin');
+      expect(manifest?.version, '1.0.0');
+    });
+
+    test('hits the raw manifest URL at the repo root for a bare repo URL',
+        () async {
+      Uri? capturedUri;
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          capturedUri = request.url;
+          return http.Response(_validManifest, 200);
+        }),
+      );
+
+      await installer.fetchRemoteManifest('https://github.com/user/repo');
+
+      expect(capturedUri.toString(),
+          'https://raw.githubusercontent.com/user/repo/main/'
+          'omnis_plugin.yaml');
+    });
+
+    test('returns null without any network call for a direct .zip URL — '
+        'there is no raw single-file location to derive from it', () async {
+      var called = false;
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          called = true;
+          return http.Response(_validManifest, 200);
+        }),
+      );
+
+      final manifest = await installer
+          .fetchRemoteManifest('https://example.com/plugin.zip');
+
+      expect(manifest, isNull);
+      expect(called, isFalse);
+    });
+
+    test('returns null on a non-200 response instead of throwing', () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response('', 404)),
+      );
+
+      final manifest = await installer
+          .fetchRemoteManifest('https://github.com/user/repo');
+
+      expect(manifest, isNull);
+    });
+
+    test('returns null when the response body is not a valid manifest',
+        () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async =>
+            http.Response('not: [valid, yaml, manifest', 200)),
+      );
+
+      final manifest = await installer
+          .fetchRemoteManifest('https://github.com/user/repo');
+
+      expect(manifest, isNull);
+    });
+
+    test('returns null when the http call itself throws', () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          throw Exception('network unreachable');
+        }),
+      );
+
+      final manifest = await installer
+          .fetchRemoteManifest('https://github.com/user/repo');
+
+      expect(manifest, isNull);
+    });
+  });
 }
