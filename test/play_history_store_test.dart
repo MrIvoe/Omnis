@@ -56,6 +56,33 @@ void main() {
     expect(mostPlayed.single.playCount, 2);
   });
 
+  test('concurrent recordPlay and recordPosition calls (e.g. a track '
+      'change firing both at once) do not lose either update', () async {
+    final store = PlayHistoryStore.instance;
+    await store.recordPlay(_track('a'));
+
+    // Deliberately not awaited individually — both start before either
+    // finishes, the same shape as MainCore's trackStream/onTrackStarted
+    // listeners both firing around a track change. Each does its own
+    // load-mutate-save cycle; without serializing the whole cycle (not
+    // just the final write), whichever save() finished last would
+    // silently overwrite the other's update.
+    final recordNewPlay = store.recordPlay(_track('b'));
+    final recordOldPosition = store.recordPosition(
+        'a', const Duration(seconds: 42), const Duration(seconds: 200));
+
+    await Future.wait([recordNewPlay, recordOldPosition]);
+
+    final stats = await store.mostPlayed();
+    final byId = {for (final s in stats) s.trackId: s};
+    expect(byId.containsKey('b'), isTrue,
+        reason: 'recordPlay(b) must not be lost to a racing '
+            'recordPosition(a) save');
+    expect(byId['a']!.lastPositionSeconds, 42,
+        reason: 'recordPosition(a) must not be lost to a racing '
+            'recordPlay(b) save');
+  });
+
   test('recordPosition updates an existing entry but is a no-op for a '
       'track never played', () async {
     final store = PlayHistoryStore.instance;

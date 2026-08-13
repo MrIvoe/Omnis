@@ -55,8 +55,27 @@ class RecoveryJournal {
   /// documents-directory file again.
   void clearFileOverride() => _fileOverride = null;
 
+  /// Serializes every [save] call onto one chain — [MainCore] calls
+  /// [save] from several unawaited, independently-firing call sites
+  /// (pause, track change, a 20s heartbeat), any two of which can land
+  /// close enough together to overlap. Without this, two concurrent
+  /// writes race on the *same* `.tmp` path: both `writeAsString` calls
+  /// target it, and whichever `rename` runs second finds nothing left to
+  /// rename (the first call already moved it), which — while caught and
+  /// non-fatal — silently drops that second, possibly more current,
+  /// snapshot. Chaining onto whatever's already pending guarantees only
+  /// one write is ever in flight, the same guarantee `LibraryStore.save`
+  /// gets for free from its debounce timer.
+  Future<void> _pendingSave = Future<void>.value();
+
   /// Persist [state] atomically.
-  Future<void> save(PlaybackState state) async {
+  Future<void> save(PlaybackState state) {
+    final next = _pendingSave.then((_) => _writeNow(state));
+    _pendingSave = next;
+    return next;
+  }
+
+  Future<void> _writeNow(PlaybackState state) async {
     try {
       final file = await _getFile();
       final tmp = File('${file.path}.tmp');
@@ -88,7 +107,18 @@ class RecoveryJournal {
 
   /// Discard the journal (after a successful resume, or when the user
   /// declines "resume where you left off?").
-  Future<void> clear() async {
+  ///
+  /// Chained onto the same [_pendingSave] queue as [save] — a resume/
+  /// dismiss action landing at the same moment as the periodic
+  /// heartbeat save must not race it (delete-then-recreate, or
+  /// recreate-then-delete, depending on which happened to win).
+  Future<void> clear() {
+    final next = _pendingSave.then((_) => _clearNow());
+    _pendingSave = next;
+    return next;
+  }
+
+  Future<void> _clearNow() async {
     try {
       final file = await _getFile();
       if (await file.exists()) {

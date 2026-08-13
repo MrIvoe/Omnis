@@ -137,4 +137,50 @@ void main() {
     expect(loaded!.currentIndex, 0);
     expect(loaded.position, const Duration(seconds: 5));
   });
+
+  test('two concurrent save() calls (e.g. a pause and the periodic '
+      'heartbeat landing together) are serialized — neither throws, no '
+      '.tmp file is left behind, and the result is one complete '
+      'snapshot, not a torn write', () async {
+    // Deliberately not awaited individually — both start before either
+    // finishes, which is exactly what happens when MainCore's pause
+    // handler and its 20s Timer.periodic heartbeat both call save()
+    // around the same moment.
+    final first = RecoveryJournal.instance
+        .save(sampleState().copyWith(currentIndex: 0));
+    final second = RecoveryJournal.instance
+        .save(sampleState().copyWith(currentIndex: 1));
+
+    await Future.wait([first, second]);
+
+    final tmp = File('${journalFile.path}.tmp');
+    expect(await tmp.exists(), isFalse,
+        reason: 'a lost race used to leave a stray .tmp behind');
+
+    // Whichever write actually landed, it must be one complete,
+    // internally-consistent snapshot (parseable, currentIndex either 0
+    // or 1) — never a torn mix of both writes' bytes.
+    final loaded = await RecoveryJournal.instance.load();
+    expect(loaded, isNotNull);
+    expect(loaded!.currentIndex, anyOf(0, 1));
+  });
+
+  test('save() and clear() racing (e.g. dismissing the resume prompt '
+      'right as the heartbeat fires) never throws and leaves a '
+      'consistent end state', () async {
+    await RecoveryJournal.instance.save(sampleState());
+
+    final saveCall = RecoveryJournal.instance.save(sampleState());
+    final clearCall = RecoveryJournal.instance.clear();
+
+    await Future.wait([saveCall, clearCall]);
+
+    final tmp = File('${journalFile.path}.tmp');
+    expect(await tmp.exists(), isFalse);
+    // Whichever ran last (they're serialized, so deterministically
+    // clear() — the second call in program order) decides the outcome;
+    // either way this must not throw and must not leave a half-written
+    // file.
+    expect(await journalFile.exists(), isFalse);
+  });
 }

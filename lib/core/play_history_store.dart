@@ -140,6 +140,33 @@ class PlayHistoryStore {
     }
   }
 
+  /// Serializes every read-modify-write operation onto one chain.
+  ///
+  /// `recordPlay`/`recordPosition` each do their own full `_load()` ->
+  /// mutate -> `_save()` cycle, and `MainCore` fires both from several
+  /// independent, unawaited stream listeners (a track change fires
+  /// `recordPosition` for the *previous* track in the same moment
+  /// `onTrackStarted` fires `recordPlay` for the *new* one). Without
+  /// this, two concurrent calls each `_load()` the same base state,
+  /// mutate their own in-memory copy, and whichever `_save()` finishes
+  /// last silently overwrites the other's update — a lost play count or
+  /// a lost position update, not just a file-write race (the atomic
+  /// `.tmp`-rename in `_save` only protects against a torn *file*, not
+  /// against two logically-independent mutations racing on the same
+  /// read). Wrapping the whole operation, not just the final write,
+  /// guarantees each call sees the previous call's result.
+  Future<void> _pending = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final result = _pending.then((_) => operation());
+    // The chain itself must never fail (a failed operation would leave
+    // every future caller permanently stuck waiting on a broken Future) —
+    // each real operation already catches its own errors internally, so
+    // this is just insulating the chain, not swallowing anything new.
+    _pending = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
   /// Writes to a sibling `.tmp` file and renames it over the real path —
   /// atomic on the filesystems this app targets, so a crash/power-loss
   /// mid-write (this fires on every pause and every track change, not a
@@ -163,16 +190,16 @@ class PlayHistoryStore {
   /// Called once per genuinely-started track (see `MainCore`'s
   /// `onTrackStarted` wiring) — increments the play count, stamps "now,"
   /// and resets the position (a fresh listen starts over).
-  Future<void> recordPlay(BaseTrack track) async {
-    final stats = await _load();
-    final existing = stats[track.id];
-    stats[track.id] = TrackPlayStats(
-      trackId: track.id,
-      playCount: (existing?.playCount ?? 0) + 1,
-      lastPlayedAt: DateTime.now(),
-    );
-    await _save(stats);
-  }
+  Future<void> recordPlay(BaseTrack track) => _serialized(() async {
+        final stats = await _load();
+        final existing = stats[track.id];
+        stats[track.id] = TrackPlayStats(
+          trackId: track.id,
+          playCount: (existing?.playCount ?? 0) + 1,
+          lastPlayedAt: DateTime.now(),
+        );
+        await _save(stats);
+      });
 
   /// Updates how far into [trackId] playback got, for Continue Listening.
   /// A no-op if [recordPlay] was never called for this track (nothing to
@@ -182,16 +209,17 @@ class PlayHistoryStore {
     String trackId,
     Duration position,
     Duration duration,
-  ) async {
-    final stats = await _load();
-    final existing = stats[trackId];
-    if (existing == null) return;
-    stats[trackId] = existing.copyWith(
-      lastPositionSeconds: position.inSeconds,
-      durationSeconds: duration.inSeconds,
-    );
-    await _save(stats);
-  }
+  ) =>
+      _serialized(() async {
+        final stats = await _load();
+        final existing = stats[trackId];
+        if (existing == null) return;
+        stats[trackId] = existing.copyWith(
+          lastPositionSeconds: position.inSeconds,
+          durationSeconds: duration.inSeconds,
+        );
+        await _save(stats);
+      });
 
   Future<List<TrackPlayStats>> recentlyPlayed({int limit = 20}) async {
     final stats = (await _load()).values.toList()
@@ -220,12 +248,12 @@ class PlayHistoryStore {
 
   /// Clears all persisted play history. Not currently exposed in any UI —
   /// exists for tests and as a future "reset my history" settings action.
-  Future<void> clear() async {
-    try {
-      final file = await _getFile();
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (_) {}
-  }
+  Future<void> clear() => _serialized(() async {
+        try {
+          final file = await _getFile();
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (_) {}
+      });
 }
