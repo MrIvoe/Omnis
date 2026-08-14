@@ -28,23 +28,42 @@ import 'package:omnis/core/base_track.dart';
 /// matching the exact phrase. Quoted-phrase parsing (`album:"greatest
 /// hits"`) is a reasonable follow-up, not part of this cut.
 ///
+/// `rating:` matches against a track's star rating (0-5, 0 meaning
+/// unrated — the same convention `RatingsPlugin.ratingOf` already uses):
+///
+/// ```text
+/// rating:4                 -> exactly 4 stars
+/// rating:>=4                -> 4 stars or more
+/// rating:<=2                -> 2 stars or fewer
+/// rating:>3                 -> more than 3 stars
+/// rating:<1                 -> unrated only (equivalent to rating:0)
+/// ```
+///
+/// This function stays deliberately plugin-free — [ratingOf] is an
+/// optional lookup the *caller* supplies (`library_page.dart` passes
+/// `RatingsPlugin.ratingOf`), not a dependency this function reaches out
+/// for itself. Every `rating:` term matches nothing when [ratingOf] is
+/// omitted, the same "don't silently ignore a field the caller didn't
+/// wire up" stance [_SearchTerm.parse] already takes for an unknown
+/// field name.
+///
 /// Deliberately not yet supported (documented gaps, not oversights):
 /// `bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:` — each
 /// depends on a feature or data source that doesn't exist yet (audio
 /// analysis results being searchable, format/bitrate metadata, lyrics
-/// text, duplicate detection). `rating:` is a related but distinct gap:
-/// `RatingsPlugin` exists (added alongside this file), but this function
-/// only ever sees a plain `List<BaseTrack>` with no plugin access —
-/// wiring `rating:>=4` in means either the caller pre-joining ratings
-/// onto the query before calling this, or this function growing a
-/// plugin dependency it deliberately doesn't have today. Natural
-/// follow-ups, not part of this cut.
-List<BaseTrack> filterTracks(List<BaseTrack> tracks, String query) {
+/// text, duplicate detection).
+List<BaseTrack> filterTracks(
+  List<BaseTrack> tracks,
+  String query, {
+  int Function(String trackId)? ratingOf,
+}) {
   final trimmed = query.trim();
   if (trimmed.isEmpty) return tracks;
 
   final terms = trimmed.split(RegExp(r'\s+')).map(_SearchTerm.parse).toList();
-  return tracks.where((track) => terms.every((term) => term.matches(track))).toList();
+  return tracks
+      .where((track) => terms.every((term) => term.matches(track, ratingOf)))
+      .toList();
 }
 
 /// One parsed term from a search query — either `field:value` or a bare
@@ -62,7 +81,15 @@ class _SearchTerm {
     if (match == null) return _SearchTerm._(null, raw);
     final field = match.group(1)!.toLowerCase();
     final value = match.group(2)!;
-    const known = {'artist', 'album', 'genre', 'title', 'mood', 'year'};
+    const known = {
+      'artist',
+      'album',
+      'genre',
+      'title',
+      'mood',
+      'year',
+      'rating',
+    };
     // An unrecognized "field:" prefix (or a bare word that happens to
     // contain a colon, e.g. a time-formatted title) is treated as plain
     // free text rather than silently matching nothing.
@@ -70,7 +97,7 @@ class _SearchTerm {
     return _SearchTerm._(field, value);
   }
 
-  bool matches(BaseTrack track) {
+  bool matches(BaseTrack track, int Function(String trackId)? ratingOf) {
     final f = field;
     if (f == null) return _matchesFreeText(track, value);
     switch (f) {
@@ -86,6 +113,9 @@ class _SearchTerm {
         return _contains(track.mood ?? '', value);
       case 'year':
         return _matchesYear(track.year, value);
+      case 'rating':
+        if (ratingOf == null) return false;
+        return _matchesRating(ratingOf(track.id), value);
       default:
         return false;
     }
@@ -115,5 +145,28 @@ class _SearchTerm {
     }
     final exact = int.tryParse(value);
     return exact != null && trackYear == exact;
+  }
+
+  static final _comparisonPattern = RegExp(r'^(>=|<=|>|<)(-?\d+)$');
+
+  /// `rating:4` (exact), `rating:>=4`/`rating:<=2`/`rating:>3`/`rating:<1`
+  /// (comparisons). An unparseable value matches nothing rather than
+  /// throwing — same "a bad query finds nothing, not a crash" contract
+  /// [_matchesYear] already has for a non-numeric year.
+  static bool _matchesRating(int trackRating, String value) {
+    final comparison = _comparisonPattern.firstMatch(value);
+    if (comparison != null) {
+      final op = comparison.group(1)!;
+      final threshold = int.parse(comparison.group(2)!);
+      return switch (op) {
+        '>=' => trackRating >= threshold,
+        '<=' => trackRating <= threshold,
+        '>' => trackRating > threshold,
+        '<' => trackRating < threshold,
+        _ => false,
+      };
+    }
+    final exact = int.tryParse(value);
+    return exact != null && trackRating == exact;
   }
 }

@@ -251,7 +251,8 @@ class _LibraryPageState extends State<LibraryPage> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
-  List<BaseTrack> get _visibleTracks => filterTracks(_tracks, _searchQuery);
+  List<BaseTrack> get _visibleTracks =>
+      filterTracks(_tracks, _searchQuery, ratingOf: _ratingOf);
 
   /// Track ids currently selected for a bulk action (delete duplicates,
   /// delete short files, ...). Selection mode is active whenever this is

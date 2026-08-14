@@ -159,4 +159,87 @@ void main() {
       expect(filterTracks(tracks, 'mood:chill'), isEmpty);
     });
   });
+
+  group('filterTracks — rating field', () {
+    final tracks = [
+      _track(id: '5star'),
+      _track(id: '3star'),
+      _track(id: '0star'),
+    ];
+    int ratingOf(String id) => switch (id) {
+          '5star' => 5,
+          '3star' => 3,
+          _ => 0,
+        };
+
+    test('rating:N matches an exact rating', () {
+      expect(
+        filterTracks(tracks, 'rating:3', ratingOf: ratingOf).map((t) => t.id),
+        ['3star'],
+      );
+    });
+
+    test('rating:>=N matches at or above the threshold', () {
+      expect(
+        filterTracks(tracks, 'rating:>=3', ratingOf: ratingOf)
+            .map((t) => t.id),
+        ['5star', '3star'],
+      );
+    });
+
+    test('rating:<=N matches at or below the threshold', () {
+      expect(
+        filterTracks(tracks, 'rating:<=3', ratingOf: ratingOf)
+            .map((t) => t.id),
+        ['3star', '0star'],
+      );
+    });
+
+    test('rating:>N and rating:<N are strict comparisons', () {
+      expect(
+        filterTracks(tracks, 'rating:>3', ratingOf: ratingOf).map((t) => t.id),
+        ['5star'],
+      );
+      expect(
+        filterTracks(tracks, 'rating:<3', ratingOf: ratingOf).map((t) => t.id),
+        ['0star'],
+      );
+    });
+
+    test('rating:0 (or rating:<1) finds unrated tracks — same "unrated == '
+        '0" convention RatingsPlugin.ratingOf already uses', () {
+      expect(
+        filterTracks(tracks, 'rating:0', ratingOf: ratingOf).map((t) => t.id),
+        ['0star'],
+      );
+    });
+
+    test('rating: matches nothing (not "matches everything") when the '
+        'caller supplies no ratingOf lookup — same as an unknown field, '
+        'never a silent no-op filter', () {
+      expect(filterTracks(tracks, 'rating:>=1'), isEmpty);
+    });
+
+    test('an unparseable rating value matches nothing rather than '
+        'throwing', () {
+      expect(
+        filterTracks(tracks, 'rating:bogus', ratingOf: ratingOf),
+        isEmpty,
+      );
+    });
+
+    test('rating: composes with other terms via AND, same as every other '
+        'field', () {
+      final mixed = [
+        _track(id: 'match', title: 'Bohemian Rhapsody'),
+        _track(id: 'wrong-title', title: 'Somebody to Love'),
+      ];
+      int mixedRatingOf(String id) => id == 'match' ? 5 : 5;
+      expect(
+        filterTracks(mixed, 'rating:>=4 bohemian', ratingOf: mixedRatingOf)
+            .map((t) => t.id),
+        ['match'],
+      );
+    });
+  });
 }
