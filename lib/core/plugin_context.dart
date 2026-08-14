@@ -105,6 +105,9 @@ class OmnisPluginContext implements PluginContext {
   Future<void> addTrack(BaseTrack track) => audioEngine.addTrack(track);
 
   @override
+  Future<void> playNext(BaseTrack track) => audioEngine.playNext(track);
+
+  @override
   Future<void> removeTrack(int index) => audioEngine.removeTrack(index);
 
   // --- Volume / gain ---

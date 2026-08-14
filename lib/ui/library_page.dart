@@ -396,6 +396,18 @@ class _LibraryPageState extends State<LibraryPage> {
     await widget.engine.playAt(index);
   }
 
+  /// §7's "play next" — inserts right after whatever's currently
+  /// playing, distinct from [_addToQueue]'s "append to the end."
+  Future<void> _playNext(BaseTrack track) async {
+    await widget.engine.playNext(track);
+    _toast('Playing "${track.title}" next');
+  }
+
+  Future<void> _addToQueue(BaseTrack track) async {
+    await widget.engine.addTrack(track);
+    _toast('Added "${track.title}" to queue');
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -2147,6 +2159,8 @@ class _LibraryPageState extends State<LibraryPage> {
                           icon: const Icon(Icons.more_vert, size: 20),
                           tooltip: 'Track tools',
                           onSelected: (value) {
+                            if (value == 'play_next') _playNext(track);
+                            if (value == 'add_to_queue') _addToQueue(track);
                             if (value == 'edit_tags') _editTags(track);
                             if (value == 'add_to_playlist') {
                               _addToPlaylist({track.id});
@@ -2158,6 +2172,14 @@ class _LibraryPageState extends State<LibraryPage> {
                             if (value == 'audio_info') _showAudioInfo(track);
                           },
                           itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'play_next',
+                              child: Text('Play next'),
+                            ),
+                            PopupMenuItem(
+                              value: 'add_to_queue',
+                              child: Text('Add to queue'),
+                            ),
                             PopupMenuItem(
                               value: 'edit_tags',
                               child: Text('Edit tags'),

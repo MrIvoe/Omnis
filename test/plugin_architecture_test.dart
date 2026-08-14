@@ -22,6 +22,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _FakeEngine implements AudioEngine {
   final Map<String, double> gains = {};
   int pauseCount = 0;
+  final List<BaseTrack> playNextCalls = [];
+
+  @override
+  Future<void> playNext(BaseTrack track) async {
+    playNextCalls.add(track);
+  }
 
   @override
   Future<void> setGainContribution(String source, double multiplier) async {
@@ -266,6 +272,29 @@ void main() {
       final late_ = LyricsPlugin();
       manager.register(late_);
       expect(late_.context, same(context));
+    });
+
+    test('playNext forwards to the real AudioEngine.playNext, not '
+        'addTrack/setQueue — a plugin reaching context.playNext() gets '
+        "§7's actual \"play next\" insertion behavior", () async {
+      final engine = _FakeEngine();
+      final context = OmnisPluginContext(
+        audioEngine: engine,
+        services: ServiceRegistry(),
+        events: EventBus(),
+      );
+      final track = BaseTrack(
+        id: 't1',
+        title: 'Song',
+        artists: const ['Artist'],
+        album: 'Album',
+        duration: 180,
+        type: TrackType.local,
+      );
+
+      await context.playNext(track);
+
+      expect(engine.playNextCalls, [track]);
     });
 
     test('equalizer bands reach the engine as a gain contribution', () async {
