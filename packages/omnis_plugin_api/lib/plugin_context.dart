@@ -124,6 +124,13 @@ abstract class PluginContext {
   /// Add a track to the end of the queue, preserving current playback.
   Future<void> addTrack(BaseTrack track);
 
+  /// Insert a track to play immediately after the current one — §7's
+  /// "play next," distinct from [addTrack]'s "add to queue" (which
+  /// appends to the end). Preserves current playback, exactly like
+  /// [addTrack]; with nothing currently playing, "next" is the front of
+  /// the queue, so it behaves the same as [addTrack] in that case.
+  Future<void> playNext(BaseTrack track);
+
   /// Remove the track at [index].
   Future<void> removeTrack(int index);
 
