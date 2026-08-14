@@ -30,7 +30,7 @@ dependencies:
     git:
       url: https://github.com/MrIvoe/Omnis.git
       path: packages/omnis_plugin_api
-      ref: plugin-api-v0.9.0
+      ref: plugin-api-v0.10.0
   # --- The bundled plugins themselves, published at
   #     github.com/MrIvoe/Omnis-Plugins. A clean checkout (no
   #     pubspec_overrides.yaml present) resolves straight from GitHub;
@@ -43,7 +43,7 @@ dependencies:
   omnis_plugins:
     git:
       url: https://github.com/MrIvoe/Omnis-Plugins.git
-      ref: v0.9.0
+      ref: v0.10.0
   # --- Core playback ---
   just_audio: ^0.9.36
   audio_service: ^0.18.11
