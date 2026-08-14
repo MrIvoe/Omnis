@@ -423,6 +423,18 @@ enum TrackType {
   /// with **no authentication at all** on a trusted local network,
   /// unlike every other type here.
   dlna,
+
+  /// A track streamed from a self-hosted Emby media server — see
+  /// `EmbyPlugin` in `Omnis-Plugins`. Directly playable, like
+  /// [jellyfin]/[subsonic]/[plex]: [BaseTrack.streamUrl] is Emby's own
+  /// real audio stream endpoint. A distinct value from [jellyfin] even
+  /// though the two protocols are close cousins (Jellyfin began as a
+  /// 2018 fork of Emby and still shares its `X-Emby-Authorization`
+  /// header name) — kept separate rather than reused because they are
+  /// two different servers a user could each independently run, exactly
+  /// the same reasoning [subsonic]/[jellyfin]/[plex] already established
+  /// for each other despite some of them sharing REST-API shape too.
+  emby,
 }
 
 /// ReleaseType represents the kind of release an album is.
