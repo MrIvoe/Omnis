@@ -67,6 +67,13 @@ class ManagedPlugin {
   /// manifest-gated path. See `PluginManager._registerProvidedServices`.
   final List<String> provides;
 
+  /// This plugin's manifest-declared `dependencies:` — other plugin ids
+  /// it needs installed to function. Empty for a bundled plugin (bundled
+  /// ordering uses the separate `requiresSequentialInit` mechanism, not
+  /// this manifest-driven one — see item 26's doc note on
+  /// [PluginManifest.dependencies]).
+  final List<String> dependencies;
+
   /// Service adapters registered on this plugin's behalf, keyed by the
   /// interface `Type` they're registered under — see
   /// `PluginManager._registerProvidedServices`. Kept so
@@ -88,6 +95,7 @@ class ManagedPlugin {
     this.initialized = false,
     this.directory,
     this.provides = const [],
+    this.dependencies = const [],
   });
 
   bool get isExternal => external != null;
@@ -548,6 +556,19 @@ class PluginManager {
     required String sourceUrl,
     required PluginManifest manifest,
   }) async {
+    if (manifest.dependencies.isNotEmpty) {
+      final installedIds = _plugins.map((p) => p.id).toSet();
+      final missing = manifest.dependencies
+          .where((dep) => !installedIds.contains(dep))
+          .toList();
+      if (missing.isNotEmpty) {
+        throw PluginInstallException(
+          'Plugin ${manifest.id} depends on ${missing.join(", ")}, which '
+          '${missing.length == 1 ? "isn't" : "aren't"} installed yet. '
+          'Install ${missing.length == 1 ? "it" : "them"} first.',
+        );
+      }
+    }
     final source = await _installer.readEntrypoint(directory);
     if (source.trim().isEmpty) {
       throw PluginInstallException(
@@ -574,6 +595,7 @@ class PluginManager {
       directory: directory,
       enabled: !AppSettings.instance.isPluginDisabled(id),
       provides: manifest.provides,
+      dependencies: manifest.dependencies,
     );
 
     _plugins.removeWhere((p) => p.id == managed.id);
@@ -581,6 +603,23 @@ class PluginManager {
     _emit();
     await initPlugin(managed);
     return managed;
+  }
+
+  /// [plugin]'s declared dependency ids that aren't currently installed
+  /// — empty when every dependency is still present, or when [plugin]
+  /// declares none. The install-time check in
+  /// [_registerInstalledPlugin] only guarantees dependencies were
+  /// present *at install time*; this closes item 26's other named gap
+  /// ("no detection... of a dependency disappearing") by re-checking
+  /// against the *current* installed set on demand — the Plugins page
+  /// calls this for every installed plugin to show a warning if one of
+  /// its dependencies has since been uninstalled.
+  List<String> missingDependenciesFor(ManagedPlugin plugin) {
+    if (plugin.dependencies.isEmpty) return const [];
+    final installedIds = _plugins.map((p) => p.id).toSet();
+    return plugin.dependencies
+        .where((dep) => !installedIds.contains(dep))
+        .toList();
   }
 
   /// Load all plugins that were previously installed on disk.
@@ -613,6 +652,7 @@ class PluginManager {
         external: runtime,
         directory: directory,
         enabled: !AppSettings.instance.isPluginDisabled(runtime.id),
+        dependencies: manifest.dependencies,
       );
       _plugins.add(managed);
       _emit();

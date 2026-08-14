@@ -30,6 +30,18 @@ class PluginManifest {
   /// needs *from* the app.
   final List<String> permissions;
 
+  /// Plugin ids this plugin declares it needs already installed to
+  /// function — item 26's "dependency resolution" gap: previously
+  /// `dependencies:` in a manifest was parsed by nothing at all, so a
+  /// plugin depending on another simply failed at runtime (a missing
+  /// service, a null lookup) with no diagnosable connection back to
+  /// "you're missing a dependency." Checked at install time
+  /// (`PluginManager._registerInstalledPlugin`) and re-checked whenever
+  /// the installed set changes (`PluginManager.missingDependenciesFor`),
+  /// so a dependency that's since been uninstalled is detectable too —
+  /// not just a one-time install-time gate.
+  final List<String> dependencies;
+
   /// Capabilities this plugin registers itself as a provider of (e.g.
   /// `lyrics`, `queue_builder`) — the reverse direction from
   /// [permissions]: what this plugin offers *to* the app, for other code
@@ -55,6 +67,7 @@ class PluginManifest {
     this.minOmnisVersion,
     this.hooks = const [],
     this.permissions = const [],
+    this.dependencies = const [],
     this.provides = const [],
     required this.sourceUrl,
   });
@@ -77,6 +90,7 @@ class PluginManifest {
         minOmnisVersion: _asString(doc['min_omnis_version']),
         hooks: _asStringList(doc['hooks']),
         permissions: _asStringList(doc['permissions']),
+        dependencies: _asStringList(doc['dependencies']),
         provides: _asStringList(doc['provides']),
         sourceUrl: sourceUrl,
       );

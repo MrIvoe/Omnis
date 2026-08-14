@@ -464,6 +464,32 @@ author: Jane
       final m = PluginManifest.parse(yaml, sourceUrl: 'x');
       expect(m!.provides, isEmpty);
     });
+
+    test('parses "dependencies" — other plugin ids this one needs '
+        'installed (item 26)', () {
+      const yaml = '''
+id: enhanced_lyrics
+name: Enhanced Lyrics
+version: 1.0.0
+author: Jane
+dependencies:
+  - lyrics_provider
+  - network_helper
+''';
+      final m = PluginManifest.parse(yaml, sourceUrl: 'x');
+      expect(m!.dependencies, ['lyrics_provider', 'network_helper']);
+    });
+
+    test('"dependencies" defaults to empty when not declared', () {
+      const yaml = '''
+id: plain
+name: Plain
+version: 1.0.0
+author: Jane
+''';
+      final m = PluginManifest.parse(yaml, sourceUrl: 'x');
+      expect(m!.dependencies, isEmpty);
+    });
   });
 
   group('PluginRuntime (dart_eval)', () {
@@ -902,6 +928,123 @@ dynamic onTrackStart(dynamic track) {
       expect(managed.id, 'hello_world');
       expect(manager.plugins.any((plugin) => plugin.id == 'hello_world'), isTrue);
       expect(manager.plugins.singleWhere((plugin) => plugin.id == 'hello_world').enabled, isTrue);
+    });
+  });
+
+  group('Plugin dependency resolution (item 26)', () {
+    /// Writes a minimal external-plugin directory declaring [dependsOn]
+    /// in its manifest — the local counterpart to `writeEventPlugin`
+    /// above, which has no `dependencies:` slot.
+    Future<Directory> writeDependentPlugin(
+      String tempRoot,
+      String dirName, {
+      List<String> dependsOn = const [],
+    }) async {
+      final pluginDir = Directory(p.join(tempRoot, dirName));
+      await pluginDir.create(recursive: true);
+      final depsYaml =
+          dependsOn.isEmpty ? '' : dependsOn.map((d) => '  - $d').join('\n');
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: $dirName
+name: $dirName
+description: Test plugin
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+${dependsOn.isEmpty ? '' : 'dependencies:\n$depsYaml'}
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': '$dirName',
+    'name': '$dirName',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [],
+  };
+}
+''');
+      return pluginDir;
+    }
+
+    test('installing a plugin whose dependency is not yet installed '
+        'fails with a message naming the missing dependency, rather '
+        'than installing into a broken state', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_dep_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeDependentPlugin(tempRoot, 'dependent',
+          dependsOn: ['base_plugin']);
+      final manager = PluginManager();
+
+      await expectLater(
+        manager.installFromPath(dir.path, sourceUrl: 'local'),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          allOf(contains('base_plugin'), contains('dependent')),
+        )),
+      );
+      expect(manager.byId('dependent'), isNull);
+    });
+
+    test('installing a plugin whose dependency is already installed '
+        'succeeds', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_dep_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final baseDir = await writeDependentPlugin(tempRoot, 'base_plugin');
+      final dependentDir = await writeDependentPlugin(tempRoot, 'dependent',
+          dependsOn: ['base_plugin']);
+      final manager = PluginManager();
+
+      await manager.installFromPath(baseDir.path, sourceUrl: 'local');
+      final managed =
+          await manager.installFromPath(dependentDir.path, sourceUrl: 'local');
+
+      expect(managed.id, 'dependent');
+      expect(manager.byId('dependent'), isNotNull);
+    });
+
+    test('missingDependenciesFor detects a dependency that was later '
+        'uninstalled — item 26\'s "detection of a dependency '
+        'disappearing" gap, not just a one-time install-time gate',
+        () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_dep_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final baseDir = await writeDependentPlugin(tempRoot, 'base_plugin');
+      final dependentDir = await writeDependentPlugin(tempRoot, 'dependent',
+          dependsOn: ['base_plugin']);
+      final manager = PluginManager();
+
+      await manager.installFromPath(baseDir.path, sourceUrl: 'local');
+      await manager.installFromPath(dependentDir.path, sourceUrl: 'local');
+      final dependent = manager.byId('dependent')!;
+      expect(manager.missingDependenciesFor(dependent), isEmpty);
+
+      await manager.uninstallPlugin(manager.byId('base_plugin')!);
+
+      expect(manager.missingDependenciesFor(dependent), ['base_plugin']);
+    });
+
+    test('missingDependenciesFor is empty for a plugin that declares no '
+        'dependencies', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_dep_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeDependentPlugin(tempRoot, 'standalone');
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(
+        manager.missingDependenciesFor(manager.byId('standalone')!),
+        isEmpty,
+      );
     });
   });
 

@@ -505,6 +505,8 @@ class _PluginsPageState extends State<PluginsPage> {
             ..._plugins.map((p) {
               final update = _availableUpdates?[p.id];
               final updating = _updatingPluginIds.contains(p.id);
+              final missingDeps =
+                  widget.pluginManager.missingDependenciesFor(p);
               return Card(
                 child: Column(
                   children: [
@@ -548,6 +550,26 @@ class _PluginsPageState extends State<PluginsPage> {
                         ],
                       ),
                     ),
+                    if (missingDeps.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber,
+                                size: 18, color: theme.colorScheme.error),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                missingDeps.length == 1
+                                    ? 'Missing dependency: ${missingDeps.single}'
+                                    : 'Missing dependencies: ${missingDeps.join(", ")}',
+                                style:
+                                    TextStyle(color: theme.colorScheme.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     if (update != null)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
