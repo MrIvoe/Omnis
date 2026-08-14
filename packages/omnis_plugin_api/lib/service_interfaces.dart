@@ -173,3 +173,45 @@ abstract class IDeviceConnectivityProvider {
   /// Emits every time [connectedDeviceName] changes.
   Stream<String?> get deviceChanges;
 }
+
+/// Turns a natural-language request into a real queue built from the
+/// caller's own library — the spec's §21 "AI subsystem" ("a major
+/// optional ecosystem," in its own words) starting from one deliberately
+/// narrow slice: playlist creation from a prompt like "make me a
+/// two-hour workout playlist." Natural-language search, metadata
+/// cleanup, tagging, a conversational "library assistant," voice
+/// control, and artist-similarity discovery are each real, separate
+/// capabilities the spec names — none of them is this interface's job,
+/// and cramming them in here would be exactly the kind of
+/// keeps-growing-forever interface `service_interfaces.dart`'s own file
+/// doc warns against.
+///
+/// Distinct from [IQueueBuilder] rather than folded into it:
+/// [IQueueBuilder.buildQueueFor] is synchronous by design (built for
+/// on-device, deterministic matching — `SmartPlaylistPlugin`'s mood-tag
+/// substring match, `QueuePresetPlugin`'s genre/BPM thresholds), and a
+/// real AI provider needs a genuine network round-trip, which a
+/// synchronous contract can't accommodate at all.
+///
+/// Never required for normal functionality — the spec's own explicit
+/// requirement for this whole subsystem. `ServiceRegistry` already
+/// models "zero or more providers may exist" for every capability
+/// interface here, so the app behaves identically whether zero, one, or
+/// several `IAIProvider`s are registered.
+abstract class IAIProvider {
+  /// Whether this provider is ready to use right now (e.g. has a
+  /// user-supplied API key configured) — the same `isAvailable` contract
+  /// every other capability interface in this file uses, checked before
+  /// offering any AI-powered UI at all.
+  bool get isAvailable;
+
+  /// Builds a queue for [prompt] by picking from [library] — never
+  /// inventing a track that isn't actually in it. Returns an empty list,
+  /// never throws, on any failure: no credential configured, a network
+  /// error, a response that can't be parsed, or a provider that
+  /// genuinely found nothing that fits.
+  Future<List<BaseTrack>> buildPlaylistFromPrompt(
+    String prompt,
+    List<BaseTrack> library,
+  );
+}

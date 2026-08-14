@@ -558,11 +558,72 @@ rating/play-count/date-added operators), no ALL/ANY/NONE boolean
 grouping. A user can add another mood label to match against; they
 cannot define an arbitrary new multi-condition rule set.
 
-**43. AI** — Genuine 0%. No `IAIProvider`, no AI-related class,
-dependency, or code anywhere in either repo. Confirmed via repo-wide
-search for the interface name and every capability the spec lists
-(natural-language search, AI playlist creation, AI metadata cleanup,
-voice control, etc.) — zero matches.
+**43. AI** — Partial (closed 2026-08-13, was genuine 0%). The spec
+calls this "a major optional ecosystem" (§21) and names eight distinct
+capabilities: natural language search, playlist creation, metadata
+cleanup, tagging, recommendations, a library assistant, voice control,
+and music discovery. This pass builds exactly one of them, deliberately
+— playlist creation, the spec's own headline example almost verbatim
+("Make me a two-hour workout playlist").
+
+A real `IAIProvider` capability interface now exists
+(`packages/omnis_plugin_api/lib/service_interfaces.dart`) — genuinely
+async (`Future<List<BaseTrack>> buildPlaylistFromPrompt(prompt,
+library)`), unlike `IQueueBuilder.buildQueueFor`, which is synchronous
+by design (built for `SmartPlaylistPlugin`/`QueuePresetPlugin`'s
+on-device deterministic matching, not a network round-trip) — a real
+architectural reason this needed its own interface rather than reusing
+the existing queue-building one.
+
+The first implementation, `AIPlaylistPlugin`
+(`Omnis-Plugins/lib/ai_playlist_plugin.dart`), calls Anthropic's real
+Messages API with a user-supplied key (never an embedded one — the same
+"bring your own credential" pattern `MetadataEnrichmentPlugin`'s
+Last.fm/Discogs keys already established). The model is given a compact
+JSON summary of the real library (id/title/artist/genres/mood/bpm/
+duration — only fields `BaseTrack` actually has, nothing fabricated)
+and told to reply with *only* a JSON array of track ids picked from
+that list. Every returned id is checked against the library before use
+— an id the model invented, or one outside the sample it was shown, is
+silently dropped rather than producing a broken/missing track in the
+queue. This is the load-bearing guarantee that makes the feature safe
+to ship at all: a test asserts a fabricated id in the model's response
+is dropped, not surfaced.
+
+Two real, deliberate limits, both tested and documented in the plugin's
+own doc comment: (1) the library sample sent to the model is capped at
+300 tracks — a real constraint, not full-library coverage, since an
+unbounded prompt would have unbounded token cost and no upper size
+limit; a request like "find me the deep cuts" has no way to consider a
+track outside the sample. (2) The model is instructed to reply with
+*only* JSON, but LLMs routinely wrap output in a markdown code fence
+anyway regardless of instructions — stripped defensively before
+parsing rather than trusted to follow instructions, and specifically
+tested.
+
+14 new tests against a mocked HTTP client covering the real Anthropic
+request shape (URL, `x-api-key` header, model, prompt+catalog in the
+message body), response parsing (happy path, code-fence stripping,
+non-JSON text, a non-200 response surfacing the API's own error
+message), and the two guarantees above (never-invents-a-track, capped
+sample).
+
+Still genuine 0% for every other capability the spec names: natural
+language *search* (as opposed to playlist creation), metadata cleanup,
+tagging, a recommendation engine (§22, a separate, larger spec section
+of its own — listening history/ratings/favorites/skips/BPM/key/mood/
+acoustic-fingerprint-driven algorithms like Similar Track/Similar
+Artist/Daily Mix), a conversational library assistant ("Which albums
+have never been played?"), voice control, and artist-similarity
+discovery. Each is real, separate work, not attempted here — the spec's
+own framing ("a major optional ecosystem") was accurate; this closes
+one deliberately narrow slice of it, not the whole item.
+
+**Not exercised against the real Anthropic API** in this environment —
+what's verified is protocol-level request/response handling against a
+mocked HTTP client, not a live call with real spend attached (the same
+caveat already applied to every other network-backed plugin this
+session added).
 
 ### Phase 7 — Advanced UX
 
