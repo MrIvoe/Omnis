@@ -766,15 +766,51 @@ Fixed with the same `SingleChildScrollView` guard `LandscapeLayout`/
 might not fit every window size" reason, rather than inventing a new
 pattern.
 
-3 new dedicated tests do not just check that the layout renders —
-they simulate real `LogicalKeyboardKey.arrowRight`/`arrowLeft` key
-events via `tester.sendKeyEvent` and assert the actual `FocusNode` that
-now holds focus moved to the correct button (`Focus.of(element)
-.hasFocus`), and one sends `LogicalKeyboardKey.enter` (the
-keyboard-test-harness equivalent of a D-pad's center/OK button) and
-asserts the real `onPlayPause` callback fired, not just that some
-visual highlight moved. This is what makes "real D-pad/keyboard
-navigation, not a mocked claim" true rather than assumed.
+4 new dedicated tests do not just check that the layout renders —
+one renders at a real phone's logical width (360dp, not this test
+file's 800px default) and caught a *second* real overflow the first
+fix missed: the button row itself overflowed 17px horizontally, because
+sizing Play/Pause proportionally larger than Previous/Next without
+reserving the extra width its larger size actually needs broke the
+row's total-width budget. Fixed by solving for each button's size from
+the real available width directly (a `LayoutBuilder`-driven proportional
+split) rather than picking one more fixed number that happened to fit
+whatever width was being tested at the time. The other three simulate
+real `LogicalKeyboardKey.arrowRight`/`arrowLeft` key events via
+`tester.sendKeyEvent` and assert the actual `FocusNode` that now holds
+focus moved to the correct button (`Focus.of(element).hasFocus`), and
+one sends `LogicalKeyboardKey.enter` (the keyboard-test-harness
+equivalent of a D-pad's center/OK button) and asserts the real
+`onPlayPause` callback fired, not just that some visual highlight moved.
+
+**Verified end-to-end on the real Android emulator, not just in
+widget tests** — the first genuine real-device D-pad verification any
+UI work in this repo has had. Selected TV Mode via Settings, started a
+real Radio station (MANGORADIO), and sent actual
+`adb shell input keyevent KEYCODE_DPAD_RIGHT`/`KEYCODE_DPAD_CENTER`
+against the running app. Confirmed *behaviorally*, not by reading
+Android's accessibility-focus tree (which turned out not to reliably
+reflect Flutter's internal keyboard-focus state at all — a real
+discrepancy worth knowing about for any future on-device focus
+verification: Android's a11y "focused" attribute via `uiautomator
+dump` stayed frozen on the same bounds across a `DPAD_RIGHT` press
+that widget tests prove really did move Flutter's internal focus, so
+it's not a reliable oracle for this): pressing `DPAD_CENTER` toggled
+real playback (pause icon → play icon, with a visible focus-highlight
+ring drawn around the button), and pressing `DPAD_RIGHT` then
+`DPAD_CENTER` genuinely skipped to a different station (MANGORADIO →
+REYFM), proving both that focus really moved to Next and that
+activating it really worked — not inferred from a screenshot alone.
+
+**A separate, pre-existing bug spotted while verifying this on a real
+device, unrelated to TV Mode**: the *Standard* layout's Now Playing
+screen (the default layout, not touched by this change) overflows its
+button row by ~4.6px on this same device/window size — the
+"Visualizer" button clips off the right edge with a debug overflow
+banner in debug builds. Not fixed here (out of scope for the TV Mode
+increment that found it), but worth a dedicated fix later — the same
+class of bug this increment's own `LayoutBuilder` fix addresses for TV
+Mode specifically.
 
 Still genuine 0% for a from-scratch, always-on TV/leanback shell — this
 closes one selectable Now Playing layout among several (reached the

@@ -74,50 +74,89 @@ class TvModeLayout extends PlayerLayout {
                 child: PlayerProgressBar(data: data, interactive: false),
               ),
               const SizedBox(height: 24),
-              FocusTraversalGroup(
-                policy: OrderedTraversalPolicy(),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(1),
-                      child: _TvButton(
-                        key: const ValueKey('tv_mode_previous'),
-                        icon: Icons.skip_previous,
-                        tooltip: 'Previous',
-                        onPressed: data.onPrevious,
-                      ),
+              // A real 1920px+ TV has plenty of room for three 96px
+              // buttons at fixed spacing, but this layout must still
+              // render sanely on anything narrower (a phone/tablet
+              // preview, a resized desktop window) — a real phone's
+              // logical width (~360-400dp) is nowhere near this
+              // session's widget-test default viewport (800px), and
+              // fixed-size buttons only overflowed on the former, not
+              // the latter: caught on a real device, not by the test
+              // suite. Sizing the buttons as a function of the actual
+              // available width (capped at the original TV-scale sizes)
+              // is what makes this genuinely fit either way, rather than
+              // picking one more magic number that happens to work on
+              // today's specific screen.
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 24.0;
+                  const iconPadding = 32.0; // IconButton's own 16px * 2
+                  // Play/Pause is meant to render noticeably larger than
+                  // Previous/Next (sizeRatio), which means it also needs
+                  // proportionally more of the row's total width budget
+                  // — solving for that directly (rather than sizing all
+                  // three from the same per-button share and scaling
+                  // Play/Pause up afterwards) is what actually keeps the
+                  // row's real total width at or under what's available,
+                  // instead of silently overflowing by whatever extra
+                  // width that afterwards-scaling added.
+                  const sizeRatio = 96 / 72;
+                  final smallButtonWidth =
+                      (constraints.maxWidth - 2 * gap) / (2 + sizeRatio);
+                  final largeButtonWidth = smallButtonWidth * sizeRatio;
+                  final iconSize =
+                      (smallButtonWidth - iconPadding).clamp(24.0, 72.0);
+                  final playPauseIconSize =
+                      (largeButtonWidth - iconPadding).clamp(32.0, 96.0);
+                  return FocusTraversalGroup(
+                    policy: OrderedTraversalPolicy(),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(1),
+                          child: _TvButton(
+                            key: const ValueKey('tv_mode_previous'),
+                            icon: Icons.skip_previous,
+                            tooltip: 'Previous',
+                            onPressed: data.onPrevious,
+                            size: iconSize,
+                          ),
+                        ),
+                        const SizedBox(width: gap),
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(2),
+                          child: _TvButton(
+                            key: const ValueKey('tv_mode_play_pause'),
+                            icon: data.buffering
+                                ? Icons.hourglass_top
+                                : (data.playing
+                                    ? Icons.pause_circle_filled
+                                    : Icons.play_circle_fill),
+                            tooltip: data.buffering
+                                ? 'Buffering'
+                                : (data.playing ? 'Pause' : 'Play'),
+                            onPressed:
+                                data.buffering ? null : data.onPlayPause,
+                            size: playPauseIconSize,
+                            autofocus: true,
+                          ),
+                        ),
+                        const SizedBox(width: gap),
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(3),
+                          child: _TvButton(
+                            key: const ValueKey('tv_mode_next'),
+                            icon: Icons.skip_next,
+                            tooltip: 'Next',
+                            onPressed: data.onNext,
+                            size: iconSize,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 32),
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(2),
-                      child: _TvButton(
-                        key: const ValueKey('tv_mode_play_pause'),
-                        icon: data.buffering
-                            ? Icons.hourglass_top
-                            : (data.playing
-                                ? Icons.pause_circle_filled
-                                : Icons.play_circle_fill),
-                        tooltip: data.buffering
-                            ? 'Buffering'
-                            : (data.playing ? 'Pause' : 'Play'),
-                        onPressed: data.buffering ? null : data.onPlayPause,
-                        size: 96,
-                        autofocus: true,
-                      ),
-                    ),
-                    const SizedBox(width: 32),
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(3),
-                      child: _TvButton(
-                        key: const ValueKey('tv_mode_next'),
-                        icon: Icons.skip_next,
-                        tooltip: 'Next',
-                        onPressed: data.onNext,
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ),

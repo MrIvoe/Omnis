@@ -171,6 +171,28 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('tv_mode layout renders without overflow at a real '
+        "phone's logical width — not just this test file's 800px "
+        "default, which a real device's much narrower ~360-400dp "
+        "screen doesn't match (a real overflow bug only a narrower "
+        "viewport catches)", (tester) async {
+      final layout = resolvePlayerLayout('tv_mode');
+      final data = _dataFor(AppSettings.instance);
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) => layout.build(context, data)),
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('TV Mode layout — real D-pad/keyboard navigation', () {
