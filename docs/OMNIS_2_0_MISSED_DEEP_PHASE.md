@@ -867,10 +867,127 @@ an accessibility gap in their own right. No voice control, no
 switch-input support, no RTL/localization wiring (`AppLocalizations`
 isn't used).
 
-**49. Widgets** — Genuine 0%. This is OS-level home-screen widgets
-(Android App Widgets / iOS WidgetKit), not in-app UI. No `home_widget`-
-style package dependency, no Android widget provider manifest entry, no
-iOS widget extension target.
+**49. Widgets** — Partial (closed 2026-08-13, was genuine 0%). Real
+Android App Widget: `home_widget: ^0.9.2+1` for the Dart↔native
+SharedPreferences bridge, `OmnisWidgetProvider.kt`
+(`android/app/src/main/kotlin/com/omnis/music/`) as the actual
+`AppWidgetProvider`, plus `omnis_widget.xml`/`omnis_widget_info.xml`
+and four vector-drawable transport icons.
+
+`HomeWidgetService` (new, `lib/core/home_widget_service.dart`) listens
+to a new narrow seam interface, `HomeWidgetTrackSource`
+(`lib/core/home_widget_track_source.dart`) — `AudioEngine` now
+`implements` it alongside `PlaybackEngine`, same "small,
+purpose-specific interface" pattern that already exists for
+`PlaybackWatchdog`/`PlaybackRecovery`, kept in its own file so
+`audio_engine.dart` and `home_widget_service.dart` don't have to import
+each other. On every track/play-state change it pushes
+title/artist/playing into the widget's SharedPreferences and calls
+`HomeWidget.updateWidget()`. Wired into `MainCore.initialize()`/
+`dispose()` right alongside the other core (non-plugin) singletons.
+
+The interesting design decision: Play/Pause/Next/Previous do **not**
+round-trip through Dart at all. `home_widget`'s own documented pattern
+for interactive buttons is a Flutter background-isolate callback
+(`registerBackgroundCallback`) — rejected here because this app's
+playback engine (`just_audio`, wrapped by `audio_service`) has no
+supported story for running a second, widget-triggered background
+isolate alongside the real one already driving playback; standing that
+up would be new, unproven machinery for a feature this narrow. Instead
+each button is a `PendingIntent.getBroadcast` sending a real
+`android.intent.action.MEDIA_BUTTON` intent (with the matching
+`KeyEvent`, e.g. `KEYCODE_MEDIA_PLAY_PAUSE`) explicitly targeted at
+`com.ryanheise.audioservice.MediaButtonReceiver` — the exact receiver
+this app's manifest already registers for the lock-screen notification's
+own controls (see item 1's original audio_service wiring). A real
+Bluetooth headset's hardware buttons reach this app the same way, so
+this is proven, already-working plumbing, not a new integration.
+
+Two real bugs found and fixed during this increment, both the kind
+that only a real native build/inflate step catches — `flutter analyze`
+and `flutter test` cannot exercise Android's manifest merger or XML
+layout inflater at all:
+
+1. **Manifest-merge minSdk conflict.** `home_widget`'s Android side
+   transitively pulls in `androidx.work:work-runtime-ktx`, which
+   declares `minSdkVersion 23`; this app deliberately keeps
+   `minSdkVersion 21` (same reasoning as the pre-existing `audify`
+   override — see AndroidManifest.xml's own comment on that line).
+   Fixing this took three build attempts: first adding
+   `androidx.work.ktx` to `tools:overrideLibrary` alongside `audify`
+   using a **colon**-separated value (wrong — Android's manifest-merger
+   syntax for multiple libraries is **comma**-separated, and the wrong
+   separator silently broke `audify`'s own override too, surfacing as
+   audify's original minSdk error again under a different guise); then
+   fixing the separator but still hitting a *second*, non-ktx
+   `androidx.work:work-runtime` artifact with the same minSdk
+   requirement (the ktx artifact is a thin wrapper around the base one,
+   and Gradle's manifest merger checks each merged library
+   individually, not just the top-level dependency). Final working
+   value: `tools:overrideLibrary="id.nabilfaris.audify,androidx.work.ktx,androidx.work"`.
+   Safe for the same reason the audify override is safe: `HomeWidgetService`
+   never calls `home_widget`'s background-worker/
+   `registerBackgroundCallback` APIs — the only code paths that
+   actually need WorkManager at runtime — so the higher-minSdk code
+   inside the merged library simply never executes on a pre-23 device.
+
+2. **`RemoteViews` rejects plain `View`.** The widget's layout used
+   `<View android:layout_width="0dp" .../>` as a flexible spacer
+   between the transport buttons (a completely ordinary pattern in a
+   normal Flutter/Android layout). Real Android home-screen widgets
+   render via `RemoteViews`, which only supports a fixed allow-list of
+   view classes for security/remoting reasons — plain `View` is not on
+   it. The build succeeded and `flutter analyze`/`flutter test` stayed
+   green throughout, because none of that tooling parses or inflates
+   Android layout XML; the only way this surfaced at all was actually
+   pinning the widget to the emulator's home screen, where it showed a
+   generic system "Can't load widget" error. `adb logcat` had the real
+   exception: `android.view.InflateException: ... Class not allowed to
+   be inflated android.view.View`. Fixed by switching both spacers to
+   `<Space>`, which *is* on `RemoteViews`' allow-list and behaves
+   identically for this purpose (a zero-content flex spacer).
+
+**A genuine verification gap, left honest rather than papered over.**
+After fixing bug 2, re-pinning the widget to confirm — visually, via
+screenshot — that it now renders correctly and that its buttons
+genuinely control playback could not be completed. The one successful
+pin (which is how bug 2 was found in the first place) was achieved via
+`adb shell input draganddrop <source> <dest> <duration>` dragging the
+widget preview out of the emulator's Compose-based Pixel Launcher
+widget picker sheet onto the home screen. After the fix, roughly a
+dozen further attempts — `draganddrop` with the identical coordinates
+and sequence that worked the first time, manual `motionevent`
+DOWN→(long hold)→MOVE×N→UP sequences with varied hold durations
+(0.5s/0.8s/1.2s/2.0s) and step counts, both from a search-result flow
+and a Browse-tab alphabetical-list flow, with uiautomator-dumped exact
+bounds re-verified at every step — never reproduced a successful drop;
+each attempt left the picker sheet open and unchanged. This reads as a
+timing-sensitive quirk in either the emulator's synthetic touch-event
+handling or this specific launcher build's Compose drag-gesture
+detector, not a reproduced app-level defect: the underlying pipeline
+(widget registers, discoverable by name/size in the picker, binds,
+attempts to inflate) is the same pipeline that produced the real,
+diagnosable, now-fixed `<View>` exception on the one pin that did
+succeed. Still, this means the fix's correctness rests on the standard,
+well-documented nature of the `<View>`→`<Space>` `RemoteViews` fix
+plus a successful `flutter build apk` (which does compile and
+resource-link the layout, just not inflate it at runtime), **not** on
+a fresh screenshot of a working widget. A real-device (not emulator)
+manual check is the natural follow-up to close this gap for good.
+
+Remaining scope gaps, independent of the verification question above:
+no iOS widget (no WidgetKit extension target — `home_widget` supports
+iOS too, but this increment only built and wired the Android side); no
+lock-screen widget beyond what `audio_service`'s existing notification
+already provides; exactly one fixed widget layout and size (`3×1`,
+`resizeMode="horizontal|vertical"` is declared but no alternate
+compact/expanded RemoteViews layout responds to it); no widget
+configuration screen (`ACTION_APPWIDGET_CONFIGURE` isn't implemented —
+every instance is identical, there's nothing to configure yet anyway
+since there's only one Omnis "account"/library); album art is not
+shown on the widget (would need `RemoteViews.setImageViewBitmap` fed a
+real decoded bitmap from the track's artwork source, a materially
+bigger increment than the text/controls built here).
 
 **50. Automation** — Partial. Two real, working single-purpose
 triggers: GPS-speed → Car Mode layout switch (`DrivingModePlugin`, see

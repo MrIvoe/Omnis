@@ -20,7 +20,17 @@
          doc comment), so forcing the manifest merge here is safe: the
          plugin's code, not the manifest, is what actually keeps a pre-24
          device from calling into audify's native side. -->
-    <uses-sdk tools:overrideLibrary="id.nabilfaris.audify"/>
+    <!-- home_widget (the Android home-screen widget bridge, Phase 7 §49)
+         pulls in androidx.work:work-runtime-ktx, which declares
+         minSdkVersion 23 for its background-worker/periodic-update path.
+         This app's `HomeWidgetService` never uses that path — no
+         `updatePeriodMillis` (set to 0, updates are pushed on-demand from
+         Dart instead) and no `registerBackgroundCallback` — it only calls
+         the plain, always-available `saveWidgetData`/`updateWidget`
+         methods, so forcing the merge here is safe the same way the
+         audify override above is: the unused higher-minSdk code path
+         never actually runs on a pre-23 device. -->
+    <uses-sdk tools:overrideLibrary="id.nabilfaris.audify,androidx.work.ktx,androidx.work"/>
     <!-- Storage read access for the library scanner. Requested at runtime
          by on_audio_query's own checkAndRequest() — see
          MediaScanner._scanAndroid — not through OmnisPermissions. -->
@@ -140,6 +150,20 @@
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
+        </receiver>
+        <!-- Phase 7 §49 "Widgets" — real Android home-screen widget. See
+             OmnisWidgetProvider.kt's doc comment for how its buttons reach
+             real playback control without a second Flutter isolate. -->
+        <receiver
+            android:name=".OmnisWidgetProvider"
+            android:exported="false"
+            android:label="Omnis">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/omnis_widget_info" />
         </receiver>
     </application>
     <!-- Required to query activities that can process text, see:

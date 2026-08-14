@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/playback_diagnostics.dart';
@@ -187,6 +188,11 @@ class MainCore {
       RecoveryJournal.instance.save(_audioEngine.captureState());
     });
 
+    // Mirror track/play-state into the Android home-screen widget. Core,
+    // not plugin-dependent — same reasoning as PlayHistoryStore/
+    // RecoveryJournal above.
+    HomeWidgetService.instance.initialize(_audioEngine);
+
     // Hand plugins their capability surface, then register the registry.
     _pluginManager.attachContext(OmnisPluginContext(
       audioEngine: _audioEngine,
@@ -216,6 +222,7 @@ class MainCore {
     await _durationSub?.cancel();
     await _playerStateSub?.cancel();
     await _trackForHistorySub?.cancel();
+    await HomeWidgetService.instance.dispose();
     await _watchdog.dispose();
     await _pluginManager.dispose();
     await _audioEngine.dispose();

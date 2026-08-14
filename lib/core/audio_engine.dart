@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart' show RepeatMode;
 import 'package:omnis/core/ab_repeat_controller.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/home_widget_track_source.dart';
 import 'package:omnis/core/playback_engine.dart';
 import 'package:omnis/core/playback_os_integration.dart';
 import 'package:omnis/core/playback_state.dart';
@@ -46,7 +47,7 @@ export 'package:omnis_plugin_api/hardware_eq_band.dart' show HardwareEqBand;
 /// discontinuity. A manual skip/seek abandons any in-flight crossfade
 /// immediately; crossfade only ever applies to the automatic
 /// end-of-track transition it was designed for.
-class AudioEngine implements PlaybackEngine {
+class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
   late final AudioPlayer _player;
   final AndroidEqualizer? _androidEqualizer;
   AudioPlayer? _crossfadePlayer;
@@ -227,6 +228,7 @@ class AudioEngine implements PlaybackEngine {
   }
 
   /// Current track, or null when the queue is empty.
+  @override
   BaseTrack? get currentTrack => _currentTrack;
 
   /// Read-only view of the queue.
@@ -256,12 +258,14 @@ class AudioEngine implements PlaybackEngine {
   Stream<Object> get playbackErrors => _playbackErrorController.stream;
 
   /// Current track stream (emits when the track changes).
+  @override
   Stream<BaseTrack?> get trackStream => _trackController.stream;
 
   /// Queue change stream.
   Stream<List<BaseTrack>> get queueStream => _queueController.stream;
 
   /// Whether the player is currently playing.
+  @override
   bool get isPlaying => _player.playing;
 
   /// Crossfade duration (0 = disabled).
