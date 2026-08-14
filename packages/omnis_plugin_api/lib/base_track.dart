@@ -394,6 +394,14 @@ enum TrackType {
   /// this is directly playable: [BaseTrack.streamUrl] is the server's own
   /// real audio stream endpoint, not a metadata-only reference.
   subsonic,
+
+  /// A track streamed from a self-hosted Jellyfin media server — see
+  /// `JellyfinPlugin` in `Omnis-Plugins`. Like [subsonic], directly
+  /// playable: [BaseTrack.streamUrl] is Jellyfin's own real audio stream
+  /// endpoint. A distinct value from [subsonic] rather than reused for
+  /// it — Jellyfin is its own protocol (session-token auth, different
+  /// endpoint/field shapes), not an OpenSubsonic-compatible server.
+  jellyfin,
 }
 
 /// ReleaseType represents the kind of release an album is.

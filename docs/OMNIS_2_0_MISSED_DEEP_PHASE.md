@@ -360,13 +360,64 @@ Subsonic/Airsonic server** in this environment — what's verified is
 protocol-level request/response handling, the identical caveat already
 applied to Spotify/YouTube (item 36 below).
 
-**33-35. Jellyfin / Plex / DLNA-UPnP** — Still genuine 0%. Each is its
-own distinct protocol (Jellyfin and Plex both have REST APIs broadly
-similar in shape to OpenSubsonic's but incompatible in the details —
-different auth schemes, different endpoint/field names — so neither
-gets free coverage from `OpenSubsonicPlugin`; DLNA/UPnP is a different
-kind of protocol entirely, SSDP discovery + SOAP, not a REST API at
-all). Real, separate work for each, not attempted here.
+**33. Jellyfin** — Solid but unverified (closed 2026-08-13, was genuine
+0%). New `JellyfinPlugin` (`Omnis-Plugins/lib/jellyfin_plugin.dart`) is
+a real client to Jellyfin's own REST API — deliberately a separate
+plugin from `OpenSubsonicPlugin` rather than a shared client, because
+the two protocols only look similar at a glance: Jellyfin uses
+session-token auth (`POST /Users/AuthenticateByName` with a
+`MediaBrowser Client="...", Device="...", DeviceId="...", Version="..."`
+header, returning an `AccessToken` + `User.Id` pair) where OpenSubsonic
+computes a fresh per-request MD5 token from a salt; the search
+endpoints return differently-shaped JSON (`Items`/`Artists`/
+`RunTimeTicks`/`IndexNumber` vs. `searchResult3`/`song`/`artist`/
+`duration`/`track`); and duration needs a unit conversion OpenSubsonic
+doesn't (`RunTimeTicks` is in 100-nanosecond ticks — divide by
+10,000,000 for seconds, done once in `_itemToTrack`, verified by a test
+asserting the exact converted value, not just "some duration").
+
+The session access token is kept in memory only (never persisted,
+unlike the username/password themselves, which — like
+`OpenSubsonicPlugin`'s password — live in this plugin's own
+`PluginStorage` with no secure-keystore backing, since none exists
+anywhere in this app yet), and is transparently re-authenticated
+exactly once on a `401` mid-search. That "exactly once" bound was
+deliberate and specifically tested: a naive retry-on-401 that
+re-authenticates and retries unconditionally would infinite-loop
+against a server that keeps rejecting every request for some other
+reason (e.g. a disabled/deleted user account whose stale password is
+still saved locally) — a `retried` flag threaded through a private
+recursive helper caps it at one retry, and
+`jellyfin_plugin_test.dart` has a dedicated test asserting exactly 2
+auth calls and 2 search calls (not 3, not an unbounded number) against
+a mock server that always returns 401.
+
+Search results become plain `BaseTrack`s (new `TrackType.jellyfin` on
+`plugin-api-v0.9.0` — a distinct value from `subsonic` rather than
+reused for it, precisely because the two are different protocols under
+the hood even though both are "directly playable self-hosted server"
+tracks) with a genuine `streamUrl` at Jellyfin's own
+`/Audio/{id}/stream?static=true&api_key=...` endpoint, so `AudioEngine`
+plays these with zero special-casing, the same as every other
+`streamUrl`-bearing track type. Settings UI (server/username/password,
+"Test connection," inline search-and-play) uses the identical
+per-plugin settings-slot pattern `OpenSubsonicPlugin`/Spotify/YouTube
+import already established — no Core changes, no new nav tab. 17 tests
+against a mocked HTTP client. **Not exercised against a real Jellyfin
+server** in this environment — protocol-level correctness only, the
+same caveat already applied to OpenSubsonic (items 31/32) and
+Spotify/YouTube (item 36 below).
+
+**34-35. Plex / DLNA-UPnP** — Still genuine 0%, and neither gets any
+free coverage from `OpenSubsonicPlugin`/`JellyfinPlugin`. Plex uses its
+own protocol: a separate `plex.tv` account sign-in flow issuing an
+`X-Plex-Token`, and a response shape that's a JSON-serialized XML
+hybrid unlike either OpenSubsonic's or Jellyfin's plain JSON. DLNA/UPnP
+is a different *kind* of protocol entirely — SSDP multicast discovery
+to find devices on the local network, then SOAP action calls to
+control them, not a request/response REST API at all, so it wouldn't
+fit this session's `http.Client`-based plugin pattern even in shape.
+Real, separate work for each, not attempted here.
 
 **36. Spotify** — Solid, unverified. `SpotifyAuth`: full Authorization
 Code + PKCE OAuth (RFC 7636) against Spotify's Web API, platform-aware
