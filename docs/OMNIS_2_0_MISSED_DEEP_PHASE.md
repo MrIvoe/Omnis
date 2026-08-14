@@ -715,18 +715,54 @@ scanned/imported) — so the entry is recorded but silently invisible on
 Home. No favorites integration for stations either. Both are real,
 distinct follow-up work, not attempted here.
 
-**42. Smart playlists** — Partial. Despite the name, `SmartPlaylistPlugin`
-is a flat, user-editable list of mood strings matched via case-insensitive
+**42. Smart playlists** — Partial (the rule-engine gap closed
+2026-08-14). `SmartPlaylistPlugin` is still, as before, a flat,
+user-editable list of mood strings matched via case-insensitive
 substring against `track.mood` (one hardcoded special case: "focus"
-also matches an `ambient` genre tag) — it directly powers the Moods
-page, confirmed by cross-referencing doc comments in both files that
-explicitly point at each other as the same feature. `QueuePresetPlugin`
-is a complementary static genre-keyword/BPM-threshold fallback for the
-same four preset names. There is no rule-based engine anywhere — no
-`SmartPlaylistRule` class, no per-field condition model (genre/year/
-rating/play-count/date-added operators), no ALL/ANY/NONE boolean
-grouping. A user can add another mood label to match against; they
-cannot define an arbitrary new multi-condition rule set.
+also matches an `ambient` genre tag) — it still directly powers the
+Moods page, and that matcher is untouched; `QueuePresetPlugin` remains
+its complementary static genre-keyword/BPM-threshold fallback for the
+same four preset names.
+
+What's new is a genuinely separate, additive rule engine
+(`Omnis-Plugins/lib/smart_playlist_rule.dart`):
+`RuleField`/`RuleOperator`/`RuleMatchType`/`RuleCondition`/
+`SmartPlaylistRule`, giving real ALL/ANY/NONE boolean grouping over
+per-field conditions (title/artist/album/genre/mood/year/rating — not
+yet play-count or date-added, since neither `BaseTrack` nor
+`IPlayHistoryProvider` currently exposes a "date added" field, and
+play-count would need `IPlayHistoryProvider` wired through the same way
+`rating:` now is, left for a follow-up). Multi-valued fields
+(artist/genre) match if any element satisfies the condition; string
+fields support `contains`/`equals` (the builder UI only offers
+`contains`); numeric fields (year/rating) support the full comparison
+set; a rule with zero conditions matches nothing, not everything — a
+setup gap distinct from `library_search.dart`'s "empty query = show
+everything" convention, deliberately diverging since a *saved* rule
+with nothing configured is a different situation than an empty search
+box mid-typing.
+
+The `rating:` condition needed to reach `RatingsPlugin`'s data from a
+different plugin with no existing shared interface for it — closed by
+adding `IRatingsProvider` to `packages/omnis_plugin_api`
+(`plugin-api-v0.15.0`) and having `RatingsPlugin` register/unregister
+against it through `enable()`/`disable()`/`dispose()` (previously it
+only ever registered once in `initialize()`, so a disable-then-re-enable
+cycle silently left it unregistered forever — fixed as part of this
+same change, not a pre-existing bug worth its own separate entry since
+nothing exercised that path before `SmartPlaylistPlugin` needed to).
+
+Saved rules are named, persisted (per-entry-defensively-decoded JSON,
+same convention as every other store in this app), and their membership
+is recomputed fresh against the live library every time they're played
+— not a fixed snapshot of track ids the way `PlaylistStore`'s ordinary
+playlists are. Reachable only from `SmartPlaylistPlugin`'s own settings
+page (create, play, delete) — **still missing**: no rule editing after
+creation (delete and recreate is the only path), no surfacing on the
+main Playlists page itself, no persistence as a real `PlaylistStore`
+entry a user could otherwise manage, no import/export, and the builder
+UI's string-field operator choice is narrower than the model
+(`contains` only, though `equals` works if constructed directly).
 
 **43. AI** — Partial (closed 2026-08-13, was genuine 0%). The spec
 calls this "a major optional ecosystem" (§21) and names eight distinct
