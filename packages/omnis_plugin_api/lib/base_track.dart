@@ -402,6 +402,16 @@ enum TrackType {
   /// it — Jellyfin is its own protocol (session-token auth, different
   /// endpoint/field shapes), not an OpenSubsonic-compatible server.
   jellyfin,
+
+  /// A track streamed from a self-hosted Plex Media Server — see
+  /// `PlexPlugin` in `Omnis-Plugins`. Directly playable, like [subsonic]/
+  /// [jellyfin]: [BaseTrack.streamUrl] points at the real media file
+  /// Plex serves (its `Media[0].Part[0].key`), not a metadata-only
+  /// reference. Its own distinct value — Plex is a third, incompatible
+  /// protocol (a single account-scoped `X-Plex-Token`, not a per-request
+  /// or per-session credential exchange the way [subsonic]/[jellyfin]
+  /// each are).
+  plex,
 }
 
 /// ReleaseType represents the kind of release an album is.

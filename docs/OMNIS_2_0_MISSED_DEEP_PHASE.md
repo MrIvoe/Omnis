@@ -408,16 +408,56 @@ server** in this environment — protocol-level correctness only, the
 same caveat already applied to OpenSubsonic (items 31/32) and
 Spotify/YouTube (item 36 below).
 
-**34-35. Plex / DLNA-UPnP** — Still genuine 0%, and neither gets any
-free coverage from `OpenSubsonicPlugin`/`JellyfinPlugin`. Plex uses its
-own protocol: a separate `plex.tv` account sign-in flow issuing an
-`X-Plex-Token`, and a response shape that's a JSON-serialized XML
-hybrid unlike either OpenSubsonic's or Jellyfin's plain JSON. DLNA/UPnP
-is a different *kind* of protocol entirely — SSDP multicast discovery
-to find devices on the local network, then SOAP action calls to
-control them, not a request/response REST API at all, so it wouldn't
-fit this session's `http.Client`-based plugin pattern even in shape.
-Real, separate work for each, not attempted here.
+**34. Plex** — Solid but unverified (closed 2026-08-13, was genuine
+0%). New `PlexPlugin` (`Omnis-Plugins/lib/plex_plugin.dart`) is a real
+client to Plex Media Server's REST API — a third, separate plugin from
+`OpenSubsonicPlugin`/`JellyfinPlugin` rather than sharing either,
+because Plex's auth model and response shape are both distinct from
+those two: a single account-scoped `X-Plex-Token` sent on every
+request (not OpenSubsonic's per-request computed MD5 token, not
+Jellyfin's session token from a login call), and Plex's `/search`
+endpoint returns every media type it knows about in one flat
+`Metadata` list (movies, shows, artists, albums, tracks — this plugin
+filters to `"type": "track"` only), with track fields in different
+places than either sibling plugin expects: artist on
+`grandparentTitle` (not `artist`/`Artists`), duration in **milliseconds**
+(not OpenSubsonic's seconds or Jellyfin's 100-nanosecond ticks — a
+`~/1000` conversion, tested), and the actual playable file path nested
+three levels down at `Media[0].Part[0].key` rather than a flat id this
+plugin can build a stream URL from directly.
+
+Deliberately does **not** implement Plex's full `plex.tv` sign-in/
+PIN-pairing OAuth-like flow for obtaining an `X-Plex-Token` — the user
+is expected to already have one, which is the standard, well-documented
+entry point every third-party Plex client (Tautulli, PlexPy, countless
+scripts) starts from, not a shortcut unique to this plugin. Building
+that flow for real is separate, real work, not attempted here — this is
+narrower in scope than `OpenSubsonicPlugin`/`JellyfinPlugin`, which
+both take a username/password directly against the self-hosted server
+itself, no separate account-linking step.
+
+Search results become plain `BaseTrack`s (new `TrackType.plex` on
+`plugin-api-v0.10.0`) with a genuine `streamUrl` at the real media file
+Plex serves, so `AudioEngine` plays these with zero special-casing —
+the same as every other `streamUrl`-bearing track type this session
+added. Same settings-slot UI pattern as the other two server plugins.
+18 tests against a mocked HTTP client, including one specifically
+proving the type-filtering works (albums/artists/movies mixed into a
+search response are correctly dropped, only the real track survives)
+and one proving a `"type": "track"` entry with no `Media`/`Part` at all
+(no playable file reference) is skipped rather than producing a track
+with a broken stream URL. **Not exercised against a real Plex server**
+in this environment — protocol-level correctness only, the same
+caveat already applied to OpenSubsonic/Jellyfin (items 31/32/33) and
+Spotify/YouTube (item 36 below).
+
+**35. DLNA/UPnP** — Still genuine 0%, and gets no free coverage from
+any of the three server plugins above. It's a different *kind* of
+protocol entirely from all three — SSDP multicast discovery to find
+devices on the local network, then SOAP action calls to control them,
+not a request/response REST API at all — so it wouldn't fit this
+session's `http.Client`-based plugin pattern even in shape. Real,
+separate work, not attempted here.
 
 **36. Spotify** — Solid, unverified. `SpotifyAuth`: full Authorization
 Code + PKCE OAuth (RFC 7636) against Spotify's Web API, platform-aware
