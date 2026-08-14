@@ -5,6 +5,7 @@ import 'package:omnis/ui/player_layouts/landscape_layout.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/standard_layout.dart';
 import 'package:omnis/ui/player_layouts/top_controls_layout.dart';
+import 'package:omnis/ui/player_layouts/tv_mode_layout.dart';
 
 /// The registry of selectable Now Playing layouts.
 ///
@@ -18,6 +19,7 @@ List<PlayerLayout> createPlayerLayouts() => [
       FullArtGesturesLayout(),
       KaraokeGesturesLayout(),
       CarModeLayout(),
+      TvModeLayout(),
     ];
 
 /// Look up a layout by its persisted id, falling back to the first

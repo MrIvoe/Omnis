@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
@@ -88,6 +89,7 @@ void main() {
       expect(byId['top_controls']!.definesOwnGestures, isFalse);
       expect(byId['landscape']!.definesOwnGestures, isFalse);
       expect(byId['car_mode']!.definesOwnGestures, isFalse);
+      expect(byId['tv_mode']!.definesOwnGestures, isFalse);
     });
   });
 
@@ -168,6 +170,122 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('TV Mode layout — real D-pad/keyboard navigation', () {
+    // Verifies the actual claim in tv_mode_layout.dart's doc comment:
+    // Flutter's default focus traversal moves focus between the
+    // transport buttons on arrow-key input with no custom key-handling
+    // code in the layout itself. A real Android D-pad's KEYCODE_DPAD_*
+    // events arrive at Flutter as these same logical arrow keys, so
+    // this is the same mechanism a real remote would exercise, not a
+    // simulation of a different one.
+    FocusNode focusNodeFor(WidgetTester tester, Key key) =>
+        Focus.of(tester.element(find.byKey(key)));
+
+    testWidgets('Play/Pause has focus as soon as the layout appears — a '
+        'remote never lands with nothing focused at all', (tester) async {
+      final layout = resolvePlayerLayout('tv_mode');
+      final data = _dataFor(AppSettings.instance);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) => layout.build(context, data)),
+        ),
+      ));
+      await tester.pump();
+
+      expect(
+        focusNodeFor(tester, const ValueKey('tv_mode_play_pause')).hasFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('arrow-right moves focus from Play/Pause to Next, '
+        'arrow-left moves it back — real focus traversal, not just a '
+        'visual claim', (tester) async {
+      final layout = resolvePlayerLayout('tv_mode');
+      final data = _dataFor(AppSettings.instance);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) => layout.build(context, data)),
+        ),
+      ));
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(
+        focusNodeFor(tester, const ValueKey('tv_mode_next')).hasFocus,
+        isTrue,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(
+        focusNodeFor(tester, const ValueKey('tv_mode_play_pause')).hasFocus,
+        isTrue,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(
+        focusNodeFor(tester, const ValueKey('tv_mode_previous')).hasFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('activating the focused button (Enter/DPAD_CENTER) '
+        'actually invokes its callback, not just moves a visual '
+        'highlight', (tester) async {
+      final layout = resolvePlayerLayout('tv_mode');
+      var playPauseCalled = false;
+      final data = PlayerLayoutData(
+        track: _track(),
+        position: const Duration(seconds: 30),
+        duration: const Duration(seconds: 180),
+        playing: true,
+        buffering: false,
+        settings: AppSettings.instance,
+        pluginManager: PluginManager(),
+        lyricsPlugin: null,
+        equalizerPlugin: null,
+        visualizerPlugin: null,
+        sleepTimerPlugin: null,
+        lyricText: null,
+        crossfadeStatusText: null,
+        shuffleEnabled: false,
+        repeatMode: RepeatMode.off,
+        loopAMarker: null,
+        abRepeatRange: null,
+        onPlayPause: () => playPauseCalled = true,
+        onNext: () {},
+        onPrevious: () {},
+        onSeek: (_) {},
+        onOpenEqualizer: () {},
+        onEditLyrics: () {},
+        onActivateVisualizer: () {},
+        onStartSleepTimer: () {},
+        onCyclePlayMode: () {},
+        onCycleAbRepeat: () {},
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) => layout.build(context, data)),
+        ),
+      ));
+      await tester.pump();
+      // Autofocus lands on Play/Pause per the test above — activating it
+      // directly here (Enter is the keyboard-test-harness equivalent of
+      // a D-pad's center/OK button) confirms the button is not just
+      // visually highlighted but genuinely wired to the real callback.
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(playPauseCalled, isTrue);
     });
   });
 }

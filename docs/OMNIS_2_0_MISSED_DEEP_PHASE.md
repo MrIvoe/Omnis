@@ -732,9 +732,66 @@ auto-revert, with documented Android background-service limitations
 13, surfaces a reminder instead). No separate Car *theme*, no voice
 control, no Android Auto/CarPlay integration.
 
-**47. TV mode** — Genuine 0%. No file, class, or string reference to
-"TV," a 10-foot interface, or remote/D-pad navigation anywhere in
-either repo.
+**47. TV mode** — Partial (closed 2026-08-13, was genuine 0%). New
+`TvModeLayout` (`lib/ui/player_layouts/tv_mode_layout.dart`) delivers
+the UI spec's §44 "TV" requirement close to verbatim — "Large:
+Artwork, Text, Controls, Remote navigation. No mouse assumptions." —
+as a new selectable Now Playing layout, using the exact same extension
+point `CarModeLayout` already established (a class in
+`lib/ui/player_layouts/`, one line in `registry.dart`, zero Core
+changes).
+
+Deliberately does **not** hand-roll D-pad/keyboard key handling: any
+`MaterialApp` already runs a `DefaultFocusTraversalPolicy` that moves
+focus between focusable widgets on arrow-key input, and — this is the
+part that actually makes "D-pad navigation" a real, not aspirational,
+claim — a physical D-pad on a real Android TV/Fire TV device already
+arrives at Flutter as those exact same logical arrow keys
+(`KEYCODE_DPAD_LEFT`/`RIGHT`/`UP`/`DOWN`/`CENTER` map onto
+`LogicalKeyboardKey.arrow*`/`select` before Flutter's widget layer ever
+sees them). So the layout's actual, scoped job was: large,
+individually-focusable transport buttons in a plain linear order (D-pad
+traversal is 1D directional, not 2D-mouse-hover-aware, so layout order
+matters more than visual position), with `autofocus: true` on
+Play/Pause — a real, common first-run TV-app bug being deliberately
+avoided is landing on a screen with *nothing* focused, forcing the
+first D-pad press to do something invisible/undefined.
+
+Caught and fixed a real overflow bug during development: the large
+fixed sizes (320px artwork, 96px icon buttons) overflowed the default
+test viewport's vertical space by 91px — `flutter test`'s own render
+assertion caught it immediately, before this ever reached a device.
+Fixed with the same `SingleChildScrollView` guard `LandscapeLayout`/
+`TopControlsLayout` already use for exactly this "fixed-size content
+might not fit every window size" reason, rather than inventing a new
+pattern.
+
+3 new dedicated tests do not just check that the layout renders —
+they simulate real `LogicalKeyboardKey.arrowRight`/`arrowLeft` key
+events via `tester.sendKeyEvent` and assert the actual `FocusNode` that
+now holds focus moved to the correct button (`Focus.of(element)
+.hasFocus`), and one sends `LogicalKeyboardKey.enter` (the
+keyboard-test-harness equivalent of a D-pad's center/OK button) and
+asserts the real `onPlayPause` callback fired, not just that some
+visual highlight moved. This is what makes "real D-pad/keyboard
+navigation, not a mocked claim" true rather than assumed.
+
+Still genuine 0% for a from-scratch, always-on TV/leanback shell — this
+closes one selectable Now Playing layout among several (reached the
+same way every other layout is, via Settings → Appearance → Player
+layout), not a distinct app mode the whole UI automatically switches
+into on a TV device. Specifically still missing: no Android TV
+`<leanback_launcher>` intent filter or Fire TV-specific manifest
+entries (so Omnis doesn't appear in a TV launcher's app row at all
+today), no `banner`/leanback-required assets, no automatic TV-display
+detection that would switch to this layout on its own the way §48's
+"Multiple UI profiles" describes for a Bluetooth-triggered Car mode
+switch, and no TV-specific navigation for any screen *other than* Now
+Playing (Library/Settings/Playlist/Radio/Moods are all still the
+touch-first phone/desktop layouts — a real D-pad user could still get
+stuck trying to reach those, since Flutter's default focus traversal
+only helps within whatever's already on screen, it doesn't redesign
+those screens' layouts for 10-foot viewing or linear D-pad flow).
 
 **48. Accessibility** — Partial. A real, git-log-verified accessibility
 pass (commit `e101b34`): tooltips added to every previously-unlabeled
