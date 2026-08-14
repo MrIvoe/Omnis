@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_installer.dart';
+import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/plugins_page.dart';
@@ -87,6 +89,39 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// A minimal real bundled plugin — just enough for the health
+/// dashboard's "Reset" button to have a genuine `enable()`/`disable()`
+/// cycle to drive, distinguishable in [calls] from a plain no-op.
+class _RecordingPlugin extends MusicPlugin {
+  final List<String> calls = [];
+
+  @override
+  String get id => 'recording';
+  @override
+  String get name => 'Recording Plugin';
+  @override
+  String get description => 'Records lifecycle calls for testing';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'Test';
+
+  @override
+  Future<void> initialize() async => calls.add('initialize');
+  @override
+  Future<void> enable() async => calls.add('enable');
+  @override
+  Future<void> disable() async => calls.add('disable');
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -118,6 +153,97 @@ void main() {
     await tester.pump();
 
     expect(find.text('Check for updates'), findsNothing);
+  });
+
+  group('Plugin Health dashboard — per-record Reset (item 28)', () {
+    testWidgets('a health record shows a Reset button; tapping it resets '
+        "the named plugin (a real disable()+enable() cycle) and clears "
+        "that record", (tester) async {
+      final manager = PluginManager();
+      final plugin = _RecordingPlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+      expect(plugin.calls, ['initialize']);
+
+      // A real recorded failure, the same way a genuine sandboxed crash
+      // produces one — not a hand-built PluginHealthRecord.
+      await manager.sandbox.run(
+        pluginId: 'recording',
+        pluginName: 'Recording Plugin',
+        hook: 'onTrackStart',
+        operation: () => throw StateError('boom'),
+      );
+      expect(manager.sandbox.healthRecords, hasLength(1));
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: manager.sandbox),
+      ));
+      await tester.pump();
+
+      // The health dashboard sits below the catalog/installer/installed-
+      // plugins sections — past the default test viewport's ListView
+      // sliver cache extent, so its children (including "Reset") aren't
+      // mounted, and thus not findable, until actually scrolled into
+      // view. Same `dragUntilVisible` pattern `settings_page_test.dart`
+      // already established for the same underlying cause.
+      await tester.dragUntilVisible(
+        find.text('Reset'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+
+      expect(find.text('Reset'), findsOneWidget);
+
+      await tester.tap(find.text('Reset'));
+      await tester.pump();
+
+      expect(plugin.calls, ['initialize', 'disable', 'enable']);
+      expect(manager.sandbox.healthRecords, isEmpty);
+      await tester.dragUntilVisible(
+        find.text('No plugin failures. The Core is healthy.'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      expect(find.text('No plugin failures. The Core is healthy.'),
+          findsOneWidget);
+    });
+
+    testWidgets('resetting a plugin that has since been uninstalled shows '
+        'a clear message instead of crashing', (tester) async {
+      final manager = PluginManager();
+      final plugin = _RecordingPlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+
+      await manager.sandbox.run(
+        pluginId: 'recording',
+        pluginName: 'Recording Plugin',
+        hook: 'onTrackStart',
+        operation: () => throw StateError('boom'),
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: manager.sandbox),
+      ));
+      await tester.pump();
+
+      // Simulate the plugin having vanished between the health record
+      // being created and the user tapping Reset — the record still
+      // names 'recording', but the manager no longer has it registered.
+      await manager.uninstallPlugin(manager.byId('recording')!);
+      await tester.pump();
+
+      await tester.dragUntilVisible(
+        find.text('Reset'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+
+      await tester.tap(find.text('Reset'));
+      await tester.pump();
+
+      expect(find.textContaining('no longer installed'), findsOneWidget);
+    });
   });
 
   // The remaining tests all drive PluginManager.checkForUpdates()/

@@ -152,6 +152,14 @@ class PluginSandbox {
     _notify();
   }
 
+  /// Clear only [pluginId]'s health records — used after a plugin is
+  /// reset, so its dashboard entry doesn't keep showing failures from
+  /// before the reset once it's had a fresh start.
+  void clearHealthFor(String pluginId) {
+    _records.removeWhere((r) => r.pluginId == pluginId);
+    _notify();
+  }
+
   void _record(PluginHealthRecord rec) {
     _records.add(rec);
     // Keep the dashboard bounded.

@@ -382,6 +382,50 @@ void main() {
       expect(plugin.calls, ['initialize', 'disable', 'enable']);
     });
 
+    test('resetPlugin does a real disable()+enable() cycle, not '
+        "initialize() a second time — same contract as manually "
+        'disabling then re-enabling', () async {
+      final manager = PluginManager();
+      final plugin = _LifecyclePlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+
+      await manager.resetPlugin(manager.byId('lifecycle')!);
+
+      expect(plugin.calls, ['initialize', 'disable', 'enable']);
+      expect(manager.byId('lifecycle')!.enabled, isTrue);
+    });
+
+    test('resetPlugin clears that plugin\'s health records but leaves '
+        "other plugins' records alone", () async {
+      final manager = PluginManager();
+      final plugin = _LifecyclePlugin();
+      manager.register(plugin);
+      await manager.initializeAll();
+
+      // Manufacture a real recorded failure the way a genuine sandboxed
+      // crash would, rather than asserting against a hand-built record.
+      await manager.sandbox.run(
+        pluginId: 'lifecycle',
+        pluginName: 'Lifecycle',
+        hook: 'onTrackStart',
+        operation: () => throw StateError('boom'),
+      );
+      await manager.sandbox.run(
+        pluginId: 'other',
+        pluginName: 'Other',
+        hook: 'onTrackStart',
+        operation: () => throw StateError('boom'),
+      );
+      expect(manager.sandbox.healthRecords, hasLength(2));
+
+      await manager.resetPlugin(manager.byId('lifecycle')!);
+
+      final remaining = manager.sandbox.healthRecords;
+      expect(remaining, hasLength(1));
+      expect(remaining.single.pluginId, 'other');
+    });
+
     test('a disabled plugin receives no hooks', () async {
       final manager = PluginManager();
       final plugin = _LifecyclePlugin();

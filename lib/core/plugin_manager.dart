@@ -784,6 +784,22 @@ class PluginManager {
     return Future.value(null);
   }
 
+  /// Gives a plugin a fresh start after it's been misbehaving — item 28's
+  /// "no per-plugin retry/reset action" gap. A plain `disable()` +
+  /// `enable()` cycle (not a full re-`initialize()`, which would need
+  /// tearing down and rebuilding the `ManagedPlugin` entry itself): most
+  /// sandboxed failures are bad *runtime* state a well-behaved plugin's
+  /// own `enable()` already resets (`ScrobblePlugin` re-reads its
+  /// storage, `EqualizerPlugin` re-registers its gain contribution,
+  /// etc.), not corruption in the plugin object itself. Clears that
+  /// plugin's health records afterward so the dashboard reflects its
+  /// fresh state, not its pre-reset failure history.
+  Future<void> resetPlugin(ManagedPlugin plugin) async {
+    await disablePlugin(plugin);
+    await enablePlugin(plugin);
+    _sandbox.clearHealthFor(plugin.id);
+  }
+
   /// Disable a plugin (hot-swap: it stays loaded but stops receiving hooks).
   Future<void> disablePlugin(ManagedPlugin plugin) async {
     if (!plugin.enabled) return;

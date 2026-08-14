@@ -194,6 +194,28 @@ class _PluginsPageState extends State<PluginsPage> {
     }
   }
 
+  /// Item 28's "no per-plugin retry/reset action" — a `disable()`+
+  /// `enable()` cycle for whichever plugin a health record names, then
+  /// clears that plugin's health history so the dashboard reflects its
+  /// fresh state. Looks the plugin up by id rather than requiring the
+  /// caller to already hold a `ManagedPlugin` reference, since a health
+  /// record only carries the id/name, not the plugin object itself.
+  Future<void> _resetPlugin(String pluginId) async {
+    final plugin = widget.pluginManager.byId(pluginId);
+    if (plugin == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Can\'t reset — plugin "$pluginId" is no longer installed.'),
+      ));
+      return;
+    }
+    await widget.pluginManager.resetPlugin(plugin);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Reset ${plugin.name}.'),
+    ));
+  }
+
   Future<void> _updatePlugin(ManagedPlugin plugin) async {
     setState(() => _updatingPluginIds.add(plugin.id));
     try {
@@ -592,6 +614,10 @@ class _PluginsPageState extends State<PluginsPage> {
                     subtitle: Text(
                         '${rec.reason}\n${rec.message}\n${rec.timestamp.toLocal()}'),
                     isThreeLine: true,
+                    trailing: TextButton(
+                      onPressed: () => _resetPlugin(rec.pluginId),
+                      child: const Text('Reset'),
+                    ),
                   ),
                 )),
         ],
