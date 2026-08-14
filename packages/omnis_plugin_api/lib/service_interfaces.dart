@@ -54,6 +54,23 @@ abstract class IPlayHistoryProvider {
   int playCountFor(String trackId);
 }
 
+/// Queries a track's star rating (0-5, 0 meaning unrated) — real signal
+/// `RatingsPlugin` already collects but that, before this interface
+/// existed, nothing outside that plugin itself could read: another
+/// plugin has no way to reach a different plugin's concrete type, only
+/// a registered capability. Added so `SmartPlaylistPlugin`'s rule
+/// engine (§42) can evaluate a `rating:` condition — the same
+/// caller-supplies-the-lookup shape `library_search.dart`'s `rating:`
+/// search qualifier already established in the Omnis app itself,
+/// mirrored here for the plugin side of the same idea.
+abstract class IRatingsProvider {
+  /// [trackId]'s rating, or `0` if it's never been rated — matches
+  /// `RatingsPlugin.ratingOf`'s own convention exactly, so a caller
+  /// never needs to special-case "no provider registered" differently
+  /// from "registered, but this track has no rating."
+  int ratingOf(String trackId);
+}
+
 /// Builds a ready-to-play queue for a named query (a mood/preset label
 /// like `"Chill"` or `"Workout"`).
 ///
