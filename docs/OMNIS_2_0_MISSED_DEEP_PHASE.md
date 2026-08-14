@@ -451,13 +451,82 @@ in this environment — protocol-level correctness only, the same
 caveat already applied to OpenSubsonic/Jellyfin (items 31/32/33) and
 Spotify/YouTube (item 36 below).
 
-**35. DLNA/UPnP** — Still genuine 0%, and gets no free coverage from
-any of the three server plugins above. It's a different *kind* of
-protocol entirely from all three — SSDP multicast discovery to find
-devices on the local network, then SOAP action calls to control them,
-not a request/response REST API at all — so it wouldn't fit this
-session's `http.Client`-based plugin pattern even in shape. Real,
-separate work, not attempted here.
+**35. DLNA/UPnP** — Partial (closed 2026-08-13, was genuine 0%). New
+`DlnaPlugin` (`Omnis-Plugins/lib/dlna_plugin.dart`) is a real client to
+a genuinely different *kind* of protocol from OpenSubsonic/Jellyfin/
+Plex — no JSON REST API, no username/token at all: discovery is SSDP
+(a UDP multicast `M-SEARCH`, UPnP's own HTTP-over-UDP variant), and
+browsing is a SOAP action (`ContentDirectory#Browse`) whose response
+embeds DIDL-Lite XML as double-encoded escaped text inside another XML
+document. This needed a new dependency (`xml: ^6.5.0`, added to
+`Omnis-Plugins/pubspec.yaml` — no XML parser existed anywhere in either
+repo before this) and a new I/O primitive not used anywhere else in
+either codebase (`dart:io`'s `RawDatagramSocket` for raw UDP).
+
+Discovery is behind an injected `SsdpTransport` interface (real impl:
+`UdpSsdpTransport`, a fake in tests) — the same "wrap the one
+non-mockable primitive so the surrounding logic stays fully unit-tested"
+approach every `http.Client`-injecting plugin in this repo already uses,
+just for a socket instead of an HTTP client. This is what let SSDP
+response parsing, device-description XML parsing, SOAP request/response
+handling, and DIDL-Lite parsing all get real test coverage without a
+real socket or a real DLNA server anywhere near the test environment.
+
+Caught and fixed a real bug during development, exactly the kind a
+plugin like this actually needs tests to catch: `friendlyName` and
+`URLBase` live under `<root><device>` in a real UPnP device-description
+document, not as direct children of `<root>` itself. An initial
+direct-children-only lookup (matching the pattern used elsewhere for
+fields that genuinely are direct children, like a `<service>`'s own
+`serviceType`/`controlURL`) silently missed both and fell back to using
+the server's bare IP address as its display name — a test asserting
+the real `friendlyName` value ("Test Media Server") came back caught it
+immediately; fixed by switching those two specific lookups to a
+recursive `findAllElements` search across the whole document.
+
+Each track's `streamUrl` (new `TrackType.dlna` on `plugin-api-v0.12.0`)
+is the real `<res>` URL a `Browse` response points at — playable with
+zero `AudioEngine` special-casing, the same as every other
+`streamUrl`-bearing type — and typically needs **no authentication at
+all** on a trusted local network, unlike every self-hosted provider
+this session added before it. UI is folder navigation (discover
+servers → open one → browse into/out of containers → play a track),
+not a search box like the other three server plugins: UPnP's optional
+`Search` action isn't consistently implemented across real servers, so
+`Browse`-based folder navigation is the only universally-correct
+choice, not a shortcut.
+
+16 tests, covering SSDP response parsing (including deduplicating
+multiple responses pointing at the same `LOCATION`, and honoring an
+explicit `URLBase` over the description document's own URL), a server
+with no `ContentDirectory` service being skipped rather than treated as
+usable, one server's description fetch failing without aborting
+discovery of the others, real DIDL-Lite parsing (folders, tracks,
+non-audio items filtered out, an item with no `<res>` skipped rather
+than producing a track with no stream URL, missing
+artist/album/genre/duration all degrading sensibly rather than
+crashing), and the exact real SOAP request shape (`SOAPAction` header,
+`ObjectID`/`BrowseFlag` body).
+
+**A real, documented, and specifically more severe limitation than
+every other Phase 5 plugin's "not exercised against a live server"
+caveat**: Android filters incoming WiFi multicast packets by default,
+and actually *receiving* SSDP responses on a real Android device
+normally requires the app to hold an acquired
+`WifiManager.MulticastLock` — obtained via a platform channel this
+plugin does not implement (would mean new Kotlin code in
+`android/app/src/main/kotlin/`, untouched anywhere else this session).
+Without it, `discoverServers()` may find nothing on some real Android
+hardware even with a real, reachable DLNA server present on the same
+network, despite the SSDP/SOAP/DIDL-Lite protocol logic itself being
+correct and fully tested. Deliberately did not add the
+`CHANGE_WIFI_MULTICAST_STATE` manifest permission alone without the
+corresponding lock-acquisition code — an unused permission declaration
+would read as "handled" when it isn't; the honest record of this gap is
+this doc entry and the plugin's own doc comment, not inert manifest
+scaffolding. Real, separate work: a platform channel (or an existing
+third-party Flutter plugin, if a suitable one exists) to acquire and
+hold the lock for the discovery window.
 
 **36. Spotify** — Solid, unverified. `SpotifyAuth`: full Authorization
 Code + PKCE OAuth (RFC 7636) against Spotify's Web API, platform-aware

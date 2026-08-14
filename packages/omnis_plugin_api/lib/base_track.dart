@@ -412,6 +412,17 @@ enum TrackType {
   /// or per-session credential exchange the way [subsonic]/[jellyfin]
   /// each are).
   plex,
+
+  /// A track served by a DLNA/UPnP media server on the local network —
+  /// see `DlnaPlugin` in `Omnis-Plugins`. Directly playable, like every
+  /// other self-hosted type here: [BaseTrack.streamUrl] is the real
+  /// `<res>` URL a `ContentDirectory` `Browse` response points at. Its
+  /// own distinct value — DLNA/UPnP is a fundamentally different *kind*
+  /// of protocol from [subsonic]/[jellyfin]/[plex] (SSDP discovery +
+  /// SOAP/XML, not a JSON REST API with a username/token), typically
+  /// with **no authentication at all** on a trusted local network,
+  /// unlike every other type here.
+  dlna,
 }
 
 /// ReleaseType represents the kind of release an album is.
