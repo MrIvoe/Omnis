@@ -605,11 +605,55 @@ Correctly platform-gated (Android/iOS/web only, no Windows/Linux
 WebView). Self-flagged ⚠️ in the README: neither exercised against a
 real OAuth client or device/web build.
 
-**38. Other providers** — Genuine 0% as music providers. Apple Music,
-SoundCloud, Bandcamp, Tidal, Qobuz, Emby: no files, no references,
-anywhere. `ArtistImagePlugin`'s Deezer call is explicitly documented as
-artist-photo lookup only ("not for playback or any Deezer-catalog
-feature") — not a Deezer music provider.
+**38. Other providers** — Partial (Emby closed 2026-08-14, was genuine
+0% as music providers). New `EmbyPlugin` (`Omnis-Plugins`) is a real
+REST client to a self-hosted Emby server — session-token auth via
+`/Users/AuthenticateByName`, `/Items` search returning genuinely
+playable `BaseTrack`s (new `TrackType.emby` on `plugin-api-v0.13.0`,
+real `streamUrl` at Emby's own `/Audio/{id}/stream`). Emby was
+tractable where the rest of this list isn't: it's free and
+self-hostable with no developer-registration gate at all, unlike every
+other name here.
+
+Deliberately **not** built by subclassing or sharing a client with
+`JellyfinPlugin`, even though the two protocols are close enough that
+`EmbyPlugin`'s request/response handling is close to line-for-line the
+same as `JellyfinPlugin`'s (Jellyfin began in 2018 as a fork of Emby,
+and Jellyfin's own client code still sends the `X-Emby-Authorization`
+header name for backward compatibility with servers/tooling built
+against Emby). Kept as two separate plugins for the same reason
+`PlexPlugin`/`DlnaPlugin` are each their own plugin despite occasional
+protocol-shape overlap elsewhere in this codebase: they're two
+different real servers a user could each independently be running, and
+collapsing them into one "smart" client would make the one thing this
+whole self-hosted-server cluster's plugin descriptions promise —
+"connect to *this specific* server" — murkier, not simpler, for a
+real-and-honest gain of maybe 200 lines of code saved. 17 new tests
+mirror `JellyfinPlugin`'s test suite's exact structure and coverage
+(auth, search parsing, per-entry defensive decoding, the bounded-401-
+retry test), generated from it via a scripted find/replace, then
+verified passing on their own rather than assumed correct by
+similarity.
+
+Apple Music, SoundCloud, Bandcamp, Tidal, Qobuz remain genuine 0% as
+music providers, and are judged **not tractable** from this
+environment specifically because each requires a closed and/or paid
+developer-account registration this environment cannot obtain (Apple
+Music: paid Apple Developer Program membership; SoundCloud: new API
+key registrations have been closed since 2023; Tidal/Qobuz: partner/
+business API access, not self-serve; Bandcamp: no official public API
+of any kind, unofficial-only) — a real, durable blocker, not a
+scheduling choice, so this item stays partial rather than fully closed
+regardless of how many future sessions revisit it, unless one of those
+providers' access policies changes. `ArtistImagePlugin`'s Deezer call
+remains explicitly documented as artist-photo lookup only ("not for
+playback or any Deezer-catalog feature") — not a Deezer music
+provider, and unaffected by this increment.
+
+**Not exercised against a real Emby server** — protocol-level
+correctness only (mocked HTTP client), the same caveat already applied
+to every other self-hosted-server plugin this session
+(OpenSubsonic/Jellyfin/Plex/DLNA).
 
 ### Phase 6 — Discovery
 
