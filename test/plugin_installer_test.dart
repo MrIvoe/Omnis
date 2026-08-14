@@ -525,4 +525,108 @@ hooks:
       expect(manifest, isNull);
     });
   });
+
+  group('fetchCatalog (item 30)', () {
+    test('hits catalog.json at the Omnis-Plugins repo root, not the '
+        'manifest/zip endpoints', () async {
+      Uri? capturedUri;
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          capturedUri = request.url;
+          return http.Response(
+              jsonEncode([
+                {
+                  'folder': 'sample_logger',
+                  'name': 'Sample Logger',
+                  'description': 'Logs track starts.',
+                },
+              ]),
+              200);
+        }),
+      );
+
+      final catalog = await installer.fetchCatalog();
+
+      expect(capturedUri.toString(),
+          'https://raw.githubusercontent.com/MrIvoe/Omnis-Plugins/main/'
+          'catalog.json');
+      expect(catalog, hasLength(1));
+      expect(catalog!.single.folder, 'sample_logger');
+      expect(catalog.single.name, 'Sample Logger');
+      expect(catalog.single.description, 'Logs track starts.');
+      expect(catalog.single.installUrl,
+          'https://github.com/MrIvoe/Omnis-Plugins/tree/main/sample_logger');
+    });
+
+    test('description defaults to empty when the JSON omits it', () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response(
+            jsonEncode([
+              {'folder': 'x', 'name': 'X'},
+            ]),
+            200)),
+      );
+
+      final catalog = await installer.fetchCatalog();
+
+      expect(catalog!.single.description, '');
+    });
+
+    test('one malformed entry is skipped, not treated as a whole-fetch '
+        'failure', () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response(
+            jsonEncode([
+              {'folder': 'good', 'name': 'Good'},
+              {'name': 'Missing folder'}, // malformed — no 'folder' key
+              'not even a map',
+            ]),
+            200)),
+      );
+
+      final catalog = await installer.fetchCatalog();
+
+      expect(catalog, hasLength(1));
+      expect(catalog!.single.folder, 'good');
+    });
+
+    test('returns null on a non-200 response instead of throwing',
+        () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response('', 404)),
+      );
+
+      expect(await installer.fetchCatalog(), isNull);
+    });
+
+    test('returns null when the response body is not a JSON list',
+        () async {
+      final installer = PluginInstaller(
+        client: MockClient(
+            (request) async => http.Response(jsonEncode({'not': 'a list'}), 200)),
+      );
+
+      expect(await installer.fetchCatalog(), isNull);
+    });
+
+    test('returns null when the response body is not valid JSON at all',
+        () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response('not json', 200)),
+      );
+
+      expect(await installer.fetchCatalog(), isNull);
+    });
+
+    test('returns null, never throws, when the http call itself throws',
+        () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          throw Exception('network unreachable');
+        }),
+      );
+
+      expect(await installer.fetchCatalog(), isNull);
+    });
+  });
 }

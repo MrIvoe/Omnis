@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:http/http.dart' as http;
+import 'package:omnis/core/plugin_catalog.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -337,6 +339,46 @@ class PluginInstaller {
           await _client.get(rawUri).timeout(_downloadTimeout);
       if (response.statusCode != 200) return null;
       return PluginManifest.parse(response.body, sourceUrl: sourceUrl);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches Omnis's own plugin catalog — item 30's "nothing queries
+  /// GitHub to discover plugins automatically" gap. `catalog.json`, one
+  /// small file published at the root of [omnisPluginsRepoUrl], is a
+  /// JSON array of `{"folder", "name", "description"}` objects, fetched
+  /// the same lightweight way [fetchRemoteManifest] reads a single
+  /// manifest file — no GitHub API call, no auth, no rate limit to
+  /// manage (`raw.githubusercontent.com` serves one file directly).
+  ///
+  /// Returns `null` (never throws) on any failure — network, a non-200
+  /// response, malformed JSON, or a JSON shape that isn't a list — so
+  /// the caller (`plugins_page.dart`) can fall back to
+  /// [officialPluginCatalog], the same "never leave the catalog card
+  /// simply empty" contract every other network-backed feature in this
+  /// app already follows. A malformed *individual* entry is skipped,
+  /// not treated as a whole-fetch failure — the same per-entry
+  /// defensive decoding every JSON-backed store/plugin in this app uses.
+  Future<List<CatalogPluginEntry>?> fetchCatalog() async {
+    try {
+      final response = await _client
+          .get(Uri.parse(
+              'https://raw.githubusercontent.com/MrIvoe/Omnis-Plugins/main/catalog.json'))
+          .timeout(_downloadTimeout);
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) return null;
+      final entries = <CatalogPluginEntry>[];
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        try {
+          entries.add(CatalogPluginEntry.fromJson(Map<String, dynamic>.from(item)));
+        } catch (_) {
+          continue;
+        }
+      }
+      return entries;
     } catch (_) {
       return null;
     }

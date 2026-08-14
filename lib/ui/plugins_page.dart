@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:omnis/core/plugin_catalog.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/plugin_manifest.dart';
@@ -8,43 +9,8 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 
-/// The URL of Omnis's own plugin catalog repository — where downloadable
-/// (non-bundled) plugins now live, split out of this repo so they can be
-/// versioned and published independently of the app itself.
-const omnisPluginsRepoUrl = 'https://github.com/MrIvoe/Omnis-Plugins';
-
-/// One plugin published in [omnisPluginsRepoUrl], installable in a single
-/// tap via [PluginInstaller.installFromUrl]'s `tree/branch/subfolder`
-/// support — no URL to find or paste.
-class CatalogPluginEntry {
-  final String folder;
-  final String name;
-  final String description;
-  const CatalogPluginEntry(
-      {required this.folder, required this.name, required this.description});
-
-  /// A `tree/main/<folder>` link into [omnisPluginsRepoUrl], which
-  /// [PluginInstaller] resolves to "download the whole repo zip, but only
-  /// extract and validate `<folder>`" — see its doc comment.
-  String get installUrl => '$omnisPluginsRepoUrl/tree/main/$folder';
-}
-
-/// Plugins published on the `main` branch of [omnisPluginsRepoUrl] today.
-///
-/// **Add an entry here whenever a new plugin is pushed to that repo** —
-/// this list is the app's only way of knowing the catalog exists; nothing
-/// queries GitHub to discover plugins automatically (that would need the
-/// GitHub API and a rate-limit story this pass doesn't attempt). Before
-/// cutting a release build, confirm this still matches what's actually on
-/// `main` — see "Plugin catalog" in docs/BUILDING.md.
-const List<CatalogPluginEntry> officialPluginCatalog = [
-  CatalogPluginEntry(
-    folder: 'sample_logger',
-    name: 'Sample Logger',
-    description: 'Minimal example plugin — logs track starts and library '
-        'scans. Good starting point for writing your own.',
-  ),
-];
+export 'package:omnis/core/plugin_catalog.dart'
+    show CatalogPluginEntry, officialPluginCatalog, omnisPluginsRepoUrl;
 
 /// Plugins screen.
 ///
@@ -87,6 +53,13 @@ class _PluginsPageState extends State<PluginsPage> {
   bool _checkingUpdates = false;
   final Set<String> _updatingPluginIds = {};
 
+  /// Starts as the hardcoded fallback so the catalog card always shows
+  /// *something* immediately, then replaced with the real, live
+  /// `catalog.json` fetch's result once it resolves — see
+  /// [_loadCatalog]. Never left empty: a failed fetch just means this
+  /// stays the fallback.
+  List<CatalogPluginEntry> _catalog = officialPluginCatalog;
+
   @override
   void initState() {
     super.initState();
@@ -100,6 +73,20 @@ class _PluginsPageState extends State<PluginsPage> {
       if (mounted) setState(() => _health = records);
     };
     widget.sandbox.addHealthListener(_healthListener);
+    _loadCatalog();
+  }
+
+  /// Item 30's "nothing queries GitHub to discover plugins
+  /// automatically" gap — fetches the real, published `catalog.json`
+  /// via `PluginInstaller.fetchCatalog()`. Silently keeps the hardcoded
+  /// [officialPluginCatalog] fallback already showing on any failure
+  /// (offline, GitHub unreachable) rather than surfacing an error for
+  /// what is, from the user's perspective, just a browsable list that
+  /// still works — never blocks or delays the rest of this page.
+  Future<void> _loadCatalog() async {
+    final fetched = await widget.pluginManager.installer.fetchCatalog();
+    if (!mounted || fetched == null || fetched.isEmpty) return;
+    setState(() => _catalog = fetched);
   }
 
   @override
@@ -111,7 +98,7 @@ class _PluginsPageState extends State<PluginsPage> {
   }
 
   /// Fills the URL field from [entry] and installs immediately — the
-  /// one-tap path for anything in [officialPluginCatalog], as opposed to
+  /// one-tap path for anything in [_catalog], as opposed to
   /// the user having to already know and paste a plugin's URL.
   Future<void> _installFromCatalog(CatalogPluginEntry entry) async {
     _urlController.text = entry.installUrl;
@@ -390,7 +377,7 @@ class _PluginsPageState extends State<PluginsPage> {
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
-                  for (final entry in officialPluginCatalog)
+                  for (final entry in _catalog)
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.extension_outlined),

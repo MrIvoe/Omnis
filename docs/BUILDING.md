@@ -157,16 +157,20 @@ so they version and publish independently of the app itself. Bundled
 plugins (`lib/plugins/`) are unaffected — this only concerns the
 `plugins_page.dart` install flow.
 
-`officialPluginCatalog` in `lib/ui/plugins_page.dart` is a hardcoded list
-of what's installable from that repo in one tap, since nothing here
-queries GitHub to discover new plugins automatically. **Before cutting a
-release build** (`flutter build apk --release` / `appbundle --release`),
-confirm that list still matches what's actually on the `main` branch of
-Omnis-Plugins — add a `CatalogPluginEntry` for anything pushed there since
-the last release, and remove/update any entry that was renamed or
-removed. A stale catalog entry fails loudly at install time (missing
-`omnis_plugin.yaml` → an error shown to the user), not silently, but it's
-still worth catching before shipping rather than after.
+The Plugins page fetches the real, live `catalog.json` published at the
+root of Omnis-Plugins (`PluginInstaller.fetchCatalog()`, added
+2026-08-14) — no GitHub API call, no auth, just `raw.githubusercontent.com`
+serving one small JSON file, the same lightweight approach update-checking
+already used for a single manifest. **Publish a new `catalog.json` to
+Omnis-Plugins whenever a plugin installable this way is added, renamed, or
+removed** — this repo has nothing to edit for that anymore.
+`officialPluginCatalog` in `lib/core/plugin_catalog.dart` is now only the
+offline/fetch-failure fallback (shown if the catalog fetch fails — no
+network, GitHub unreachable, a malformed response), not the source of
+truth; keep it in sync with `catalog.json` as a last-resort safety net,
+not a second list to maintain independently. A stale/removed catalog
+entry still fails loudly at install time (missing `omnis_plugin.yaml` →
+an error shown to the user), not silently.
 
 ## The Essentia companion service
 

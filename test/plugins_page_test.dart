@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_installer.dart';
@@ -332,6 +333,52 @@ void main() {
           findsOneWidget);
       expect(find.textContaining('Update available'), findsNothing);
       expect(manager.byId('sample_plugin')!.version, '2.0.0');
+    });
+  });
+
+  group('Plugin catalog fetch (item 30)', () {
+    testWidgets('shows the real, fetched catalog.json entries instead of '
+        'the hardcoded fallback', (tester) async {
+      await tester.runAsync(() async {
+        final client = MockClient((request) async {
+          if (request.url.path.endsWith('catalog.json')) {
+            return http.Response(
+                jsonEncode([
+                  {
+                    'folder': 'radio',
+                    'name': 'Radio Browser',
+                    'description': 'Live internet radio.',
+                  },
+                ]),
+                200);
+          }
+          return http.Response('', 404);
+        });
+        final manager = PluginManager(installer: PluginInstaller(client: client));
+
+        await tester.pumpWidget(MaterialApp(
+          home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+        ));
+        await _settle(tester);
+
+        expect(find.text('Radio Browser'), findsOneWidget);
+        expect(find.text('Sample Logger'), findsNothing);
+      });
+    });
+
+    testWidgets('falls back to the hardcoded catalog when the fetch '
+        'fails, rather than showing nothing', (tester) async {
+      await tester.runAsync(() async {
+        final client = MockClient((request) async => http.Response('', 500));
+        final manager = PluginManager(installer: PluginInstaller(client: client));
+
+        await tester.pumpWidget(MaterialApp(
+          home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+        ));
+        await _settle(tester);
+
+        expect(find.text('Sample Logger'), findsOneWidget);
+      });
     });
   });
 }
