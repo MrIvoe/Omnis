@@ -178,12 +178,69 @@ per-device profiles, but not per-artist/per-album. No selectable band
 count, no parametric mode, no EQ at all on desktop beyond the 3-band
 trim (no `AVAudioUnitEQ`, no WASAPI APO).
 
-**21. Output devices** — 0% for device *selection*. `BluetoothPlaybackPlugin`
-detects a Bluetooth device connecting/disconnecting (used for quick-play
-prompts and EQ-profile keying only). `AudioEngine.setOutputDeviceToDefault()`
-is an explicit documented no-op. No device list UI, no USB DAC support,
-no per-device volume/DSP beyond the EQ keying above, no
-HDMI/Cast/DLNA/AirPlay output.
+**21. Output devices** — Partial (closed 2026-08-14, was 0% for device
+*selection*). Real Settings → Playback & Audio → "Output devices" page
+(`lib/ui/settings/output_devices_page.dart`) plus its controller
+(`lib/core/output_device_controller.dart`).
+
+The pleasant surprise here: this needed **zero new native
+platform-channel code**, unlike the home-screen-widget increment built
+immediately before it in the same session. `audio_session` — already a
+transitive dependency via `just_audio`, doing nothing more exotic than
+what `BluetoothPlaybackPlugin` already used it for — turns out to
+expose real device *listing* cross-platform
+(`AudioSession.getDevices()`, `devicesChangedEventStream`) and real
+device *selection* on Android via `AndroidAudioManager
+.setCommunicationDevice()` (API 31+). That method's name is misleading:
+despite "communication," it's documented as the modern,
+general-purpose replacement for the older per-`AudioTrack`
+`setPreferredDevice()`, and it's what this app's actual playback
+session routes through — not a voice-call-only API as the name might
+suggest.
+
+Design: `OutputDeviceSource` is a new seam interface (same
+"small, purpose-specific interface + a fake for tests" pattern already
+established by `PlaybackEngine`/`HomeWidgetTrackSource` elsewhere in
+this app) with a real `AudioSessionOutputDeviceSource` implementation
+and a `FakeOutputDeviceSource` test double
+(`test/fakes/fake_output_device_source.dart`). `classifyOutputDeviceType`
+maps `audio_session`'s dozen-plus raw `AudioDeviceType` values down to
+six UI-facing kinds (speaker/wired/bluetooth/usb/hdmi/other) — the one
+piece of this feature with no platform channel involved at all, and so
+the one piece with real, direct, non-faked unit tests.
+
+**Honest about the selection API's real limits, not just "not yet
+built"**: `selectDevice`/`useSystemDefault` explicitly check
+`Platform.isAndroid` and fail soft with a specific, surfaced-in-the-UI
+reason on anything else (iOS/desktop) or on pre-31 Android (where
+`setCommunicationDevice` throws rather than returning false) — the
+`supportsDeviceSelection` getter also greys out every radio tile
+up-front so a user isn't invited to tap something that can't work. The
+device *list* itself keeps working on every platform regardless — only
+the "pick one" half is Android-31+-only, because that really is the
+current state of Android's public API surface for this (there is no
+general "force output to device X" call below API 31, and no
+equivalent at all on iOS/desktop through this dependency).
+
+A real, if minor, finding while writing tests (not an app bug): the
+"System default" radio tile's `value` is `null`, matching the page's
+initial `groupValue` of `null` — so a test that taps "System default"
+as its very first action sees no `onChanged` call at all, because
+Flutter's `Radio` correctly treats tapping an already-selected option
+as a no-op. Fixed by having the test select a different device first,
+then tap back to "System default" as a genuine state change.
+
+Still missing: no USB DAC sample-rate/bit-depth negotiation UI (item
+22's remaining DSP-chain gap is closely related but distinct — this
+increment is about *which device*, not *what bit depth to that
+device*), no per-device volume (only the pre-existing per-device-name
+EQ keying from item 20), and no HDMI/Cast/DLNA/AirPlay output beyond
+whatever `audio_session`'s device list already reports as connected —
+none of those are alternate *routes* this app can initiate, only
+things the OS might already be doing. **Not exercised against real
+hardware** — same "protocol/API-level correctness only" caveat this
+session has applied consistently to `BluetoothPlaybackPlugin` and
+every server-connectivity plugin (OpenSubsonic/Jellyfin/Plex/DLNA).
 
 **22. Bit-perfect mode** — Partial, informational half only (2026-08-13).
 `BaseTrack` now carries real `codec`/`sampleRateHz`/`bitDepth`/

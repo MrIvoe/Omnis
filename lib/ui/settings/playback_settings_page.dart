@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/ui/settings/output_devices_page.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
 /// Playback & Audio: everything that shapes how a track actually sounds
@@ -40,6 +41,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       'playback_speed',
       'pitch',
       'skip_silence',
+      'output_devices',
     ])
       field: GlobalKey<SettingsHighlightState>(),
   };
@@ -199,6 +201,20 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                 widget.engine.setSkipSilenceEnabled(v);
                 _settings.skipSilenceEnabled = v;
               },
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['output_devices'],
+            child: ListTile(
+              leading: const Icon(Icons.speaker_group),
+              title: const Text('Output devices'),
+              subtitle: const Text(
+                  'See connected speakers/headsets/USB DACs and (on '
+                  'Android) choose one to route playback to.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const OutputDevicesPage(),
+              )),
             ),
           ),
         ],

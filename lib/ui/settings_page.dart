@@ -269,6 +269,13 @@ class _SettingsPageState extends State<SettingsPage> {
             navigate: (c) =>
                 _openPlayback(c, highlightField: 'skip_silence')),
         _SearchableSetting(
+            title: 'Output devices',
+            category: 'Playback & Audio',
+            categoryIcon: Icons.tune,
+            highlightField: 'output_devices',
+            navigate: (c) =>
+                _openPlayback(c, highlightField: 'output_devices')),
+        _SearchableSetting(
             title: 'Button layout',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
