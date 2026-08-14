@@ -398,7 +398,11 @@ class _MoodsPageState extends State<_MoodsPage> {
               crossAxisCount: 2,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 1.1,
+              // Was 1.1 — too tight once a two-word preset name
+              // ("Forgotten Favorites") wraps to a second title line;
+              // taller cards give every tile real breathing room
+              // instead of the subtitle text touching the bottom edge.
+              childAspectRatio: 0.95,
             ),
             itemCount: moods.length,
             itemBuilder: (context, index) {
@@ -409,17 +413,28 @@ class _MoodsPageState extends State<_MoodsPage> {
                   onTap: _loading ? null : () => _playMood(mood),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.mood,
-                            size: 36, color: theme.colorScheme.primary),
-                        const SizedBox(height: 12),
-                        Text(mood, style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 4),
-                        Text('Tap to build and play a queue',
-                            style: theme.textTheme.bodySmall),
-                      ],
+                    // A two-word mood/preset name (e.g. "Forgotten
+                    // Favorites") wraps to a second line, which this
+                    // fixed-aspect-ratio grid tile's height doesn't
+                    // budget for — the single-word names this grid was
+                    // originally built for (Chill/Focus/Workout/Sleep)
+                    // never exposed that. Same `SingleChildScrollView`
+                    // guard used elsewhere in this app for exactly
+                    // "fixed-size content might not always fit."
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.mood,
+                              size: 36, color: theme.colorScheme.primary),
+                          const SizedBox(height: 12),
+                          Text(mood, style: theme.textTheme.titleMedium),
+                          const SizedBox(height: 4),
+                          Text('Tap to build and play a queue',
+                              style: theme.textTheme.bodySmall),
+                        ],
+                      ),
                     ),
                   ),
                 ),
