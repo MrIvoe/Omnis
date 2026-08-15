@@ -110,9 +110,13 @@
   single track, starting at `0` (no single "current" rating makes
   sense across a mixed-rating selection), and applies whichever star is
   tapped to every selected track via `RatingsPlugin.setRating`.
-- **§13 — Playlist folders/groups, collaborative playlists, XSPF/PLS
-  import/export** don't exist (M3U/M3U8 does, plus a full
-  `SmartPlaylistPlugin`).
+- **§13 — Playlist folders/groups** closed 2026-08-15: a new, main-
+  repo-only `PlaylistFolderStore` (deliberately not a field on the
+  shared `Playlist` model, to avoid a cross-repo version bump for a
+  purely local UI concern) backs create/rename/delete-folder and
+  "Move to folder…" actions on `PlaylistPage`. Collaborative playlists
+  and XSPF/PLS import/export still don't exist (M3U/M3U8 does, plus a
+  full `SmartPlaylistPlugin`).
 - **§11 — Metadata provider framework.** Only `MetadataEnrichmentPlugin`
   (MusicBrainz + optional Last.fm) exists — not the `IMetadataProvider`-
   pluggable-provider framework the spec describes (Discogs/Deezer/Genius

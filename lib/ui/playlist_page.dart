@@ -11,6 +11,7 @@ import 'package:omnis/core/base_track.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/plugin_api/play_record.dart';
+import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -50,6 +51,7 @@ class PlaylistPage extends StatefulWidget {
 
 class _PlaylistPageState extends State<PlaylistPage> {
   List<Playlist> _playlists = [];
+  PlaylistFolderData _folderData = PlaylistFolderData.empty;
   List<BaseTrack> _libraryTracks = [];
   bool _loading = true;
 
@@ -111,16 +113,20 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _load() async {
     final playlists = await PlaylistStore.instance.load();
+    final folderData = await PlaylistFolderStore.instance.load();
     final tracks = await LibraryRepository.instance.load();
     if (!mounted) return;
     setState(() {
       _playlists = playlists;
+      _folderData = folderData;
       _libraryTracks = tracks;
       _loading = false;
     });
   }
 
   Future<void> _savePlaylists() => PlaylistStore.instance.save(_playlists);
+
+  Future<void> _saveFolders() => PlaylistFolderStore.instance.save(_folderData);
 
   void _snack(String message) {
     if (!mounted) return;
@@ -327,11 +333,209 @@ class _PlaylistPageState extends State<PlaylistPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    final hadFolderAssignment = _folderData.assignments.containsKey(playlist.id);
     setState(() {
       _playlists = _playlists.where((p) => p.id != playlist.id).toList();
       if (_openPlaylist?.id == playlist.id) _openPlaylist = null;
+      if (hadFolderAssignment) {
+        final assignments = Map<String, String>.from(_folderData.assignments)
+          ..remove(playlist.id);
+        _folderData =
+            PlaylistFolderData(folders: _folderData.folders, assignments: assignments);
+      }
     });
     await _savePlaylists();
+    if (hadFolderAssignment) await _saveFolders();
+  }
+
+  Future<PlaylistFolder?> _promptNewFolder() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Folder name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return PlaylistFolder(
+        id: 'folder_${DateTime.now().microsecondsSinceEpoch}', name: trimmed);
+  }
+
+  Future<void> _createFolder() async {
+    final folder = await _promptNewFolder();
+    if (folder == null || !mounted) return;
+    setState(() {
+      _folderData = PlaylistFolderData(
+        folders: [..._folderData.folders, folder],
+        assignments: _folderData.assignments,
+      );
+    });
+    await _saveFolders();
+  }
+
+  Future<void> _renameFolder(PlaylistFolder folder) async {
+    final controller = TextEditingController(text: folder.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Folder name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    setState(() {
+      _folderData = PlaylistFolderData(
+        folders: _folderData.folders
+            .map((f) => f.id == folder.id ? f.copyWith(name: trimmed) : f)
+            .toList(),
+        assignments: _folderData.assignments,
+      );
+    });
+    await _saveFolders();
+  }
+
+  Future<void> _deleteFolder(PlaylistFolder folder) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete folder?'),
+        content: Text('"${folder.name}" will be deleted. Playlists inside '
+            'it are not deleted — they move back to the unsorted list.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      final assignments = Map<String, String>.from(_folderData.assignments)
+        ..removeWhere((_, folderId) => folderId == folder.id);
+      _folderData = PlaylistFolderData(
+        folders: _folderData.folders.where((f) => f.id != folder.id).toList(),
+        assignments: assignments,
+      );
+    });
+    await _saveFolders();
+  }
+
+  /// Lets the user assign [playlist] to an existing folder, "No folder",
+  /// or a brand new one created on the spot — a `SimpleDialog` list
+  /// rather than a full picker page, matching this app's existing
+  /// lightweight-dialog convention for playlist create/rename.
+  Future<void> _moveToFolder(Playlist playlist) async {
+    final currentFolderId = _folderData.assignments[playlist.id];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Move to folder'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, ''),
+            child: Row(
+              children: [
+                Icon(
+                  currentFolderId == null ? Icons.check : null,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                const Text('No folder'),
+              ],
+            ),
+          ),
+          for (final folder in _folderData.folders)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, folder.id),
+              child: Row(
+                children: [
+                  Icon(
+                    currentFolderId == folder.id ? Icons.check : null,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(folder.name, overflow: TextOverflow.ellipsis)),
+                ],
+              ),
+            ),
+          const Divider(height: 1),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, '__new__'),
+            child: const Row(
+              children: [
+                Icon(Icons.add, size: 18),
+                SizedBox(width: 8),
+                Text('New folder…'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    PlaylistFolder? newFolder;
+    if (selected == '__new__') {
+      newFolder = await _promptNewFolder();
+      if (newFolder == null || !mounted) return;
+    }
+
+    setState(() {
+      final assignments = Map<String, String>.from(_folderData.assignments);
+      final folders = newFolder == null
+          ? _folderData.folders
+          : [..._folderData.folders, newFolder];
+      if (newFolder != null) {
+        assignments[playlist.id] = newFolder.id;
+      } else if (selected.isEmpty) {
+        assignments.remove(playlist.id);
+      } else {
+        assignments[playlist.id] = selected;
+      }
+      _folderData = PlaylistFolderData(folders: folders, assignments: assignments);
+    });
+    await _saveFolders();
   }
 
   Future<void> _removeFromPlaylist(Playlist playlist, String trackId) async {
@@ -403,6 +607,11 @@ class _PlaylistPageState extends State<PlaylistPage> {
             onPressed: _importM3U,
           ),
           IconButton(
+            icon: const Icon(Icons.create_new_folder_outlined),
+            tooltip: 'New folder',
+            onPressed: _createFolder,
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'New playlist',
             onPressed: _createPlaylist,
@@ -451,7 +660,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
           const SizedBox(height: 16),
           Text('Your playlists', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          if (_playlists.isEmpty)
+          if (_playlists.isEmpty && _folderData.folders.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -472,29 +681,93 @@ class _PlaylistPageState extends State<PlaylistPage> {
               ),
             )
           else
-            ..._playlists.map((playlist) => Card(
-                  child: ListTile(
-                    leading:
-                        const CircleAvatar(child: Icon(Icons.queue_music)),
-                    title: Text(playlist.name),
-                    subtitle: Text('${playlist.trackIds.length} tracks'),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (value) {
-                        if (value == 'rename') _renamePlaylist(playlist);
-                        if (value == 'export') _exportPlaylist(playlist);
-                        if (value == 'delete') _deletePlaylist(playlist);
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        PopupMenuItem(
-                            value: 'export', child: Text('Export as M3U')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      ],
-                    ),
-                    onTap: () => setState(() => _openPlaylist = playlist),
-                  ),
-                )),
+            ..._buildGroupedPlaylists(theme),
         ],
+      ),
+    );
+  }
+
+  /// Playlists grouped under whichever folder each is assigned to
+  /// (`_folderData.assignments`), in [_folderData.folders]' own order,
+  /// followed by an "Unsorted" section for the rest — only shown when at
+  /// least one real folder exists, so a user who's never created one
+  /// sees the exact same flat list this page always rendered, zero
+  /// visual change from before folders existed at all.
+  List<Widget> _buildGroupedPlaylists(ThemeData theme) {
+    if (_folderData.folders.isEmpty) {
+      return _playlists.map(_playlistTile).toList();
+    }
+    final widgets = <Widget>[];
+    for (final folder in _folderData.folders) {
+      final inFolder = _playlists
+          .where((p) => _folderData.assignments[p.id] == folder.id)
+          .toList();
+      widgets.add(_folderHeader(theme, folder, inFolder.length));
+      widgets.addAll(inFolder.map(_playlistTile));
+    }
+    final unsorted = _playlists
+        .where((p) => !_folderData.assignments.containsKey(p.id))
+        .toList();
+    if (unsorted.isNotEmpty) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 4),
+        child: Text('Unsorted', style: theme.textTheme.titleSmall),
+      ));
+      widgets.addAll(unsorted.map(_playlistTile));
+    }
+    return widgets;
+  }
+
+  Widget _folderHeader(ThemeData theme, PlaylistFolder folder, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Row(
+        children: [
+          Icon(Icons.folder_outlined,
+              size: 18, color: theme.colorScheme.outline),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('${folder.name} ($count)',
+                style: theme.textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Folder options',
+            onSelected: (value) {
+              if (value == 'rename') _renameFolder(folder);
+              if (value == 'delete') _deleteFolder(folder);
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename folder')),
+              PopupMenuItem(value: 'delete', child: Text('Delete folder')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _playlistTile(Playlist playlist) {
+    return Card(
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.queue_music)),
+        title: Text(playlist.name),
+        subtitle: Text('${playlist.trackIds.length} tracks'),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'rename') _renamePlaylist(playlist);
+            if (value == 'move') _moveToFolder(playlist);
+            if (value == 'export') _exportPlaylist(playlist);
+            if (value == 'delete') _deletePlaylist(playlist);
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'rename', child: Text('Rename')),
+            PopupMenuItem(value: 'move', child: Text('Move to folder…')),
+            PopupMenuItem(value: 'export', child: Text('Export as M3U')),
+            PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+        onTap: () => setState(() => _openPlaylist = playlist),
       ),
     );
   }
@@ -518,11 +791,13 @@ class _PlaylistPageState extends State<PlaylistPage> {
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'rename') _renamePlaylist(playlist);
+              if (value == 'move') _moveToFolder(playlist);
               if (value == 'export') _exportPlaylist(playlist);
               if (value == 'delete') _deletePlaylist(playlist);
             },
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'move', child: Text('Move to folder…')),
               PopupMenuItem(
                   value: 'export', child: Text('Export as M3U')),
               PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
