@@ -1,617 +1,759 @@
- to being # Omnis 2.0 — Master Product Specification
+# Omnis — Ultimate All-in-One Music Platform
 
-> **Status:** Canonical reference for the Omnis 2.0 direction.
-> This document is the product vision and requirements contract. It is
-> deliberately aspirational in places — not everything here is built yet.
-> The [Architecture](ARCHITECTURE.md) document describes what exists
-> today; this document describes where Omnis is going and why.
+## Master Rebuild Specification v2.0
+
+> **Status:** Canonical reference for the Omnis direction. Supersedes
+> the original `OMNIS_2_0_SPEC.md` (retired 2026-08-15) — this is the
+> **authoritative master build specification going forward**, not a
+> wishlist appended to the old one. It merges:
 >
-> **The Omnis 2.0 build always uses these three references together:**
+> 1. The original Omnis/Omnis-Plugins architecture (Core, `plugin_api`,
+>    `ServiceRegistry`, `EventBus`, `PluginContext`, plugin storage,
+>    sandboxing, runtime plugin loading) — **preserved, not discarded**.
+> 2. The previous "ultimate all-in-one music player" ambitions.
+> 3. A full competitive gap analysis against MusicBee (see
+>    [OMNIS_2_0_MUSICBEE_COMPARISON.md](OMNIS_2_0_MUSICBEE_COMPARISON.md)
+>    for that analysis in full — this spec is built from it).
+> 4. What's already implemented in Omnis today.
+> 5. The plugin-first architecture and `ServiceRegistry`/`EventBus` work.
+> 6. The cross-platform Flutter requirement (Android/Windows/Linux/macOS/iOS).
+> 7. The no-API-key / minimal-setup requirement.
+> 8. The customizable UI/theme/layout system.
+> 9. Advanced audio/DSP/audiophile requirements.
+> 10. Future AI, discovery, DJ, automation, device, streaming, podcast,
+>     audiobook, radio and server ecosystem plans.
 >
-> 1. This document — [OMNIS_2_0_SPEC.md](OMNIS_2_0_SPEC.md), the product
->    specification (everything the Core must do).
-> 2. [OMNIS_2_0_UI_SPEC.md](OMNIS_2_0_UI_SPEC.md), the UI/UX Master
+> Deliberately aspirational in many places — not everything here is
+> built yet. **[OMNIS_2_0_FINISHED_TASK.md](OMNIS_2_0_FINISHED_TASK.md)
+> is the authoritative record of what's actually implemented and
+> verified**; this document describes where Omnis is going and why.
+>
+> **The Omnis build always uses these references together:**
+>
+> 1. This document — the product specification (everything the Core
+>    must do, and the shape of the plugin ecosystem around it).
+> 2. [OMNIS_2_0_UI_SPEC.md](OMNIS_2_0_UI_SPEC.md) — the UI/UX Master
 >    Design Specification (how the interface must look, feel, and be
 >    customized).
-> 3. [OMNIS_2_0_PLUGINS.md](OMNIS_2_0_PLUGINS.md), the Plugin
+> 3. [OMNIS_2_0_PLUGINS.md](OMNIS_2_0_PLUGINS.md) — the Plugin
 >    Architecture & Developer Guide (the plugin platform, marketplace,
 >    and plugin hub).
+> 4. [OMNIS_2_0_MUSICBEE_COMPARISON.md](OMNIS_2_0_MUSICBEE_COMPARISON.md)
+>    — the competitive gap analysis this spec was built from.
+> 5. [OMNIS_2_0_FINISHED_TASK.md](OMNIS_2_0_FINISHED_TASK.md) — the live
+>    build tracker: what's actually built, phase by phase, with dated
+>    evidence for every claim.
 >
-> Read all three before building any Omnis 2.0 feature.
-
-## 1. Product philosophy
-
-Omnis should be designed around these non-negotiable principles:
-
-### 1. Playback must always work
-
-If every plugin is disabled, Omnis should still be an excellent music player.
-
-Core must be able to:
-
-* Discover local music.
-* Read metadata.
-* Display artwork.
-* Build a queue.
-* Play audio.
-* Pause.
-* Resume.
-* Seek.
-* Skip.
-* Previous.
-* Shuffle.
-* Repeat.
-* Handle gapless playback.
-* Recover from corrupt/unplayable files.
-* Continue after a bad track.
-* Preserve queue state.
-* Restore playback state after restart.
-* Integrate with OS media controls.
-* Work without Internet.
-* Work without accounts.
-* Work without API keys.
-* Work without optional plugins.
-
-**Nothing optional should be capable of taking down playback.**
-
-The current architecture already explicitly attempts to make plugin
-failures non-fatal and skip unplayable files. Keep this philosophy, but
-make it much more comprehensive.
+> Read all before building any Omnis feature.
 
 ---
 
-# 2. What belongs in Core
+### Core objective
 
-The Core should be formalized into several immutable subsystems.
+Build **Omnis** as a complete, cross-platform music operating environment rather than simply another music player.
 
-## A. Playback Kernel
+Target:
 
-This is the most protected part of the application.
+- Android
+- Windows
+- Linux
+- macOS
+- iOS
 
-Core owns:
+The application must be capable of functioning as:
 
-* Audio decoding orchestration
-* Audio output
-* Queue state
-* Current track
-* Playback state
-* Position
-* Duration
-* Seeking
-* Play/pause/stop
-* Next/previous
-* Queue insertion/removal
-* Queue persistence
-* Gapless playback
-* Basic crossfade infrastructure
-* Repeat state
-* Shuffle infrastructure
-* Volume
-* Playback speed
-* Pitch
-* Skip silence
-* Error recovery
-* Playback interruption recovery
-* Audio focus
-* Headphone/Bluetooth disconnect behavior
-* OS media controls
-* Lock screen controls
-* Notification controls
-* Media session
-* External media keys
-* Resume after application restart
+- Music player
+- Music library manager
+- Tag editor
+- Metadata manager
+- File organizer
+- Audio analyzer
+- Audiophile player
+- Playlist manager
+- Streaming client
+- Internet radio
+- Podcast manager
+- Audiobook player
+- DJ system
+- Music discovery engine
+- Music statistics platform
+- Device synchronization system
+- Network music client/server
+- Remote-controlled player
+- Automation platform
+- Plugin platform
 
-The existing `AudioEngine` already provides a large amount of this
-functionality, including streams and transport controls exposed through
-`PluginContext`.
+while keeping the **core small, reliable and maintainable**.
 
-### New requirement: playback watchdog
+---
 
-Add a permanent internal watchdog.
+# 1. FUNDAMENTAL ARCHITECTURE
 
-It should detect:
+The most important rule:
 
-* Player stuck loading
-* Position stopped advancing
-* Decoder exceptions
-* Queue advancement failure
-* Audio session interruption
-* Output device disappearance
-* Native player exceptions
-* Track timeout
-* Invalid duration
-* Impossible position
-* Queue corruption
-* Repeated failures
+> **Core functionality required to play and manage local music belongs in Core. Optional functionality belongs in plugins.**
 
-Recovery should happen automatically.
+However, "plugin" does **not** mean every tiny feature needs to be separately installed.
+
+Omnis should ship with a **curated first-party plugin bundle**.
+
+The user should install Omnis and immediately have a complete experience.
+
+No:
+
+- API-key hunting
+- manual dependency installation
+- complicated configuration
+- downloading 50 plugins individually
+- editing configuration files
+
+---
+
+# 2. CORE
+
+The Core owns only functionality that other functionality fundamentally depends upon.
+
+## Core components
+
+```text
+lib/
+├── core/
+│   ├── audio/
+│   ├── database/
+│   ├── library/
+│   ├── queue/
+│   ├── playlists/
+│   ├── history/
+│   ├── metadata/
+│   ├── search/
+│   ├── services/
+│   ├── events/
+│   ├── plugins/
+│   ├── storage/
+│   ├── settings/
+│   ├── permissions/
+│   ├── networking/
+│   ├── diagnostics/
+│   └── platform/
+│
+├── plugin_api/
+│
+├── ui/
+│
+└── main.dart
+```
+
+---
+
+# 3. EXISTING ARCHITECTURE MUST BE PRESERVED
+
+The work already completed should **not be thrown away**.
+
+Keep and expand:
+
+### ServiceRegistry
+
+Capability-based lookup:
+
+```dart
+context.services.register<ILyricsProvider>(provider);
+```
+
+Consumers request capabilities:
+
+```dart
+services.get<ILyricsProvider>();
+```
+
+Never make application code depend directly upon concrete plugin classes.
+
+---
+
+### EventBus
+
+Typed application events:
+
+```text
+TrackStarted
+TrackChanged
+PlaybackStarted
+PlaybackPaused
+PlaybackStopped
+PlaybackCompleted
+QueueChanged
+LibraryChanged
+MetadataChanged
+ArtworkChanged
+RatingChanged
+FavoriteChanged
+PluginLoaded
+PluginUnloaded
+DeviceConnected
+DeviceDisconnected
+```
+
+This becomes the nervous system of Omnis.
+
+---
+
+### PluginContext
+
+Every plugin receives controlled access to:
+
+- ServiceRegistry
+- EventBus
+- Storage
+- Settings
+- Logging
+- Permissions
+- platform services
+- networking where permitted
+
+---
+
+# 4. PLUGIN CAPABILITY SYSTEM
+
+The plugin API needs to eventually support:
+
+```text
+IAudioDecoder
+IAudioOutput
+IAudioDSP
+ILibraryProvider
+ILibraryScanner
+IMetadataProvider
+IArtworkProvider
+ILyricsProvider
+IPlayHistoryProvider
+IRatingProvider
+IFavoriteProvider
+IPlaylistProvider
+ISmartPlaylistProvider
+IQueueProvider
+IRecommendationProvider
+IAudioAnalysisProvider
+IStreamingProvider
+IRadioProvider
+IPodcastProvider
+IAudiobookProvider
+IDeviceProvider
+IDeviceSyncProvider
+ICDReader
+ICDBurner
+IAudioConverter
+INetworkRenderer
+INetworkServer
+IRemoteControlProvider
+ISearchProvider
+ITagProvider
+IFileOrganizer
+IBackupProvider
+IStatisticsProvider
+IThemeProvider
+ILayoutProvider
+IVoiceControlProvider
+IAutomationProvider
+IScriptingProvider
+IVisualizerProvider
+IImportProvider
+IExportProvider
+```
+
+This is the foundation that lets Omnis eventually absorb the entire MusicBee feature set without turning the Core into a monolith.
+
+*(Already real as of this session, in `packages/omnis_plugin_api/lib/service_interfaces.dart`: `ILyricsProvider`, `IPlayHistoryProvider`, `IRatingsProvider`, `IQueueBuilder`, `IMetadataProvider`, `IAudioAnalysisProvider`, `IFileTagWriter`, `IVisualizerProvider`, `IArtistImageProvider`, `IDeviceConnectivityProvider`, `IAIProvider`. Everything else in the list above is still a gap — see `OMNIS_2_0_MUSICBEE_COMPARISON.md` §41 for the mapping.)*
+
+---
+
+# 5. RELIABILITY FIRST
+
+Before expanding functionality, playback must become extremely reliable.
+
+## Playback watchdog
+
+Detect:
+
+- decoder lockup
+- output failure
+- stalled playback
+- invalid position
+- buffer starvation
+- stream timeout
+- device disappearance
+- plugin failure
+
+Automatic recovery:
+
+```text
+Failure
+ ↓
+Detect
+ ↓
+Pause
+ ↓
+Reinitialize
+ ↓
+Restore position
+ ↓
+Resume
+ ↓
+Report diagnostic
+```
+
+A plugin crash must **never crash Omnis**.
+
+*(`PlaybackWatchdog`/`PlaybackRecovery`/`RecoveryJournal` already implement a real version of this — see item 1's tracker entry.)*
+
+---
+
+# 6. DATABASE
+
+The database becomes the central source of truth.
+
+## Track model
+
+Store:
+
+- ID
+- URI/path
+- filename
+- title
+- sort title
+- artist
+- album artist
+- album
+- sort artist
+- sort album
+- composer
+- lyricist
+- producer
+- genre
+- grouping
+- year
+- original year
+- date added
+- disc
+- track
+- total discs
+- total tracks
+- duration
+- bitrate
+- sample rate
+- bit depth
+- codec
+- container
+- channels
+- file size
+- ReplayGain
+- loudness
+- peak
+- BPM
+- key
+- mood
+- energy
+- rating
+- favorite
+- play count
+- skip count
+- last played
+- last skipped
+- lyrics state
+- artwork state
+- metadata confidence
+- provider IDs
+- custom fields
+
+*(`BaseTrack` in `packages/omnis_plugin_api/lib/base_track.dart` already covers a large subset: id, title, artists, album, duration, trackNumber, discNumber, year, genres, bpm, key, mood, coverArt, type, spotifyId, youtubeId, localPath, streamUrl, replayGain, albumArtist, releaseType, releaseDate, dateAdded, fileModifiedAt, codec, sampleRateHz, bitDepth, bitrateKbps, channels — with real value equality since this session's fix. Composer/lyricist/producer/grouping/original-year/energy/provider-confidence and true multi-role-artist modeling are still open, see §48.)*
+
+---
+
+# 7. MULTI-SOURCE LIBRARY
+
+Support:
+
+- local folders
+- multiple drives
+- removable drives
+- NAS
+- SMB
+- network shares
+- external storage
+- server libraries
+- streaming providers
+- OpenSubsonic-compatible servers
+
+Each source gets:
+
+- enabled/disabled
+- priority
+- scan schedule
+- inclusion rules
+- exclusion rules
+- offline state
+- authentication
+- cache settings
+
+---
+
+# 8. INDUSTRIAL LIBRARY SCANNER
+
+The scanner must handle enormous libraries.
+
+Support:
+
+- incremental scanning
+- filesystem watchers
+- full scans
+- hash detection
+- file identity
+- moved-file detection
+- renamed-file detection
+- missing-file detection
+- duplicate detection
+- corrupt-file detection
+- metadata-only scan
+- artwork-only scan
+- audio-analysis scan
+
+Scanning must be:
+
+- cancellable
+- resumable
+- parallelized
+- low-priority
+- observable
+- fault tolerant
+
+---
+
+# 9. LIBRARY HEALTH CENTER
+
+New major system.
+
+```text
+LIBRARY HEALTH
+
+Missing files             32
+Duplicates                184
+Missing artwork           91
+Missing metadata          27
+Invalid tags              16
+Corrupt files              3
+Short tracks              12
+Low-quality files         48
+Unorganized files         74
+```
+
+Every category should provide:
+
+**Fix All / Review / Ignore**
+
+with undo.
+
+*(`LibraryCleanupAnalyzer`/`library_cleanup_report_page.dart` — item 17 — already covers missing artwork, inconsistent artist/genre, duplicate tracks, missing year, malformed track numbers, duplicate albums, and a corrupt-file heuristic. Missing-file detection, low-quality-file flagging, and unorganized-file detection are still open.)*
+
+---
+
+# 10. AUTO-TAGGER
+
+Dedicated first-party metadata system.
+
+Providers:
+
+- MusicBrainz
+- Discogs
+- Last.fm
+- embedded metadata
+- other supported providers
+
+Workflow:
+
+```text
+Analyze
+ ↓
+Find candidates
+ ↓
+Calculate confidence
+ ↓
+Compare metadata
+ ↓
+Preview changes
+ ↓
+Apply
+```
+
+Never silently destroy metadata.
+
+*(`MetadataEnrichmentPlugin` already queries MusicBrainz/Last.fm/Discogs and merges results — item 11's tracker entry. The compare/preview/confidence-score workflow below and multi-source conflict resolution (§11) are still open; today's `library_page.dart` enrichment action applies results directly, additively, without a preview step.)*
+
+---
+
+# 11. METADATA CONFLICT ENGINE
+
+If providers disagree:
+
+```text
+MusicBrainz → Rock
+Discogs     → Alternative Rock
+Last.fm     → Alternative
+```
+
+Omnis should use configurable provider priority plus confidence scoring.
+
+The user can define:
+
+```text
+MusicBrainz
+↓
+Discogs
+↓
+Last.fm
+↓
+Embedded
+```
+
+---
+
+# 12. ADVANCED TAG EDITOR
+
+Support:
+
+- bulk editing
+- custom fields
+- multi-value tags
+- copy
+- paste
+- swap
+- merge
+- split
+- regex
+- search/replace
+- capitalization
+- normalization
+- calculated tags
+- virtual tags
+- templates
+- tag history
+- undo
+
+*(`TagEditorPlugin` already does real ID3v1/ID3v2/Vorbis/FLAC/MP4/OGG/etc. tag reading/writing — item 20's tracker entry. Regex search/replace, virtual/calculated tags, and tag history/undo are still open.)*
+
+---
+
+# 13. TAG BACKUP SYSTEM
+
+Before bulk changes:
+
+```text
+Create Backup
+
+4,382 tracks
+21,902 fields
+
+[Cancel] [Continue]
+```
+
+Allow complete restoration.
+
+---
+
+# 14. FILE ORGANIZER
+
+Create an advanced template engine:
+
+```text
+$AlbumArtist/
+$Artist/
+$Year/
+$Album/
+$DiscNumber/
+$TrackNumber/
+$Title
+```
 
 Example:
 
 ```text
-Playback failure
-       ↓
-Identify failure type
-       ↓
-Attempt local recovery
-       ↓
-Reload current source
-       ↓
-Reinitialize decoder
-       ↓
-Retry once
-       ↓
-If still failing → mark track failed
-       ↓
-Advance queue
-       ↓
-Record diagnostic
-       ↓
-Continue playback
+$AlbumArtist/$Year - $Album/$DiscNumber-$TrackNumber - $Title
 ```
 
-The user should almost never see an error unless **their action actually
-requires their attention.**
+Features:
+
+- preview
+- rename
+- move
+- copy
+- merge
+- sanitize
+- duplicate collision handling
+- undo
+- transaction history
 
 ---
 
-# 3. Media model needs to become significantly richer
+# 15. UNIVERSAL SEARCH
 
-The current `BaseTrack` is intentionally simple.
+One search system across the entire application.
 
-For the next generation, make the internal model capable of representing:
+Search:
 
-### Track identity
+- tracks
+- albums
+- artists
+- genres
+- playlists
+- folders
+- lyrics
+- podcasts
+- radio
+- streaming
+- settings
+- commands
+- plugins
 
-* Internal Omnis ID
-* File ID
-* URI/path
-* Content hash
-* File fingerprint
-* Source ID
-* Provider ID
-* Provider track ID
-* MusicBrainz recording ID
-* MusicBrainz release ID
-* ISRC
-* Spotify ID
-* YouTube ID
-* Discogs ID
-* ReplayGain identifiers
-* Original creation/import timestamp
-
-### Audio information
-
-* Codec
-* Container
-* Bit depth
-* Sample rate
-* Channels
-* Channel layout
-* Bitrate
-* Average bitrate
-* Lossless/lossy
-* Duration
-* Encoder
-* Encoder settings
-* ReplayGain track gain
-* ReplayGain album gain
-* Peak
-* Loudness
-* Dynamic range
-* True peak
-* BWF information where available
-
-### Music metadata
-
-* Title
-* Sort title
-* Artist
-* Sort artist
-* Album
-* Album artist
-* Sort album
-* Composer
-* Conductor
-* Lyricist
-* Genre
-* Mood
-* Grouping
-* Comment
-* Copyright
-* Publisher
-* Label
-* Year
-* Original release year
-* Track number
-* Disc number
-* Total tracks
-* Total discs
-* Compilation
-* Movement
-* Movement number
-* Work
-* Edition
-* Release type
-* Release country
-* Release date
-
-### Relationship metadata
-
-A track should be able to reference:
-
-* Artists
-* Album artists
-* Featured artists
-* Composers
-* Albums
-* Releases
-* Labels
-* Genres
-* Playlists
-* Collections
-* Sources
-
-This matters enormously for classical music, compilations, soundtracks
-and modern music.
-
----
-
-# 4. Library needs to be a real database, not just a scanner
-
-The current architecture already has `LibraryRepository`, `LibraryStore`,
-`MediaScanner`, playlist storage, and history storage.
-
-The next evolution should use a proper indexed database architecture.
-
-The library should support:
-
-### Sources
-
-* Internal storage
-* External storage
-* SD cards
-* USB drives
-* Network shares
-* SMB
-* WebDAV
-* FTP
-* NAS
-* UPnP/DLNA
-* HTTP libraries
-* Self-hosted servers
-* Cloud storage
-* Provider libraries
-* Removable drives
-
-### Multiple libraries
-
-Allow:
+Advanced queries:
 
 ```text
-My Music
- ├── Local Music
- ├── NAS Music
- ├── USB Music
- └── Streaming Sources
-
-Audiobooks
- ├── Local
- └── Server
-
-Kids
- └── Local
-```
-
-Navidrome demonstrates the usefulness of multiple libraries and per-user
-access controls, while OpenSubsonic gives a strong example of
-interoperability through a standardized API.
-
----
-
-# 5. Scanning needs to be industrial-grade
-
-Scanning should support:
-
-* Initial scan
-* Incremental scan
-* Filesystem watchers
-* Scheduled scanning
-* Manual scan
-* Rescan changed files only
-* Detect renamed files
-* Detect moved files
-* Detect deleted files
-* Detect duplicates
-* Detect corrupt files
-* Detect metadata changes
-* Detect artwork changes
-* Detect external tag changes
-* Hash verification
-* Library repair
-* Database rebuild
-* Missing-file management
-
-### Critical feature
-
-**Never identify a song exclusively by its path.**
-
-Paths change.
-
-Use a hierarchy:
-
-```text
-Omnis ID
-↓
-Content fingerprint
-↓
-File hash
-↓
-Provider IDs
-↓
-Metadata identity
-↓
-Path
-```
-
-That lets users move:
-
-```text
-D:\Music
-```
-
-to:
-
-```text
-E:\Music
-```
-
-without losing:
-
-* Play history
-* Favorites
-* Ratings
-* Playlists
-* Lyrics
-* Artwork
-* Statistics
-* User tags
-
----
-
-# 6. Search should be one of Omnis' killer features
-
-Build a universal search engine.
-
-Search across:
-
-* Songs
-* Albums
-* Artists
-* Genres
-* Playlists
-* Lyrics
-* File names
-* Tags
-* Comments
-* Labels
-* Composers
-* Moods
-* Ratings
-* Play history
-* Metadata providers
-* Online services
-
-Support:
-
-```text
-queen
-```
-
-```text
-artist:queen
-```
-
-```text
-album:greatest hits
-```
-
-```text
+artist:"Linkin Park"
 genre:rock
-```
-
-```text
-year:1990..1999
-```
-
-```text
+year:2000..2010
 rating:>=4
-```
-
-```text
 bpm:120..140
-```
-
-```text
 format:flac
+favorite:true
 ```
 
-```text
-bitrate:>=1000
-```
-
-```text
-lyrics:"love"
-```
-
-```text
-missing:artwork
-```
-
-```text
-duplicate:true
-```
-
-And natural-language queries eventually:
-
-> "Show me 90s rock songs I haven't played in six months."
+*(`lib/core/library_search.dart` — item 10 — already supports free text plus `artist:`/`album:`/`genre:`/`title:`/`mood:`/`year:` qualifiers, AND-combined. `rating:`/`bpm:`/`format:`/`favorite:` qualifiers and a single search surface spanning playlists/lyrics/podcasts/settings/commands are still open — see §40's command-palette note too.)*
 
 ---
 
-# 7. Queue system should become one of Omnis' defining features
-
-Do not treat the queue as merely "the list of songs."
-
-Build a proper queue engine.
+# 16. PLAYLIST ENGINE
 
 Support:
 
-* Manual queue
-* Play next
-* Add to queue
-* Play after current
-* Queue reordering
-* Queue persistence
-* Queue history
-* Queue snapshots
-* Multiple queue sources
-* Queue rules
-* Queue exclusions
-* Smart queue
-* Auto continuation
-* Mood continuation
-* Artist continuation
-* Album continuation
-* Genre continuation
-* Similar-track continuation
+### Static playlists
 
-### Advanced shuffle
+User-controlled. *(Real — `PlaylistStore`.)*
 
-Spotify's current shuffle system demonstrates why basic randomization
-isn't enough: it offers standard shuffle, reduced-repeat shuffle, and
-Smart Shuffle.
+### Smart playlists
 
-Omnis should go further:
+Rule driven. *(Real — `SmartPlaylistPlugin`, item 42.)*
+
+### Dynamic playlists
+
+Continuously generated. *(Partial — `QueuePresetPlugin`'s BPM/genre/history-based presets, item 39.)*
+
+### Temporary playlists
+
+Session-only.
+
+### Queue playlists
+
+Saved queue states. *(Real — `QueueHistoryStore`, item 2: auto-history + named permanent snapshots.)*
+
+---
+
+# 17. SMART PLAYLIST ENGINE
+
+Support:
 
 ```text
-Random
-Balanced
-Fewer Repeats
-Never Repeat Until Complete
-Artist Balanced
-Album Balanced
-Genre Balanced
-Discovery
-Familiarity
-Mood
-Energy
-Smart
-Custom
+AND
+OR
+NOT
 ```
 
-And expose the algorithm settings.
+Conditions:
+
+- artist
+- album
+- genre
+- year
+- rating
+- favorite
+- BPM
+- key
+- mood
+- energy
+- play count
+- skip count
+- last played
+- date added
+- duration
+- bitrate
+- codec
+- folder
+- format
+- lyrics
+- artwork
+- ReplayGain
+- custom tags
+
+Limits:
+
+- number of songs
+- total duration
+- random
+- weighted random
+- artist repetition
+- album repetition
+
+*(`SmartPlaylistPlugin`'s `RuleCondition`/`RuleMatchType` — item 42 — already supports ALL/ANY/NONE over title/artist/album/genre/mood/year/rating with `contains`/`equals` and full numeric comparisons. Nested AND/OR/NOT groups, play-count/skip-count/BPM/key/duration/bitrate/codec/folder/format/lyrics/artwork/ReplayGain conditions, and result limits are still open — see `OMNIS_2_0_MUSICBEE_COMPARISON.md` §6.)*
 
 ---
 
-# 8. Playlists
+# 18. QUEUE ENGINE
 
-Core playlist infrastructure should support:
+Advanced queue:
 
-* Static playlists
-* Smart playlists
-* Rule-based playlists
-* Nested playlists
-* Playlist folders
-* Playlist groups
-* Collaborative playlists
-* Imported playlists
-* Exported playlists
-* M3U
-* M3U8
-* XSPF
-* PLS
-* Provider playlists
-* Server playlists
+- drag/drop
+- reorder
+- play next
+- play last
+- clear played
+- save queue
+- restore queue
+- queue history
+- queue presets
+- smart queue
+- automatic queue
+- BPM progression
+- energy progression
+- artist repetition prevention
+- album repetition prevention
 
-Smart playlist rules should support:
+*(`AudioEngine.playNext`/`addTrack`/`setQueue`, `QueueHistoryStore` (item 2), and `QueuePresetPlugin` (item 39) already cover play-next/add-to-queue/queue history/presets. Drag/drop reordering in the UI, "don't repeat artist/album," and BPM/energy progression rules are still open.)*
+
+---
+
+# 19. PLAYBACK
+
+Core playback:
+
+- gapless
+- crossfade
+- fade-in
+- fade-out
+- ReplayGain
+- volume normalization
+- pitch
+- speed
+- A/B repeat
+- skip silence
+- sleep timer
+- resume position
+- per-track position
+
+*(All real — `AudioEngine`/`AbRepeatController`/`ReplayGainPlugin`/`SleepTimerPlugin`/`RecoveryJournal`. Item 1's tracker entry has the detail.)*
+
+---
+
+# 20. AUDIO DSP PIPELINE
+
+Create a standardized pipeline:
 
 ```text
-ALL / ANY / NONE
-```
-
-with conditions:
-
-* Artist
-* Album
-* Genre
-* Mood
-* Year
-* BPM
-* Key
-* Rating
-* Play count
-* Skip count
-* Last played
-* Date added
-* File type
-* Bitrate
-* Duration
-* ReplayGain
-* Favorite
-* Lyrics
-* Artwork
-* Location
-* Provider
-* Composer
-* Label
-* Energy
-* Loudness
-
----
-
-# 9. Ratings and listening history
-
-Built-in data model:
-
-* Favorite
-* Rating 0–5
-* Play count
-* Skip count
-* Completion percentage
-* Last played
-* First played
-* Last skipped
-* Last queued
-* Last added
-* Play duration
-* Total listening time
-
-And importantly:
-
-**Do not force Last.fm/ListenBrainz to be the history database.**
-
-Those should consume Omnis history.
-
----
-
-# 10. Audio quality needs to compete with audiophile players
-
-foobar2000 currently supports extensive DSP, ReplayGain, gapless playback,
-advanced tagging, network audio and component extensions. MusicBee
-similarly emphasizes EQ/DSP, WASAPI/ASIO and gapless playback.
-
-Omnis needs a proper audio pipeline.
-
-### DSP architecture
-
-Create a DSP chain:
-
-```text
-Source
- ↓
 Decoder
- ↓
-Format conversion
  ↓
 ReplayGain
  ↓
@@ -619,2306 +761,1281 @@ Preamp
  ↓
 EQ
  ↓
-Tone
+Bass
  ↓
 Compressor
  ↓
 Limiter
  ↓
+Stereo tools
+ ↓
 Crossfeed
  ↓
-Convolver
+Virtualizer
  ↓
-Spatializer
- ↓
-Visualizer tap
+Resampler
  ↓
 Output
 ```
 
-Every stage should be independently replaceable.
+Every stage can be provided by a plugin.
+
+*(Item 18's tracker entry: today this is a flat named-multiplier gain-composition system, `AudioEngine.setGainContribution` — not a staged, independently-replaceable chain. Zero compressor/limiter/crossfeed/convolver/spatializer/room-correction exists anywhere yet. This is one of the larger, genuinely deferred gaps.)*
 
 ---
 
-# 11. DSP plugins
+# 21. AUDIOPHILE OUTPUT
 
-Potential plugins:
+Windows:
 
-### Equalizer
+- WASAPI Shared
+- WASAPI Exclusive
+- ASIO
+- DirectSound
 
-* 3 band
-* 5 band
-* 10 band
-* 15 band
-* 31 band
-* Parametric EQ
-* Graphic EQ
-* Per-device profiles
-* Per-headphone profiles
-* Per-artist profiles
-* Per-album profiles
+Linux:
 
-### Other DSP
+- PipeWire
+- PulseAudio
+- ALSA
 
-* Bass boost
-* Treble boost
-* Loudness
-* Compressor
-* Limiter
-* Crossfeed
-* Stereo widening
-* Mono
-* Balance
-* Channel mixer
-* Resampler
-* Spatial audio
-* Convolver
-* Room correction
-* Headphone correction
-* Speaker correction
-* Dynamic range processing
-* Vinyl simulation
-* Tape simulation
-* Tube simulation
+macOS:
 
-### Advanced
+- CoreAudio
 
-Support VST/VST3/AU where platform allows.
+Android:
+
+- AudioTrack
+- AAudio
+- USB DAC
+
+iOS:
+
+- AVAudioEngine/CoreAudio-compatible output
 
 ---
 
-# 12. Bit-perfect mode
+# 22. ADVANCED AUDIO ANALYSIS
 
-This should eventually be a first-class capability.
+The existing Essentia plugin should grow into:
 
-Show:
+- BPM
+- key
+- beat grid
+- energy
+- danceability
+- valence
+- acousticness
+- instrumentalness
+- speechiness
+- loudness
+- dynamic range
+- spectral analysis
+- waveform
+- fingerprint
 
-```text
-SOURCE
-FLAC
-24-bit / 96 kHz
-     ↓
-DSP
-OFF
-     ↓
-RESAMPLING
-OFF
-     ↓
-OUTPUT
-USB DAC
-24-bit / 96 kHz
-```
-
-Or:
-
-```text
-SOURCE 44.1 kHz
-OUTPUT 48 kHz
-⚠ OS RESAMPLING
-```
-
-The user should understand exactly what happens to their audio.
+*(`AudioAnalysisPlugin` — item 23 — already gets real BPM/key/mood/genre from a self-hosted Essentia service. Everything else in this list is still open.)*
 
 ---
 
-# 13. Metadata ecosystem
-
-The current `MetadataEnrichmentPlugin` is a good beginning.
-
-Expand this into a provider framework:
-
-```text
-IMetadataProvider
-IArtworkProvider
-IArtistProvider
-IAlbumProvider
-ILyricsProvider
-IAudioAnalysisProvider
-IReleaseProvider
-IRecommendationProvider
-```
-
-Providers could include:
-
-* MusicBrainz
-* Cover Art Archive
-* Discogs
-* Last.fm
-* Deezer
-* Spotify
-* YouTube
-* Genius
-* LRCLIB
-* Fanart.tv
-* AcousticBrainz-compatible services
-* Local AI
-* Self-hosted metadata services
-
-But **users should never have to understand APIs.**
-
----
-
-# 14. The "No API Keys" principle
-
-This is one of the most important requirements.
-
-The normal user experience should be:
-
-> "Enable Spotify integration."
-
-Not:
-
-> "Create a Spotify developer application, copy the client ID, create a
-> secret, configure redirect URI..."
-
-The Omnis architecture should contain a **Managed Provider Gateway**.
-
-For services that legally and technically permit this:
-
-```text
-Omnis
- ↓
-Provider Manager
- ↓
-Built-in OAuth configuration
- ↓
-Secure credential storage
- ↓
-Provider
-```
-
-The user only sees:
-
-**Connect Spotify**
-
-**Connect YouTube**
-
-**Connect Last.fm**
-
-**Connect ListenBrainz**
-
-etc.
-
-For providers that legally require the user to supply their own
-credentials, Omnis should still:
-
-1. Explain why.
-2. Provide a guided setup.
-3. Detect configuration automatically.
-4. Validate credentials.
-5. Test connectivity.
-6. Store credentials securely.
-7. Never expose raw secrets.
-8. Provide a "Fix connection" workflow.
-
----
-
-# 15. Streaming/provider architecture
-
-Create a generic provider interface.
-
-```text
-IMusicProvider
-```
-
-Capabilities:
-
-* Search
-* Browse
-* Artist
-* Album
-* Track
-* Playlist
-* Radio
-* Recommendations
-* Lyrics
-* Artwork
-* Playback
-* Download
-* Offline
-* Authentication
-* User library
-* Favorites
-
-Then providers can advertise capabilities.
-
-Example:
-
-```text
-Spotify
-✓ Search
-✓ Playlists
-✓ Library
-✓ Recommendations
-✓ Remote playback
-✗ Local file access
-```
-
-Another:
-
-```text
-Local
-✓ Search
-✓ Playback
-✓ Download
-✓ Metadata
-✓ Offline
-✗ Cloud recommendations
-```
-
-The UI shouldn't care which provider supplied the data.
-
----
-
-# 16. Self-hosted ecosystem
-
-This is a major opportunity.
-
-Add plugins/connectors for:
-
-* Navidrome
-* OpenSubsonic
-* Jellyfin
-* Plex
-* Emby
-* DLNA
-* UPnP
-* SMB
-* WebDAV
-* HTTP
-* FTP
-
-Navidrome's ecosystem shows the enormous value of a standardized music
-API: its OpenSubsonic compatibility gives it access to dozens of clients
-across desktop, mobile, web and automotive environments.
-
-Omnis should therefore support **OpenSubsonic as a first-class plugin
-ecosystem**, not just one server.
-
----
-
-# 17. Cloud and offline system
-
-Users should be able to say:
-
-> Download this album.
-
-And Omnis handles:
-
-* Download
-* Metadata
-* Artwork
-* Lyrics
-* File verification
-* Storage
-* Offline database
-* Cache management
-* Resume
-* Re-download
-* Cleanup
-
-Add:
-
-### Smart caching
-
-```text
-Recently played
-Frequently played
-Favorites
-Current playlist
-Next N tracks
-Albums being listened to
-```
-
----
-
-# 18. Lyrics needs to become a complete subsystem
-
-Current Omnis already supports manual lyrics, LRCLIB lookup, synchronized
-lyrics and embedding.
-
-Expand it to:
-
-* Embedded lyrics
-* LRC
-* Unsynchronized lyrics
-* Synchronized lyrics
-* Multiple lyric versions
-* Translation
-* Romanization
-* Line synchronization
-* Word synchronization
-* Karaoke mode
-* Lyrics editor
-* Timing editor
-* Auto timing
-* Lyrics search
-* Provider priority
-* Local lyrics files
-* Lyrics caching
-* Offline lyrics
-* Embed/remove lyrics
-* Backup lyrics
-
----
-
-# 19. Artwork
-
-Artwork deserves its own plugin capability.
+# 23. LOUDNESS
 
 Support:
 
-* Embedded artwork
-* Folder.jpg
-* Cover.jpg
-* Front.jpg
-* Artist.jpg
-* Album artwork
-* Disc artwork
-* Back cover
-* Booklet
-* Multiple artwork
-* Animated artwork where supported
-* High-resolution artwork
-* Artwork provider lookup
-* Manual artwork
-* Drag/drop artwork
-* Automatic artwork selection
-* Artwork caching
-* Per-device artwork sizing
+- ReplayGain Track
+- ReplayGain Album
+- LUFS
+- integrated loudness
+- loudness range
+- peak
+- true peak
+- clipping detection
+- dynamic range
+
+*(Track/album ReplayGain modes are real — item 19, this session. LUFS/true-peak/clipping/dynamic-range measurement is still open.)*
 
 ---
 
-# 20. Tag editor
+# 24. AUDIO CONVERTER
 
-The existing `TagEditorPlugin` is already one of the stronger pieces of
-the ecosystem.
+First-class batch conversion.
 
-Keep expanding:
-
-* ID3v1
-* ID3v2
-* Vorbis Comments
-* FLAC
-* MP4/M4A
-* OGG
-* Opus
-* WAV metadata
-* AIFF metadata
-* Custom fields
-* Batch editing
-* Rename files
-* Move files
-* Folder restructuring
-* Filename templates
-* Metadata templates
-* Preview before writing
-* Undo
-* Backup
-* Restore
-* Tag validation
-* Duplicate detection
-* Missing tag detection
-
-### Add "Music Library Cleanup"
-
-One button:
-
-**Analyze Library**
-
-Then:
+Presets:
 
 ```text
-1,421 missing artwork
-832 inconsistent artists
-321 duplicate tracks
-198 albums missing year
-94 malformed track numbers
-73 inconsistent genres
-31 duplicate albums
-12 corrupt files
+FLAC → MP3 320
+FLAC → MP3 V0
+FLAC → AAC 256
+FLAC → Opus 160
+WAV → FLAC
+ALAC → FLAC
 ```
 
-Then provide guided cleanup.
+Use FFmpeg where appropriate.
+
+Preserve:
+
+- metadata
+- artwork
+- chapters
+- ReplayGain
+- filenames
 
 ---
 
-# 21. AI subsystem
+# 25. CD SYSTEM
 
-This should be a major optional ecosystem.
+### CD ripping
+
+- secure ripping
+- metadata lookup
+- artwork
+- AccurateRip-compatible verification where feasible
+- drive offset
+- FLAC
+- ALAC
+- WAV
+- MP3
+- AAC
+- automatic organization
+
+### CD burning
+
+- Audio CD
+- Data CD
+- CD-Text
+- playlist burning
+
+---
+
+# 26. CUE SUPPORT
+
+Support:
+
+- external CUE
+- embedded CUE
+- multi-track FLAC
+- WAV
+- APE
+- disc indexes
+- gaps
+
+A single image file should appear as individual tracks to the user.
+
+---
+
+# 27. PODCAST SYSTEM
+
+Support:
+
+- RSS
+- OPML
+- subscriptions
+- downloads
+- automatic downloads
+- episode history
+- resume
+- speed
+- skip intro/outro
+- chapters
+- show notes
+- artwork
+- offline playback
+- auto-delete
+
+---
+
+# 28. INTERNET RADIO
+
+Support:
+
+- Icecast
+- Shoutcast
+- M3U
+- PLS
+- XSPF
+- direct streams
+
+Features:
+
+- search
+- favorites
+- history
+- metadata
+- artwork
+- recording
+
+*(Real already — `RadioPlugin`, item 41: Radio Browser directory search/top-stations/by-tag, favorites, custom stream URL entry. Recording and automatic genre classification are still open; single fixed API mirror rather than full DNS-round-robin discovery is a documented production-scale limitation.)*
+
+---
+
+# 29. AUDIOBOOK SYSTEM
+
+Support:
+
+- M4B
+- chapters
+- author
+- narrator
+- series
+- bookmarks
+- resume
+- speed
+- sleep timer
+- chapter navigation
+- audiobook-specific library
+
+---
+
+# 30. DEVICE MANAGER
+
+Sync with:
+
+- Android
+- iOS
+- USB storage
+- SD cards
+- portable players
+- network devices
+
+Sync:
+
+- music
+- playlists
+- ratings
+- favorites
+- podcasts
+- audiobooks
+
+Conversion during sync:
+
+```text
+FLAC → AAC 256
+```
+
+---
+
+# 31. NETWORK MUSIC
+
+Support:
+
+- SMB
+- WebDAV
+- SFTP
+- HTTP
+- HTTPS
+- NAS
+- OpenSubsonic
+- Jellyfin
+- Plex where practical
+
+*(OpenSubsonic/Jellyfin/Plex clients are already real — items 31/32/33/34's tracker entries — all self-flagged as protocol-correct but not exercised against a live server. SMB/WebDAV/SFTP/NAS discovery are still open.)*
+
+---
+
+# 32. NETWORK PLAYBACK
+
+Long-term:
+
+- UPnP
+- DLNA
+- Chromecast
+- AirPlay
+- Sonos
+- Spotify Connect
+- network speakers
+
+*(A DLNA/UPnP **client** already exists — item 35. Spotify Connect remote control is real too (`SpotifyPlaybackPlugin`, item 36, self-flagged unverified against a real account). UPnP/DLNA server role, Chromecast, AirPlay, and Sonos/Home Assistant integration are still open.)*
+
+---
+
+# 33. REMOTE API
+
+This should be part of the Omnis platform.
+
+REST:
+
+```text
+/play
+/pause
+/next
+/previous
+/seek
+/queue
+/search
+/playlists
+/library
+/now-playing
+/artwork
+```
+
+WebSocket:
+
+```text
+trackChanged
+playbackChanged
+queueChanged
+volumeChanged
+metadataChanged
+```
+
+This allows:
+
+- phone remote
+- web remote
+- Stream Deck
+- Home Assistant
+- Discord integrations
+- OBS
+- smart-home integrations
+
+---
+
+# 34. PARTY MODE
+
+QR-based joining.
+
+Guests can:
+
+- browse
+- request
+- vote
+- add songs
+- react
+
+Host controls:
+
+- skip
+- remove
+- reorder
+- ban tracks
+- restrict users
+
+---
+
+# 35. STATISTICS
+
+Track:
+
+- play count
+- skip count
+- completion percentage
+- listening duration
+- first played
+- last played
+- favorite
+- rating
+- source
+- device
+- playlist
+
+Dashboard:
+
+```text
+Today
+This Week
+This Month
+This Year
+All Time
+```
+
+Charts:
+
+- artists
+- albums
+- genres
+- decades
+- hours
+- days
+- listening streaks
+
+*(`PlayHistoryStore`/`ScrobblePlugin` — item 16 — already track play count, last played, position, and per-play records with real hardening (atomic writes, per-entry decode safety, concurrency serialization). A dedicated statistics dashboard with charts is still open.)*
+
+---
+
+# 36. DISCOVERY ENGINE
 
 Create:
 
-```text
-IAIProvider
-```
+### Play Something
 
-It can be:
+- Familiar
+- Forgotten
+- New
+- Deep Cuts
+- Similar
+- Chill
+- High Energy
+- Random
+- Surprise Me
 
-* Local LLM
-* Cloud LLM
-* Embedded model
-* User-provided model
-* No AI
+Recommendations use:
 
-AI features:
+- history
+- ratings
+- favorites
+- skips
+- BPM
+- key
+- mood
+- genre
+- artist
+- album
+- listening patterns
 
-### Natural language search
-
-> "Find upbeat songs from the 2000s."
-
-### Playlist creation
-
-> "Make me a two-hour workout playlist."
-
-### Metadata cleanup
-
-> "Fix the artist names in this album."
-
-### Tagging
-
-> "Identify the genre and mood."
-
-### Recommendations
-
-> "Give me something like this but heavier."
-
-### Library assistant
-
-> "Which albums have never been played?"
-
-### Voice control
-
-> "Play my favorite Metallica songs."
-
-### Music discovery
-
-> "Find artists similar to Tool."
-
-The AI system should never be required for normal functionality.
+*(Item 39's tracker entry lists what's real: "Forgotten Favorites," "Rediscover," and "Similar Track" (item 40, this session — `lib/core/track_similarity.dart`). Still missing: Similar Artist, Daily/Weekly Mix, Discovery, Deep Cuts, New Releases, Energy Flow, and a unified "Play Something" entry point surfacing all of these as named buttons.)*
 
 ---
 
-# 22. Recommendation engine
+# 37. FORGOTTEN MUSIC
 
-Create a provider-neutral recommendation framework.
-
-Sources:
-
-* Listening history
-* Ratings
-* Favorites
-* Skips
-* Genres
-* BPM
-* Key
-* Mood
-* Acoustic features
-* Audio fingerprints
-* Similar artists
-* Similar tracks
-* User playlists
-* Time of day
-* Device
-* Current session
-
-Algorithms:
-
-```text
-Similar Track
-Similar Artist
-Album Radio
-Artist Radio
-Genre Radio
-Mood Radio
-Discovery
-Deep Cuts
-Forgotten Favorites
-Rediscover
-New Releases
-Daily Mix
-Weekly Mix
-Energy Flow
-Workout
-Sleep
-Focus
-Driving
-```
-
-Plexamp's Sonic Analysis demonstrates the value of analyzing the actual
-audio rather than relying exclusively on tags.
-
----
-
-# 23. Visualizer system
-
-The current `VisualizerPlugin` already exists.
-
-Expand:
-
-* Spectrum
-* Waveform
-* Oscilloscope
-* VU meter
-* Spectrogram
-* MilkDrop-compatible visualizations
-* Shader visualizations
-* Album-art reactive
-* Particle visualizations
-* Custom visualizer plugins
-* Audio-reactive backgrounds
-
-And separate:
-
-```text
-IAudioAnalysisProvider
-```
-
-from:
-
-```text
-IVisualizerProvider
-```
-
-The current architecture already recognizes this distinction, which is
-the correct direction.
-
----
-
-# 24. Car system
-
-Driving Mode should become much more extensive.
-
-Support:
-
-* Android Auto
-* Apple CarPlay
-* Large controls
-* Minimal text
-* Voice
-* Steering-wheel controls
-* Bluetooth controls
-* Automatic driving mode
-* Speed detection
-* Orientation changes
-* High contrast
-* Large artwork
-* Queue shortcuts
-* Favorites
-* Recently played
-* Downloaded music
-* Safety lockouts
-
----
-
-# 25. Bluetooth / hardware
-
-Create a generic hardware capability layer.
-
-Support:
-
-* Bluetooth
-* USB DAC
-* USB audio
-* HDMI audio
-* Cast
-* DLNA
-* UPnP
-* AirPlay where licensing/platform allows
-* Network speakers
-* Android Auto
-* CarPlay
-* Desktop output devices
-
-Device-specific settings:
-
-```text
-Headphones
-EQ preset
-Volume
-ReplayGain
-DSP
-Crossfeed
-
-Car
-EQ
-Volume
-Driving mode
-
-USB DAC
-Sample rate
-Bit depth
-Bit-perfect
-```
-
----
-
-# 26. Ripping and conversion
-
-This is an area current players such as foobar2000 expose through their
-advanced ecosystem.
-
-Optional plugins:
-
-* CD ripping
-* Audio conversion
-* FLAC conversion
-* MP3 conversion
-* AAC
-* Opus
-* WAV
-* ReplayGain scanning
-* Loudness analysis
-* Batch conversion
-* Transcoding
-* Format migration
-
----
-
-# 27. Internet radio
-
-Plugin:
-
-### Radio
-
-Support:
-
-* Radio Browser
-* Custom streams
-* HLS
-* Icecast
-* Shoutcast
-* M3U streams
-* Favorites
-* Recording where legally permitted
-* Station metadata
-* Artwork
-* History
-
----
-
-# 28. Podcast / audiobook support
-
-Even if Omnis is music-first, the ecosystem should be able to add:
-
-### Podcast plugin
-
-* RSS
-* Episodes
-* Downloads
-* Subscriptions
-* Playback position
-* Speed
-* Skip silence
-* Chapters
-
-### Audiobook plugin
-
-* Chapters
-* Resume position
-* Bookmarks
-* Sleep timer
-* Narrator
-* Series
-* Disc/chapter organization
-* Variable speed
-
----
-
-# 29. Accessibility must be a first-class requirement
-
-"Everyone can use it" means much more than large buttons.
-
-Support:
-
-* Screen readers
-* Semantic labels
-* Keyboard navigation
-* Focus indicators
-* High contrast
-* Reduced motion
-* Reduced transparency
-* Large text
-* Dynamic font sizes
-* Colorblind-safe states
-* Voice control
-* Full keyboard shortcuts
-* Switch/accessibility input
-* Touch target sizing
-* RTL
-* Localization
-
-Every UI component should have:
-
-```text
-label
-hint
-role
-state
-keyboard action
-accessibility action
-```
-
----
-
-# 30. UI architecture
-
-The UI should be **adaptive**, not simply responsive.
-
-Desktop:
-
-```text
-┌──────────────┬──────────────────────────────┐
-│ Navigation   │ Content                      │
-│              │                              │
-│ Home         │                              │
-│ Library      │                              │
-│ Playlists    │                              │
-│ Downloads    │                              │
-│ Servers      │                              │
-│ Plugins      │                              │
-│ Settings     │                              │
-├──────────────┴──────────────────────────────┤
-│ Mini Player / Queue                         │
-└─────────────────────────────────────────────┘
-```
-
-Mobile:
-
-```text
-Content
-──────────────
-Mini Player
-──────────────
-Navigation
-```
-
-Tablet:
-
-Adaptive split view.
-
-Car:
-
-Completely different interaction model.
-
-TV:
-
-10-foot interface.
-
----
-
-# 31. Now Playing
-
-Now Playing should be completely modular.
-
-The existing layout system is a good foundation.
-
-But expose layout components:
-
-* Artwork
-* Title
-* Artist
-* Album
-* Progress
-* Waveform
-* Lyrics
-* Queue
-* Visualizer
-* Controls
-* Volume
-* Speed
-* Pitch
-* EQ
-* Rating
-* Favorite
-* Share
-* Metadata
-* Audio information
-
-User should be able to create:
-
-### Minimal
-
-```text
-Artwork
-Title
-Artist
-Progress
-Play/Pause
-```
-
-### Audiophile
-
-```text
-Artwork
-Track
-Format
-24-bit / 96 kHz
-ReplayGain
-DSP
-Output
-Waveform
-```
-
-### Karaoke
-
-```text
-Lyrics
-Artwork
-Progress
-```
-
-### Car
-
-```text
-Huge artwork
-Huge controls
-Voice
-Queue
-```
-
----
-
-# 32. Settings architecture
-
-This needs a major redesign.
-
-Instead of one giant Settings page, use:
-
-## General
-
-* Startup
-* Language
-* Theme
-* Appearance
-* Confirmations
-* Notifications
-* Privacy
-
-## Playback
-
-* Queue
-* Shuffle
-* Repeat
-* Crossfade
-* Gapless
-* ReplayGain
-* Speed
-* Pitch
-* Skip silence
-* Resume
-* Playback recovery
-
-## Audio
-
-* Output
-* DSP
-* EQ
-* Volume
-* Exclusive mode
-* Bit-perfect
-* Resampling
-* Buffer
-* Sample rate
-
-## Library
-
-* Sources
-* Scanning
-* Metadata
-* Artwork
-* Duplicates
-* Missing files
-* Database
-
-## Appearance
-
-* Theme
-* Colors
-* Density
-* Artwork
-* Animations
-* Layouts
-
-## Interface
-
-* Navigation
-* Tabs
-* Gestures
-* Keyboard
-* Context menus
-
-## Accessibility
-
-* Text
-* Contrast
-* Motion
-* Screen reader
-* Input
-
-## Downloads
-
-* Cache
-* Storage
-* Quality
-* Automatic downloads
-
-## Services
-
-* Connected accounts
-* Provider management
-* Authentication
-
-## Plugins
-
-* Installed
-* Available
-* Updates
-* Permissions
-* Health
-* Dependencies
-
-## Privacy
-
-* Telemetry
-* History
-* Scrobbling
-* Network
-* AI
-* Diagnostics
-
-## Advanced
-
-* Database
-* Logging
-* Debug
-* Experimental
-* Developer
-
----
-
-# 33. Settings search
-
-This should be extremely good.
-
-User types:
-
-> crossfade
-
-Results:
-
-```text
-Playback
- └── Crossfade duration
-
-Audio
- └── Crossfade DSP behavior
-
-Plugins
- └── Crossfade plugin
-```
-
-Search should understand aliases:
-
-```text
-"gap between songs"
-→ Gapless playback
-
-"louder songs"
-→ ReplayGain
-
-"headphones sound"
-→ Output / EQ / device profile
-```
-
----
-
-# 34. Plugin architecture needs to become an actual platform
-
-The current plugin API already has the correct beginnings: interfaces,
-results, events and capability registration.
-
-Define these broad plugin categories:
-
-### Playback
-
-* Shuffle
-* Repeat
-* Crossfade
-* Gapless enhancements
-* Queue engines
-* Smart queue
-
-### Audio
-
-* EQ
-* DSP
-* Resampler
-* Limiter
-* Compressor
-* Spatial audio
-* Convolver
-
-### Library
-
-* Scanner
-* Metadata
-* Artwork
-* Tag editor
-* Duplicate detector
-* Cleanup
-* Analyzer
-
-### Discovery
-
-* Recommendations
-* Similarity
-* Radio
-* AI
-
-### Lyrics
-
-* Provider
-* Translator
-* Synchronizer
-* Karaoke
-
-### Services
-
-* Spotify
-* YouTube
-* Apple Music where technically/legal
-* Deezer
-* SoundCloud
-* Bandcamp
-* Tidal where supported
-* Qobuz where supported
-
-### Servers
-
-* Navidrome
-* Jellyfin
-* Plex
-* Emby
-* Subsonic
-* OpenSubsonic
-* DLNA
-
-### Hardware
-
-* Bluetooth
-* DAC
-* AirPlay
-* Chromecast
-* UPnP
-
-### UI
-
-* Themes
-* Layouts
-* Visualizers
-* Widgets
-* Panels
-* Mini players
-
-### Automation
-
-* Driving
-* Sleep
-* Time-based
-* Location
-* Device
-* Bluetooth
-* Smart home
-
-### Export
-
-* M3U
-* XSPF
-* PLS
-* CSV
-* JSON
-* Backup
-
----
-
-# 35. Plugin permissions need to be much more granular
-
-The current plugin installer already has manifest validation and
-permission concepts.
-
-Expand permissions into:
-
-```text
-network
-network:provider
-filesystem:read
-filesystem:write
-library:read
-library:write
-playback:control
-playback:observe
-metadata:read
-metadata:write
-history:read
-history:write
-microphone
-location
-bluetooth
-notifications
-accounts
-credentials
-device_output
-background_tasks
-external_process
-```
-
-And show them in plain English.
+Automatically find music the user owns but rarely plays.
 
 Example:
 
-> **Lyrics Plus**
->
-> ✓ Can read currently playing song
-> ✓ Can connect to LRCLIB
-> ✓ Can save lyrics
-> ✗ Cannot modify your music files
-> ✗ Cannot access your location
+> **147 tracks you haven't heard in 6+ months**
+
+Button:
+
+**Play Forgotten Music**
+
+*(Real already, as a queue preset — `QueuePresetPlugin`'s "Forgotten Favorites," item 39. A dedicated browsing view (not just a play-queue action) is still open.)*
 
 ---
 
-# 36. Plugin health center
-
-This should become a flagship feature.
-
-```text
-Plugin Health
-
-✓ Lyrics
-✓ ReplayGain
-✓ Favorites
-⚠ Spotify — authentication expired
-⚠ Visualizer — audio capture unavailable
-✗ Metadata — provider timeout
-```
-
-Every failure gets:
-
-* What happened
-* Why
-* Whether playback is affected
-* Automatic recovery status
-* Retry
-* Disable
-* Reset
-* View log
-
----
-
-# 37. Plugin dependencies
+# 38. DJ MODE
 
 Support:
 
-```text
-Lyrics UI
-   ↓
-Lyrics Provider API
-   ↓
-LRCLIB Provider
-```
-
-If the provider disappears:
-
-> "Lyrics Provider unavailable. Install another provider?"
-
-No crash.
-
----
-
-# 38. Plugin replacement
-
-This is where Omnis can become exceptional.
-
-User should be able to install:
-
-**Lyrics Provider A**
-
-and later:
-
-**Lyrics Provider B**
-
-without the rest of Omnis knowing.
-
-Same for:
-
-* Metadata
-* Artwork
-* Recommendations
-* Audio analysis
-* Scrobbling
-* Streaming
-* Visualizers
-
-This is exactly the direction the `ServiceRegistry` is already moving
-toward.
+- waveforms
+- BPM
+- key
+- beat grid
+- cue points
+- loops
+- hot cues
+- beat matching
+- automix
+- key matching
+- energy matching
+- transition recommendations
 
 ---
 
-# 39. Plugin marketplace
+# 39. AUTOMATION ENGINE
 
-Eventually:
+Rule:
 
 ```text
-Omnis Plugins
+WHEN
+    Bluetooth device = Car
 
-Categories
-Featured
-Popular
-Verified
-New
-Audio
-Lyrics
-Metadata
-Streaming
-UI
-Tools
-AI
+IF
+    Time between 6AM and 10AM
+
+THEN
+    Car Mode
+    Playlist = Morning Drive
+    Volume = 75%
 ```
 
-Each plugin should show:
+Triggers:
 
-* Name
-* Developer
-* Version
-* Compatibility
-* Permissions
-* Dependencies
-* Privacy
-* Verification
-* Downloads
-* Rating
-* Last updated
-* Source code
-* Changelog
+- track started
+- track ended
+- device connected
+- device disconnected
+- time
+- location where platform permits
+- application launch
+- plugin event
+- library changed
 
-No user should need to paste a GitHub URL unless they deliberately want
-developer mode.
+Actions:
 
-The current GitHub URL installation is useful for developers, but the
-consumer experience should become a proper catalog.
+- play
+- pause
+- queue
+- change EQ
+- change volume
+- enable mode
+- launch playlist
+- download
+- sync
+- execute automation
+
+*(Item 50's tracker entry: two real, working single-purpose triggers exist today — GPS-speed → Car Mode layout (`DrivingModePlugin`), Bluetooth-connect → quick-play/EQ-preset prompt — but no general rules engine, no time-based triggers.)*
 
 ---
 
-# 40. Automatic plugin updates
+# 40. UI SYSTEM
+
+The existing requested primary areas remain:
+
+```text
+Home
+Library
+Moods
+Playlists
+Now Playing
+```
+
+Plus:
+
+- Albums
+- Artists
+- Genres
+- Tracks
+- Folders
+- Podcasts
+- Audiobooks
+- Radio
+- Devices
+- Statistics
+- Downloads
+- Settings
+
+*(Radio is already a real bottom-nav tab — item 41. Podcasts/Audiobooks/Devices/Statistics tabs are still open. A unified command-palette-style search across settings/commands/library — items 10/45/48's own tracker entries — is also still open.)*
+
+---
+
+# 41. CUSTOMIZABLE SIDEBAR
+
+Users can:
+
+- reorder
+- hide
+- add
+- remove
+- create sections
+- create shortcuts
+- create custom pages
+
+---
+
+# 42. UI MODES
+
+Ship with:
+
+### Simple
+
+Minimal controls.
+
+### Driving
+
+Huge controls. *(Real — `CarModeLayout`, item 46.)*
+
+### Karaoke
+
+Lyrics-first. *(Real — one of the 6 bundled Now Playing layouts, item 45.)*
+
+### Futuristic
+
+Visualizer/album-art-focused.
+
+Also:
+
+- Desktop
+- Tablet
+- Mobile
+- TV
+- Compact
+- Audiophile
+- DJ
+
+*(Item 45's tracker entry: the Now Playing layout builder is solid — a real drag-and-drop visual editor, `LayoutEditorPage`, 6 bundled layouts including Car Mode/Karaoke. The Home tab itself is still "0% for Home" — `home_dashboard_page.dart` is a hardcoded, non-reorderable widget with fixed sections, no widget-canvas equivalent.)*
+
+---
+
+# 43. USER-CREATED THEMES
+
+Users can customize:
+
+- colors
+- fonts
+- spacing
+- cards
+- borders
+- corner radius
+- artwork sizes
+- animations
+- backgrounds
+- navigation
+- controls
+
+Allow exporting/importing themes.
+
+*(Item 44's tracker entry: a real declarative theme engine already exists — import from URL/file, closed-schema colors/typography/shape/motion — but none of the spec's 6 named presets (Pure/Drive/Karaoke/Future/Audiophile) survive by name, only 4 original substitutes. Themes don't yet touch navigation/Home/Library layout the way "theme = composition" demands.)*
+
+---
+
+# 44. DYNAMIC THEMING
+
+Album artwork can generate:
+
+- primary color
+- accent
+- background
+- text contrast
+- gradients
+
+---
+
+# 45. NOW PLAYING
+
+Now Playing becomes a customizable workspace.
+
+Components:
+
+- artwork
+- waveform
+- lyrics
+- queue
+- metadata
+- visualization
+- credits
+- equalizer
+- audio analysis
+- controls
+
+Users decide the layout.
+
+*(Real — see §42's note on item 45's layout builder.)*
+
+---
+
+# 46. LYRICS
+
+Existing lyrics capability should remain.
+
+Expand:
+
+- synchronized lyrics
+- plain lyrics
+- embedded lyrics
+- translated lyrics
+- lyric provider priority
+- offline lyrics
+- karaoke mode
+- lyric editing
+- timestamp editor
+
+*(`LyricsPlugin` already supports manual entry, LRCLIB lookup, LRC parsing with synchronized playback, and file-metadata embedding via `IFileTagWriter`. Translation, provider priority among multiple sources, and a timestamp editor are still open.)*
+
+---
+
+# 47. ARTWORK
 
 Support:
 
-* Update checking
-* Compatibility checking
-* Backup
-* Rollback
-* Staged updates
-* Failed-update recovery
+- embedded artwork
+- external artwork
+- artist images
+- album artwork
+- back cover
+- booklet
+- CD image
+- genre images
 
-Never allow an update to leave the user without a working plugin.
+Artwork manager:
+
+**Find → Compare → Preview → Apply**
+
+*(Item 12's tracker entry: `BaseTrack.coverArt`, Android `mediastore://` artwork, embedded-artwork extraction, `ArtistImagePlugin`, and `TrackArtwork` are all real. No artwork-provider framework (Cover Art Archive/Fanart.tv lookup) or manual/drag-drop override yet.)*
 
 ---
 
-# 41. Database reliability
+# 48. MULTIPLE ARTISTS
 
-This is one of the areas to prioritize heavily.
+Don't store every collaboration as a single opaque artist string.
 
-Use transactional operations.
-
-Never:
+Internally model:
 
 ```text
-write track
-write history
-write playlist
-hope everything works
+Primary Artist
+Featured Artists
+Remixer
+Composer
+Producer
 ```
 
-Instead:
+while maintaining compatibility with file tags.
 
-```text
-BEGIN
- ↓
-validate
- ↓
-write
- ↓
-verify
- ↓
-COMMIT
-```
-
-If failure:
-
-```text
-ROLLBACK
-```
-
-Add:
-
-* Database integrity check
-* Automatic backup
-* Backup rotation
-* Recovery
-* Migration system
-* Schema version
-* Corruption detection
-* Safe migration
-* Export/import
+*(Featured-artist separator rules already exist for parsing display strings. A real primary/featured-artist data model (not a joined display string) and proper "Various Artists" compilation modeling are still open.)*
 
 ---
 
-# 42. Crash recovery
+# 49. IMPORT/EXPORT
 
-Omnis should maintain a tiny recovery journal.
+Import:
 
-Persist:
+- MusicBee
+- foobar2000
+- iTunes/Apple Music
+- Windows Media Player
+- MediaMonkey
+- Winamp
+- VLC
+- AIMP
+- Plex
+- Jellyfin
+- Spotify
+- YouTube Music
 
-```text
-current track
-position
-queue
-queue index
-playback mode
-volume
-output
-```
+Preserve where possible:
 
-frequently enough to recover from:
-
-* crash
-* power loss
-* OS kill
-* forced close
-* battery death
-
-The user should reopen Omnis and see:
-
-> **Resume where you left off?**
-
----
-
-# 43. Testing strategy needs to become enormous
-
-The claim should eventually be:
-
-> **Every critical subsystem is tested independently, under failure
-> conditions.**
-
-Test:
-
-### Playback
-
-* 1 track
-* 10 tracks
-* 100k tracks
-* Empty queue
-* Missing file
-* Corrupt file
-* Unsupported codec
-* Zero-duration file
-* Extremely long file
-* Network timeout
-* Bluetooth disconnect
-* Device change
-* Sleep/wake
-* App background
-* App kill
-* Reboot
-
-### Library
-
-* 1 file
-* 100 files
-* 100,000 files
-* 1,000,000 files
-* Duplicate files
-* Missing files
-* Moved files
-* Renamed files
-* Invalid tags
-* Unicode
-* Emoji
-* Multiple languages
-
-### Plugins
-
-Every plugin must be able to:
-
-* Fail
-* Timeout
-* Crash
-* Lose network
-* Lose credentials
-* Become unavailable
-* Be disabled
-* Be removed
-* Be updated
-
-without breaking Core.
-
----
-
-# 44. Performance requirements
-
-Set hard targets.
-
-### Startup
-
-Target:
-
-**< 2 seconds** for normal startup on modern hardware.
-
-### Playback
-
-Audio playback must begin independently of:
-
-* metadata enrichment
-* artwork downloads
-* lyrics
-* recommendation engines
-* plugin initialization
-
-### Library
-
-Never block UI while:
-
-* scanning
-* hashing
-* tagging
-* analyzing
-* downloading
-* indexing
-
-Everything expensive is asynchronous.
-
----
-
-# 45. Large-library architecture
-
-Design for:
-
-* 100 tracks
-* 10,000 tracks
-* 100,000 tracks
-* 1,000,000+ tracks
-
-Do not assume a library fits comfortably in memory.
-
----
-
-# 46. Universal import
-
-Omnis should import:
-
-* Spotify playlists
-* Apple Music playlists
-* YouTube playlists
-* YouTube Music playlists
-* MusicBee
-* foobar2000
-* iTunes
-* Windows Media Player
-* MediaMonkey
-* Plex
-* Navidrome
-* Jellyfin
-* M3U
-* XSPF
-* PLS
-* CSV
-* JSON
-* Folder structures
-
----
-
-# 47. Universal export
-
-Users should never fear leaving Omnis.
+- playlists
+- ratings
+- favorites
+- play counts
+- history
 
 Export:
 
-* Library
-* Playlists
-* Favorites
-* Ratings
-* History
-* Tags
-* Settings
-* Plugin settings
-* Layouts
-* Themes
+- M3U
+- M3U8
+- XSPF
+- PLS
+- JSON
+- CSV
 
-Prefer open formats.
+*(M3U/M3U8/PLS/XSPF playlist import+export are real — item 13, this session. Spotify/YouTube Music playlist import are real too — items 36/37. Importers for other players (MusicBee, foobar2000, iTunes, WMP, MediaMonkey, Winamp, VLC, AIMP, Plex, Jellyfin) and CSV/JSON export are still open.)*
 
 ---
 
-# 48. Backup system
+# 50. BACKUP
 
-One click:
+Backup:
 
-> **Backup Omnis**
+- database
+- playlists
+- ratings
+- history
+- settings
+- plugin data
+- themes
+- layouts
+- metadata
+- artwork
 
-Produces:
+Automatic scheduled backups.
+
+*(Real already — `backup_service.dart` + Settings → Backup page, item 4: one-click backup/restore of library/playlists/play-history/recovery-journal, validated before overwrite. Plugin-settings/theme/layout backup and automatic scheduling are still open.)*
+
+---
+
+# 51. SECURITY
+
+Plugins receive explicit permissions.
+
+Examples:
 
 ```text
-omnis-backup.zip
-├── database
-├── playlists
-├── history
-├── favorites
-├── settings
-├── layouts
-├── themes
-└── plugin-state
+Filesystem
+Network
+Microphone
+Bluetooth
+Device Access
+Account Access
+External Process
 ```
 
-And:
-
-> **Restore Omnis**
-
-with validation before overwriting anything.
-
----
-
-# 49. Privacy should be a selling point
-
-foobar2000 explicitly advertises no telemetry/data collection.
-
-Omnis should make privacy equally understandable.
-
-Settings:
+Plugin installation displays:
 
 ```text
-Telemetry
-OFF
+This plugin requests:
 
-Crash reports
-Ask
-
-Listening history
-Local only
-
-Scrobbling
-OFF
-
-AI
-OFF
-
-Metadata lookup
-Ask / Automatic
-
-Artwork lookup
-Ask / Automatic
-
-Cloud sync
-OFF
+☑ Network
+☑ Music Library
+☐ Microphone
+☐ External Processes
 ```
 
-Do not make users wonder what Omnis is sending somewhere.
+*(Real already — item 25/27's tracker entries: real sandboxing (`PluginSandbox.run`), a real interpreted sandbox (`dart_eval`) for downloaded plugins, scoped network permissions (`network:host.example.com`, not just blanket `network`), and plain-English permission labels on the Plugins page.)*
 
 ---
 
-# 50. The Core should know nothing about Spotify
+# 52. PLUGIN HEALTH
 
-This is a key architectural test.
+Every plugin gets:
 
-Bad:
+- version
+- dependencies
+- permissions
+- status
+- errors
+- CPU usage
+- memory usage
+- last crash
+- logs
+
+Controls:
+
+**Enable / Disable / Restart / Update / Rollback**
+
+*(Item 25's tracker entry: real sandboxing catches + 8s-timeouts every hook and logs health, never propagating a crash. No formal state-machine enum yet (two booleans instead), and `dart_eval` runs on the same thread so a non-yielding downloaded-plugin loop can still hang the UI — documented in `docs/PLUGIN_SECURITY.md`. Plugin update checking/rollback are real — item 29 — but with no backup-before-update/automatic-checking yet.)*
+
+---
+
+# 53. PLUGIN MARKETPLACE
+
+Eventually support:
+
+- discovery
+- search
+- categories
+- versions
+- ratings
+- screenshots
+- permissions
+- dependencies
+- compatibility
+- automatic updates
+
+But Omnis must remain fully functional without third-party plugins.
+
+*(Catalog search is real — item 30. A real marketplace (ratings, screenshots, categories, automatic updates) is still open — today's catalog is a curated list with search/filter, update checking, and manual GitHub-URL installation for anything outside it.)*
+
+---
+
+# 54. NO-API-KEY EXPERIENCE
+
+This remains a hard requirement.
+
+Whenever possible:
 
 ```text
-if (spotifyEnabled) ...
+Install plugin
+↓
+Ready
 ```
 
-Good:
+Not:
 
 ```text
-providers.getAll<IMusicProvider>()
+Install
+↓
+Create account
+↓
+Find developer portal
+↓
+Generate key
+↓
+Copy secret
+↓
+Create OAuth app
+↓
+Configure redirect
 ```
 
-The same should apply to:
+For services that inherently require authentication, Omnis should provide a guided OAuth/login flow.
 
-* YouTube
-* LRCLIB
-* Last.fm
-* MusicBrainz
-* Navidrome
-* AI
-* EQ
-* Visualizer
+*(MusicBrainz needs no key at all. Spotify/YouTube already use real PKCE OAuth (`SpotifyAuth`/`YoutubeAuth`) rather than asking the user to register a developer app. Last.fm/Discogs/self-hosted-server credentials (OpenSubsonic/Jellyfin/Plex) still require the user to supply their own key/token — a documented, honest limitation, not an oversight — a fully "managed provider gateway" that hides even those behind a built-in OAuth configuration is still open and would need real backend infrastructure this project doesn't have.)*
 
 ---
 
-# 51. Things to specifically change in the current architecture
+# 55. OFFLINE-FIRST
 
-### 1. Reduce `AppSettings`
+Local music must work without Internet.
 
-The architecture has already moved some plugin-specific settings out of
-`AppSettings`, which is exactly correct.
+Offline capabilities:
 
-Continue aggressively.
+- playback
+- library
+- playlists
+- ratings
+- favorites
+- history
+- artwork cache
+- lyrics cache
+- metadata already downloaded
+- statistics
+- smart playlists
 
-`AppSettings` should contain only truly application-wide preferences.
+Internet functionality should degrade gracefully.
 
-Eventually something like:
+*(Already true for everything except live-network-backed plugins, which already fail soft — e.g. `LyricsPlugin`'s `fetchLyrics` degrades to cached/manual lyrics on a network exception rather than throwing.)*
+
+---
+
+# 56. AI SYSTEM
+
+AI should be **optional**, never required for core playback.
+
+Potential capabilities:
+
+- natural-language search
+- playlist generation
+- music recommendations
+- metadata cleanup
+- tag correction
+- genre classification
+- mood classification
+- artist summaries
+- album summaries
+- conversational music discovery
+
+Example:
+
+> "Make me a 90-minute playlist of energetic 2000s rock without songs I've played this week."
+
+Omnis generates a smart playlist.
+
+*(`AIPlaylistPlugin` — item 43 — already does exactly this example via a real `IAIProvider` capability interface and Anthropic's Messages API: a natural-language prompt becomes a real queue, with every returned track id checked against the actual library so the model can never invent one. Self-flagged unverified against the real Anthropic API — protocol-level correctness only. Natural-language search, metadata cleanup, tagging, a conversational library assistant, and voice control are all still genuine 0%.)*
+
+---
+
+# 57. VOICE CONTROL
+
+Eventually:
+
+> "Play my favorite Linkin Park songs."
+
+> "Add this to my driving playlist."
+
+> "Play something I haven't heard in six months."
+
+> "Turn the volume down."
+
+---
+
+# 58. ACCESSIBILITY
+
+Required:
+
+- screen reader support
+- keyboard navigation
+- high contrast
+- scalable UI
+- reduced motion
+- large controls
+- colorblind-safe states
+- captions where applicable
+- accessible lyrics
+- voice controls
+
+*(Item 48's tracker entry: "Reduce motion"/"Reduce transparency"/"Haptic feedback" live in a dedicated Accessibility settings category. Keyboard shortcuts exist too. High-contrast mode, app-wide text scaling, and full keyboard navigation are still open.)*
+
+---
+
+# 59. PLATFORM REQUIREMENTS
+
+### Windows
+
+- WASAPI
+- ASIO
+- media keys
+- system tray
+- notifications
+- portable mode
+- installer
+- Windows media integration
+
+*(SMTC integration is real. Windows build is currently blocked in this dev environment specifically by a Flutter-SDK/Visual-Studio-version CMake generator mismatch — documented in `docs/BUILDING.md` — not a code problem; GitHub Actions' `windows-latest` runner builds it independently in CI.)*
+
+### Android
+
+- background playback
+- notification controls
+- lock screen
+- Android Auto
+- Bluetooth
+- widgets
+- download manager
+
+*(`audio_service` notification/lock-screen controls, a Home-screen widget, and `BluetoothPlaybackPlugin` are all real. Real-device smoke-testing confirmed working on an Android emulator this session. Android Auto is still open.)*
+
+### iOS
+
+- background audio
+- lock screen controls
+- CarPlay
+- Siri integration where practical
+- Files integration
+
+### macOS
+
+- CoreAudio
+- media keys
+- menu bar
+- notifications
+- AirPlay integration
+
+### Linux
+
+- PipeWire
+- PulseAudio
+- ALSA
+- MPRIS
+- desktop notifications
+
+---
+
+# 60. DEVELOPMENT RULE
+
+Every feature must answer:
+
+### Is this Core?
+
+If another subsystem cannot function without it:
+
+**Core.**
+
+Otherwise:
+
+**Plugin.**
+
+Example:
+
+**Audio playback engine**
+
+Core.
+
+**Spotify**
+
+Plugin.
+
+**MusicBrainz**
+
+Plugin.
+
+**DSP framework**
+
+Core capability.
+
+**Equalizer**
+
+Plugin.
+
+**Library database**
+
+Core.
+
+**Podcast provider**
+
+Plugin.
+
+**Playlist engine**
+
+Core.
+
+**Podcast UI**
+
+Plugin/module.
+
+---
+
+# 61. IMPLEMENTATION PHASES
+
+The rebuild should **not attempt everything simultaneously**.
+
+## Phase 1 — Core stabilization
+
+- ServiceRegistry
+- EventBus
+- PluginContext
+- database
+- audio engine
+- playback watchdog
+- settings
+- plugin lifecycle
+- diagnostics
+- storage
+- migrations
+
+## Phase 2 — Library 2.0
+
+- scanner
+- watcher
+- database
+- multiple sources
+- search
+- duplicates
+- missing files
+- health center
+
+## Phase 3 — Music management
+
+- advanced tags
+- auto-tagging
+- artwork
+- file organizer
+- backup/restore
+- CUE
+
+## Phase 4 — Playlist/history
+
+- smart playlists
+- queue engine
+- history
+- statistics
+- ratings
+- favorites
+- recommendations
+
+## Phase 5 — Audio
+
+- DSP pipeline
+- ReplayGain
+- loudness
+- analysis
+- WASAPI
+- ASIO
+- platform outputs
+- conversion
+
+## Phase 6 — Media expansion
+
+- podcasts
+- radio
+- audiobooks
+- CD ripping
+- CD burning
+
+## Phase 7 — Devices/network
+
+- sync
+- NAS
+- OpenSubsonic
+- UPnP
+- DLNA
+- Chromecast
+- AirPlay
+- remote API
+
+## Phase 8 — Intelligence
+
+- discovery
+- AI
+- natural language search
+- DJ
+- automix
+- automation
+
+## Phase 9 — Ecosystem
+
+- marketplace
+- plugin SDK
+- developer documentation
+- plugin certification
+- plugin updates
+- remote clients
+
+*(This is the target phase shape going forward. `OMNIS_2_0_FINISHED_TASK.md`'s existing phase table — Phase 1 Reliability through Phase 7 Advanced UX — maps onto Phases 1-4 and 8-9 above fairly directly; Phases 5-7 above (Audio/DSP depth, Media expansion, Devices/network) are the newest, least-started ground this spec adds relative to the old tracker's phase list.)*
+
+---
+
+# 62. DEFINITION OF DONE
+
+Omnis should **not** be considered complete simply because it launches and plays an MP3.
+
+The ultimate release target is:
+
+### Music Management
+
+- Library
+- Scanner
+- Tagging
+- Auto-tagging
+- Artwork
+- File organization
+- Duplicates
+- Search
+- Smart playlists
+- Statistics
+
+### Playback
+
+- Local playback
+- Gapless
+- Crossfade
+- ReplayGain
+- DSP
+- Bit-perfect
+- Audiophile output
+- Multiple formats
+
+### Media
+
+- Music
+- Podcasts
+- Audiobooks
+- Radio
+- Streaming
+
+### Connectivity
+
+- Devices
+- NAS
+- Network servers
+- Casting
+- Remote control
+
+### Intelligence
+
+- Recommendations
+- Discovery
+- AI
+- DJ
+- Automation
+
+### UI
+
+- Desktop
+- Mobile
+- Driving
+- Karaoke
+- Futuristic
+- Custom layouts
+- Custom themes
+
+### Architecture
+
+- Plugin SDK
+- ServiceRegistry
+- EventBus
+- Permissions
+- Sandboxing
+- Diagnostics
+- Marketplace
+
+---
+
+# 63. THE NEW OMNIS POSITION
+
+This changes the goal from:
+
+> "Make a better music player than MusicBee."
+
+to:
+
+> **"Build an open, cross-platform music platform capable of everything MusicBee does, while adding modern streaming, mobile, AI, network, automation and plugin capabilities that MusicBee was never architecturally designed around."**
+
+The competitive target becomes:
 
 ```text
-AppSettings
-├── language
-├── theme
-├── startup
-├── privacy
-├── accessibility
-└── core UI preferences
+             OMNIS
+               │
+   ┌───────────┼───────────┐
+   │           │           │
+MusicBee   foobar2000   Spotify
+   │           │           │
+   ├───────┐   │   ┌───────┤
+   │       │   │   │       │
+Plex    Music   │  YouTube  Apple
+        players │  Music    Music
+                │
+             OMNIS
 ```
 
-Everything else belongs to a subsystem/plugin.
-
-### 2. Break up the large AudioEngine
-
-The current `audio_engine.dart` is over 40 KB according to the repository
-listing.
-
-That is a warning sign.
-
-Don't necessarily make everything a plugin, but split implementation
-responsibilities:
-
-```text
-AudioEngine
-PlaybackController
-QueueController
-OutputController
-AudioSessionController
-PlaybackRecovery
-PlaybackPersistence
-PlaybackState
-```
-
-The public engine facade can remain tiny.
-
-### 3. Introduce stable capability protocols
-
-There are currently interfaces for things such as:
-
-* Lyrics
-* Play history
-* Queue building
-* Metadata
-* Audio analysis
-* Visualizers
-
-Expand this carefully.
-
-Don't create an interface just because you can.
-
-Create one when another implementation is realistically possible.
-
-### 4. Introduce `CapabilityDescriptor`
-
-Every plugin should declare:
-
-```text
-Provides:
-- ILyricsProvider
-
-Consumes:
-- ITrackMetadata
-
-Permissions:
-- Network
-- Library read
-
-Optional:
-- Authentication
-```
-
-This allows Omnis to automatically understand the ecosystem.
+But **Omnis remains local-first, open, modular and user-controlled**.
 
 ---
 
-# 52. The ultimate plugin manifest
+## Most important change to the previous build direction
 
-Conceptually:
+**Library 2.0 + Metadata/Tagging + Smart Playlist Engine + Audio/DSP + Plugin Capability APIs** are the immediate foundation.
 
-```yaml
-id:
-name:
-version:
-description:
-author:
+Those five systems unlock almost everything else.
 
-compatibility:
-  omnis: ">=2.0.0"
-  api: ">=2.0.0"
-
-provides:
-  - lyrics.provider
-
-consumes:
-  - track.metadata
-
-permissions:
-  - network
-
-settings:
-  ...
-
-ui:
-  ...
-
-dependencies:
-  ...
-
-conflicts:
-  ...
-
-privacy:
-  data_collected: []
-  network_hosts: []
-
-verification:
-  source_verified: true
-  signed: true
-```
-
----
-
-# 53. User experience rule
-
-The user should almost never encounter technical terminology.
-
-Don't say:
-
-> OAuth credential missing.
-
-Say:
-
-> **Spotify needs to be connected.**
-> Click Connect Spotify to sign in.
-
-Don't say:
-
-> Plugin dependency resolution failed.
-
-Say:
-
-> **Lyrics Plus can't start because its Lyrics Provider is missing.**
-> Install a compatible provider.
-
-Don't say:
-
-> Permission denied.
-
-Say:
-
-> Omnis needs permission to access your music folder.
-
----
-
-# 54. "Everything works automatically"
-
-The first-run experience should be:
-
-### Welcome
-
-**Welcome to Omnis**
-
-> Where is your music?
-
-```text
-[Automatically find music]
-[Choose folders]
-[Skip for now]
-```
-
-Then:
-
-```text
-Scanning music...
-```
-
-Then automatically:
-
-* Find artwork
-* Read tags
-* Build library
-* Detect duplicates
-* Find lyrics
-* Calculate ReplayGain if enabled
-* Build playlists
-* Restore existing playlists
-* Detect providers
-
-No API configuration screen.
-
-No developer settings.
-
-No database setup.
-
-No complicated wizard.
-
----
-
-# 55. Recommended plugin catalog for the ultimate ecosystem
-
-## Essential
-
-* Favorites
-* Ratings
-* History
-* ReplayGain
-* Shuffle/Repeat
-* Sleep Timer
-* Lyrics
-* Metadata
-* Artwork
-* Tag Editor
-* Smart Playlists
-* Equalizer
-* Visualizer
-
-## Audio
-
-* Parametric EQ
-* DSP
-* Crossfeed
-* Compressor
-* Limiter
-* Convolver
-* Spatial
-* Bit-perfect
-* Resampler
-* Loudness analyzer
-* Dynamic range analyzer
-
-## Streaming
-
-* Spotify
-* YouTube Music
-* YouTube
-* Apple Music
-* Tidal
-* Qobuz
-* Deezer
-* SoundCloud
-* Bandcamp
-
-Subject to each service's technical and licensing constraints.
-
-## Servers
-
-* Navidrome/OpenSubsonic
-* Jellyfin
-* Plex
-* Emby
-* DLNA
-* UPnP
-* SMB
-* WebDAV
-* FTP
-
-## Discovery
-
-* Radio
-* Artist radio
-* Track radio
-* AI recommendations
-* Sonic similarity
-* Mood radio
-* Discovery playlists
-
-## Utility
-
-* Duplicate cleaner
-* Library analyzer
-* Tag fixer
-* Artwork manager
-* File organizer
-* Converter
-* CD ripper
-* Backup
-* Import/export
-
-## Hardware
-
-* Bluetooth
-* DAC
-* AirPlay
-* Chromecast
-* UPnP
-* Android Auto
-* CarPlay
-
-## UI
-
-* Themes
-* Layouts
-* Visualizers
-* Widgets
-* Desktop mini-player
-* Floating player
-* Lock-screen controls
-* TV interface
-* Car interface
-
----
-
-# 56. Features other players demonstrate that Omnis should absorb
-
-| Player/ecosystem                | What Omnis should learn                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------ |
-| **foobar2000**                  | Extreme customization, components, tagging, DSP, network audio, advanced users |
-| **MusicBee**                    | Powerful functionality without making normal users configure everything        |
-| **Spotify**                     | Discovery, personalization, effortless UX, intelligent shuffle                 |
-| **Plexamp**                     | Sonic analysis, beautiful music-focused experience                             |
-| **Navidrome**                   | Huge-library architecture, server ecosystem, multi-library, open API           |
-| **Poweramp**                    | Audiophile controls, output/DAC attention                                      |
-| **OpenSubsonic**                | Standardized interoperability                                                  |
-| **Community plugin ecosystems** | Replaceable implementations instead of hard-coded features                     |
-
----
-
-# 57. What Omnis should NOT become
-
-This is equally important.
-
-Do **not** make Omnis:
-
-* A giant monolith.
-* Dependent on one music service.
-* Dependent on the Internet.
-* Dependent on an account.
-* Dependent on AI.
-* Dependent on a plugin marketplace.
-* Dependent on GitHub.
-* Dependent on API keys.
-* Dependent on one metadata provider.
-* Dependent on one lyrics provider.
-* Dependent on one audio backend.
-* Dependent on one UI layout.
-* Dependent on one database implementation.
-
-The Core should remain boring.
-
-**Boring Core = reliable product.**
-
----
-
-# 58. The ultimate architecture
-
-Target:
-
-```text
-                         OMNIS
-                           │
-             ┌─────────────┴─────────────┐
-             │       USER INTERFACE      │
-             │                            │
-             │ Desktop / Mobile / TV /   │
-             │ Car / Accessibility       │
-             └─────────────┬─────────────┘
-                           │
-                    Capability Layer
-                           │
-       ┌───────────────────┼────────────────────┐
-       │                   │                    │
-    Playback            Library             Services
-       │                   │                    │
-       │              Metadata              Spotify
-       │              Artwork               YouTube
-       │              Search                Navidrome
-       │              Tags                  Jellyfin
-       │              Playlists             Plex
-       │              History               ...
-       │
-       └─────────────── CORE ──────────────────┐
-                                               │
-        Audio Engine                           │
-        Queue                                  │
-        Media Model                            │
-        Database                               │
-        Storage                                │
-        Recovery                               │
-        Events                                 │
-        Services                               │
-        Plugin Runtime                         │
-        Permissions                            │
-        Security                               │
-        OS Integration                         │
-                                               │
-                  NOTHING OPTIONAL             │
-                  CAN BREAK IT                 │
-```
-
----
-
-# 59. Development priority
-
-Do **not** attempt to build all of this simultaneously.
-
-Work in this order:
-
-### Phase 1 — Reliability
-
-1. Playback engine
-2. Queue
-3. Recovery
-4. Database
-5. Library scanning
-6. Persistence
-7. OS media integration
-8. Error handling
-9. Tests
-
-### Phase 2 — Library
-
-10. Search
-11. Metadata
-12. Artwork
-13. Playlists
-14. Favorites
-15. Ratings
-16. History
-17. Tag editor
-
-### Phase 3 — Audio
-
-18. DSP pipeline
-19. ReplayGain
-20. EQ
-21. Output devices
-22. Bit-perfect
-23. Audio analysis
-
-### Phase 4 — Plugin platform
-
-24. Capability interfaces
-25. Plugin lifecycle
-26. Dependency resolution
-27. Permissions
-28. Plugin health
-29. Plugin updates
-30. Marketplace/catalog
-
-### Phase 5 — Connectivity
-
-31. OpenSubsonic
-32. Navidrome
-33. Jellyfin
-34. Plex
-35. DLNA/UPnP
-36. Spotify
-37. YouTube
-38. Other providers
-
-### Phase 6 — Discovery
-
-39. Recommendations
-40. Sonic similarity
-41. Radio
-42. Smart playlists
-43. AI
-
-### Phase 7 — Advanced UX
-
-44. Themes
-45. Layout builder
-46. Car mode
-47. TV mode
-48. Accessibility
-49. Widgets
-50. Automation
-
----
-
-# 60. The highest-priority rule
-
-> **Do not implement a feature merely because it works. Implement it so
-> that failure is an expected operating condition.**
-
-For every feature ask:
-
-```text
-What happens if:
-- the network disappears?
-- the file disappears?
-- the plugin crashes?
-- the provider changes its API?
-- authentication expires?
-- the database is corrupted?
-- the user denies permission?
-- the device disappears?
-- the user uninstalls the plugin?
-- the plugin is outdated?
-- the data is malformed?
-- the user has 1,000,000 songs?
-- the user has zero songs?
-- the user is offline?
-```
-
-If the answer is:
-
-> "The application crashes."
-
-**The implementation is not finished.**
-
----
-
-# 61. Assessment of the current Omnis direction
-
-### Architecture: **Excellent foundation**
-
-The separation of:
-
-* Core
-* Plugin API
-* Plugins
-* Service Registry
-* Event Bus
-* Plugin Storage
-
-is exactly the right general direction.
-
-### Plugin ecosystem: **Strong beginning**
-
-You already have a surprisingly broad collection:
-
-* Audio analysis
-* Bluetooth
-* Driving mode
-* EQ
-* Favorites
-* Lyrics
-* Metadata
-* Queue presets
-* ReplayGain
-* Ringtone
-* Scrobbling
-* Shuffle/repeat
-* Sleep timer
-* Smart playlists
-* Spotify
-* YouTube
-* Tag editor
-* Visualizer
-
-The plugin repository currently documents roughly twenty plugin
-implementations, while also honestly identifying several that still need
-real-device/account verification.
-
-That's actually a good sign: **the project is honest about what is
-implemented versus verified.**
-
-### Biggest architectural concern
-
-The Core is still carrying more responsibility than the final philosophy
-suggests.
-
-In particular:
-
-* `AudioEngine`
-* `AppSettings`
-* library persistence
-* scanner
-* playback state
-* UI integration
-
-need to be continually audited.
-
-The architecture document already identifies this issue and has begun
-moving functionality out of `AppSettings`.
-
----
-
-# 62. The final product vision
-
-The thing to ultimately market is not:
-
-> "Another music player."
-
-It is:
-
-> **Omnis — Your Music. Your Way. One Player.**
->
-> A powerful, private, universal music platform that plays your music
-> reliably without requiring an account, subscription, API key, cloud
-> service or plugin configuration.
->
-> Start with a simple music player.
->
-> Add anything you want.
->
-> Change anything you don't.
->
-> Your library remains yours.
-
-That positioning separates Omnis from both sides of the market:
-
-**Spotify-style users** get simplicity.
-
-**MusicBee/foobar2000 users** get control.
-
-**Audiophiles** get serious audio functionality.
-
-**Power users** get plugins.
-
-**Self-hosters** get open protocols.
-
-**Casual users** don't have to know any of that exists.
-
----
-
-## The single biggest design rule
-
-**Complexity belongs behind the interface, never in front of the user.**
-
-The user should see:
-
-> **Lyrics**
-
-not LRCLIB.
-
-> **Music Services**
-
-not OAuth.
-
-> **Improve Metadata**
-
-not MusicBrainz API.
-
-> **Connect Server**
-
-not Subsonic protocol.
-
-> **Better Sound**
-
-not DSP chain.
-
-> **Equalizer**
-
-not audio processing graph.
-
-> **Install Plugin**
-
-not Dart runtime.
-
-> **Fix Problem**
-
-not exception stack trace.
-
-That is how Omnis can become something substantially better than simply
-"foobar2000 with a modern UI" or "Spotify for local files."
-
-The technical foundation already being built — especially the
-capability-based architecture — is capable of supporting this. The next
-step should be **turning this specification into an explicit
-implementation contract for the AI agent**, with Core requirements,
-plugin interfaces, database schema, event contracts, settings schema,
-UI architecture, reliability requirements, testing requirements, and a
-phased build order so the agent cannot gradually turn the project back
-into a monolith.
+Because `ServiceRegistry`, `EventBus`, `PluginContext`, `ILyricsProvider`, `IPlayHistoryProvider`, plugin storage, migrations and the runtime plugin architecture already exist, **Omnis does not need to restart from zero**. The build migrates the current implementation into this larger specification rather than discarding the work already completed — the standing autonomous build directive continues to operate exactly as before: survey the actual current code state (this spec plus `OMNIS_2_0_MUSICBEE_COMPARISON.md` as additional candidate-gap sources once `OMNIS_2_0_FINISHED_TASK.md`'s own named items run thin), implement, test, document, commit, push, repeat.
