@@ -9,6 +9,7 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:omnis/ui/home_dashboard_page.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
@@ -224,54 +225,57 @@ class _HomePageState extends State<HomePage> {
       ],
     );
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          IndexedStack(index: _selectedIndex, children: pages),
-          if (autoHideActive)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 28,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onVerticalDragEnd: (details) {
-                  final velocity = details.primaryVelocity ?? 0;
-                  if (velocity < -150) {
-                    setState(() => _navRevealed = true);
-                  } else if (velocity > 150) {
-                    setState(() => _navRevealed = false);
-                  }
-                },
+    return GlobalKeyboardShortcuts(
+      engine: core.audioEngine,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            IndexedStack(index: _selectedIndex, children: pages),
+            if (autoHideActive)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 28,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -150) {
+                      setState(() => _navRevealed = true);
+                    } else if (velocity > 150) {
+                      setState(() => _navRevealed = false);
+                    }
+                  },
+                ),
               ),
-            ),
-          if (autoHideActive && !navVisible)
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: FloatingActionButton.small(
-                heroTag: 'reveal_bottom_nav',
-                tooltip: 'Show navigation',
-                onPressed: () => setState(() => _navRevealed = true),
-                child: const Icon(Icons.keyboard_arrow_up),
+            if (autoHideActive && !navVisible)
+              Positioned(
+                right: 12,
+                bottom: 12,
+                child: FloatingActionButton.small(
+                  heroTag: 'reveal_bottom_nav',
+                  tooltip: 'Show navigation',
+                  onPressed: () => setState(() => _navRevealed = true),
+                  child: const Icon(Icons.keyboard_arrow_up),
+                ),
               ),
-            ),
-        ],
-      ),
-      bottomNavigationBar: AnimatedSize(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: navVisible
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MiniPlayerBar(engine: core.audioEngine),
-                  navBar,
-                ],
-              )
-            : const SizedBox(width: double.infinity),
+          ],
+        ),
+        bottomNavigationBar: AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: navVisible
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MiniPlayerBar(engine: core.audioEngine),
+                    navBar,
+                  ],
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ),
     );
   }

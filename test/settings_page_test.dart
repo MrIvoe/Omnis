@@ -7,6 +7,7 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/settings/accessibility_settings_page.dart';
 import 'package:omnis/ui/settings/backup_settings_page.dart';
+import 'package:omnis/ui/settings/keyboard_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
@@ -49,6 +50,7 @@ void main() {
     expect(find.text('Controls & Gestures'), findsOneWidget);
     expect(find.text('Library'), findsOneWidget);
     expect(find.text('Accessibility'), findsOneWidget);
+    expect(find.text('Keyboard'), findsOneWidget);
     // Plugins/Backup sit below the default test viewport's sliver cache
     // extent — same reasoning as the "tapping Plugins" test's own
     // dragUntilVisible below: a plain ListView(children:) is still
@@ -76,6 +78,19 @@ void main() {
     expect(find.text('Reduce motion'), findsOneWidget);
     expect(find.text('Reduce transparency'), findsOneWidget);
     expect(find.text('Haptic feedback'), findsOneWidget);
+  });
+
+  testWidgets('tapping Keyboard opens KeyboardSettingsPage', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.ensureVisible(find.text('Keyboard'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keyboard'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(KeyboardSettingsPage), findsOneWidget);
+    expect(find.text('Enable keyboard shortcuts'), findsOneWidget);
+    expect(find.text('Shortcuts'), findsOneWidget);
   });
 
   testWidgets('tapping Backup opens BackupSettingsPage', (tester) async {
@@ -242,6 +257,26 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(BackupSettingsPage), findsOneWidget);
+    });
+
+    testWidgets(
+        'searching "Enable keyboard shortcuts" opens KeyboardSettingsPage '
+        'with that row as the highlight target', (tester) async {
+      await pumpSettings(tester);
+
+      await tester.enterText(
+          find.byType(TextField), 'Enable keyboard shortcuts');
+      await tester.pumpAndSettle();
+      await tester.tap(
+          find.widgetWithText(ListTile, 'Enable keyboard shortcuts'));
+      await tester.pumpAndSettle();
+
+      final page = tester
+          .widget<KeyboardSettingsPage>(find.byType(KeyboardSettingsPage));
+      expect(page.highlightField, 'keyboard_shortcuts_enabled');
+      expect(
+          find.widgetWithText(ListTile, 'Enable keyboard shortcuts'),
+          findsOneWidget);
     });
   });
 }

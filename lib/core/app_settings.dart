@@ -67,6 +67,7 @@ class AppSettings extends ChangeNotifier {
   static const _autoLandscapeLayoutKey = 'app_auto_landscape_layout';
   static const _carModeControlsOnRightKey = 'app_car_mode_controls_on_right';
   static const _bottomNavAutoHideKey = 'app_bottom_nav_auto_hide';
+  static const _keyboardShortcutsEnabledKey = 'app_keyboard_shortcuts_enabled';
   static const _songsViewModeKey = 'app_songs_view_mode';
   static const _songsGridColumnsKey = 'app_songs_grid_columns';
   static const _albumsViewModeKey = 'app_albums_view_mode';
@@ -406,8 +407,8 @@ class AppSettings extends ChangeNotifier {
   set seekIncrementSeconds(int value) {
     _ensurePrefs();
     const allowed = {10, 15, 30};
-    _prefs!.setInt(
-        _seekIncrementSecondsKey, allowed.contains(value) ? value : 10);
+    _prefs!
+        .setInt(_seekIncrementSecondsKey, allowed.contains(value) ? value : 10);
     notifyListeners();
   }
 
@@ -442,12 +443,10 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-
   /// Whether the bottom navigation bar auto-hides in Car Mode / landscape
   /// (revealed by a swipe-up or the edge handle) rather than always
   /// staying visible and covering more of the screen in those layouts.
-  bool get bottomNavAutoHide =>
-      _prefs?.getBool(_bottomNavAutoHideKey) ?? true;
+  bool get bottomNavAutoHide => _prefs?.getBool(_bottomNavAutoHideKey) ?? true;
 
   set bottomNavAutoHide(bool value) {
     _ensurePrefs();
@@ -537,8 +536,7 @@ class AppSettings extends ChangeNotifier {
       (_prefs?.getStringList(_disabledPluginsKey) ?? const <String>[]).toSet();
 
   /// Whether [pluginId] was switched off by the user.
-  bool isPluginDisabled(String pluginId) =>
-      disabledPlugins.contains(pluginId);
+  bool isPluginDisabled(String pluginId) => disabledPlugins.contains(pluginId);
 
   /// Persist a plugin's enabled state.
   ///
@@ -597,6 +595,22 @@ class AppSettings extends ChangeNotifier {
   set hapticFeedbackEnabled(bool value) {
     _ensurePrefs();
     _prefs!.setBool(_hapticFeedbackEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// Global playback keyboard shortcuts (`GlobalKeyboardShortcuts` —
+  /// Space to play/pause, arrows to seek/change volume, Ctrl+arrows for
+  /// next/previous, plus hardware media keys). Defaults to `true`: these
+  /// shortcuts only ever fire when nothing more specific already
+  /// consumed the key event (see that widget's own doc comment), so
+  /// there's no accidental-activation risk that would call for an
+  /// opt-in default the way [reduceMotionEnabled] needs one.
+  bool get keyboardShortcutsEnabled =>
+      _prefs?.getBool(_keyboardShortcutsEnabledKey) ?? true;
+
+  set keyboardShortcutsEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_keyboardShortcutsEnabledKey, value);
     notifyListeners();
   }
 

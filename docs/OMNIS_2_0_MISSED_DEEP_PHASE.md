@@ -996,13 +996,69 @@ two cards genuinely sit one card's height further down now on a small
 screen). Still gaps: no high-contrast mode, no colorblind-safe state
 option, no app-wide text-scale setting (only a 4-step lyrics-only text
 size, `lyricsTextSize`, deliberately left in Appearance — it's a lyrics
-display option, not moved here), and — significant — **zero keyboard
-navigation/shortcuts anywhere** (no `Shortcuts`/`FocusTraversalGroup`/
-`CallbackShortcuts` usage found), so the UI spec's global Ctrl+K search
-(§37) and command palette (§38) don't exist either, on top of not being
-an accessibility gap in their own right. No voice control, no
-switch-input support, no RTL/localization wiring (`AppLocalizations`
-isn't used).
+display option, not moved here), no voice control, no switch-input
+support, no RTL/localization wiring (`AppLocalizations` isn't used).
+
+**Keyboard shortcuts closed 2026-08-14** (was the genuine "zero
+`Shortcuts`/`FocusTraversalGroup`/`CallbackShortcuts` usage found"
+gap). New `GlobalKeyboardShortcuts`
+(`lib/ui/global_keyboard_shortcuts.dart`) wraps `HomePage`'s `Scaffold`
+— all six tabs share the one `IndexedStack` under it, so this is
+app-wide without per-page wiring. Bindings: Space and the hardware
+media-play-pause key toggle play/pause; plain Left/Right arrows seek
+±10s; plain Up/Down adjust volume ±5%; Ctrl+Left/Right and the hardware
+media-next/previous keys skip tracks. A new **Keyboard** settings
+category (`lib/ui/settings/keyboard_settings_page.dart`) holds
+`AppSettings.keyboardShortcutsEnabled` (default on) plus a static
+reference list of what each key does, wired into the search index the
+same way Accessibility was.
+
+Two real `CallbackShortcuts`/focus gotchas surfaced only by writing
+genuine `tester.sendKeyEvent` tests, not from reading the API:
+
+1. `CallbackShortcuts` deliberately never requests focus itself
+   (`canRequestFocus: false`) — it only fires as part of the ancestor
+   chain walked outward from whatever currently holds `primaryFocus`.
+   In a touch-first app nothing holds focus by default, and the actual
+   default holder (the current route's own `FocusScopeNode`) sits
+   *above* `GlobalKeyboardShortcuts` in the tree, not below it — key
+   dispatch never walks into children, so with nothing else focused
+   these bindings would silently never fire. Every one of the first 9
+   tests failed exactly this way (widget built correctly, nothing
+   intercepted the key) before the fix. Fixed with a fallback anchor
+   `FocusNode`, claimed only when `primaryFocus` is `null` or a bare
+   `FocusScopeNode`.
+2. The naive version of that fix — claiming in the very first
+   post-frame callback — stole focus from a real descendant
+   `autofocus: true` `TextField` in a dedicated nested-autofocus race
+   test, because that widget resolves its own autofocus claim via a
+   post-frame callback too, and an ancestor's `initState` (this
+   widget's) always runs — and therefore registers its callback —
+   before a descendant's, so the naive anchor's callback fired and won
+   first. Fixed by deferring the actual claim one additional frame,
+   letting the real widget's own callback settle first; the same test
+   then passed.
+3. Separately, even once focus correctly reached the widget: a focused
+   `TextField` did **not** stop Space from also reaching the global
+   handler. Ordinary character input isn't reliably marked "handled" by
+   `EditableText`'s own key handling the way arrow-key cursor movement
+   is — text composition goes through a separate IME channel the
+   `Shortcuts`/`Actions` handled/ignored bubbling model doesn't see.
+   Left unfixed, typing a space while searching the Library would have
+   inserted the character *and* toggled playback. Fixed with an
+   explicit `_typingInTextField` check (walks up from the focused
+   context looking for an ancestor `EditableText`) ahead of every
+   binding, rather than relying on propagation to stop it.
+
+11 new tests in `test/global_keyboard_shortcuts_test.dart` (every
+binding proven against a real fake-`AudioEngine` call, not just that
+the widget renders), 2 more in `test/settings_page_test.dart`. Full
+suite: 647 passing (was 634), `flutter analyze` clean. Main-repo-only,
+no cross-repo bump needed.
+
+Still 0% for per-shortcut remapping/conflict-detection UI, and for the
+UI spec's global Ctrl+K search (§37) and command palette (§38) — both
+distinct, materially larger features this increment didn't attempt.
 
 **49. Widgets** — Partial (closed 2026-08-13, was genuine 0%). Real
 Android App Widget: `home_widget: ^0.9.2+1` for the Dart↔native

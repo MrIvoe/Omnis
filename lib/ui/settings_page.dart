@@ -9,6 +9,7 @@ import 'package:omnis/ui/settings/accessibility_settings_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/controls_settings_page.dart';
+import 'package:omnis/ui/settings/keyboard_settings_page.dart';
 import 'package:omnis/ui/settings/library_settings_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
@@ -111,6 +112,11 @@ class _SettingsPageState extends State<SettingsPage> {
         builder: (_) => LibrarySettingsPage(highlightField: highlightField),
       ));
 
+  void _openKeyboard(BuildContext context, {String? highlightField}) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => KeyboardSettingsPage(highlightField: highlightField),
+      ));
+
   void _openPlugins(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PluginsPage(
@@ -137,8 +143,7 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
             highlightField: 'theme_mode',
-            navigate: (c) =>
-                _openAppearance(c, highlightField: 'theme_mode')),
+            navigate: (c) => _openAppearance(c, highlightField: 'theme_mode')),
         _SearchableSetting(
             title: 'Accent color',
             category: 'Appearance & Layout',
@@ -172,8 +177,8 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Appearance & Layout',
             categoryIcon: Icons.palette_outlined,
             highlightField: 'now_playing_background',
-            navigate: (c) => _openAppearance(c,
-                highlightField: 'now_playing_background')),
+            navigate: (c) =>
+                _openAppearance(c, highlightField: 'now_playing_background')),
         _SearchableSetting(
             title: 'Dynamic color from album art',
             category: 'Appearance & Layout',
@@ -200,8 +205,8 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Accessibility',
             categoryIcon: Icons.accessibility_new_outlined,
             highlightField: 'reduce_transparency',
-            navigate: (c) => _openAccessibility(c,
-                highlightField: 'reduce_transparency')),
+            navigate: (c) =>
+                _openAccessibility(c, highlightField: 'reduce_transparency')),
         _SearchableSetting(
             title: 'Player layout',
             category: 'Appearance & Layout',
@@ -266,8 +271,7 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,
             highlightField: 'skip_silence',
-            navigate: (c) =>
-                _openPlayback(c, highlightField: 'skip_silence')),
+            navigate: (c) => _openPlayback(c, highlightField: 'skip_silence')),
         _SearchableSetting(
             title: 'Output devices',
             category: 'Playback & Audio',
@@ -276,19 +280,24 @@ class _SettingsPageState extends State<SettingsPage> {
             navigate: (c) =>
                 _openPlayback(c, highlightField: 'output_devices')),
         _SearchableSetting(
+            title: 'Enable keyboard shortcuts',
+            category: 'Keyboard',
+            categoryIcon: Icons.keyboard_outlined,
+            highlightField: 'keyboard_shortcuts_enabled',
+            navigate: (c) =>
+                _openKeyboard(c, highlightField: 'keyboard_shortcuts_enabled')),
+        _SearchableSetting(
             title: 'Button layout',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
             highlightField: 'button_layout',
-            navigate: (c) =>
-                _openControls(c, highlightField: 'button_layout')),
+            navigate: (c) => _openControls(c, highlightField: 'button_layout')),
         _SearchableSetting(
             title: 'Gesture mode',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
             highlightField: 'gesture_mode',
-            navigate: (c) =>
-                _openControls(c, highlightField: 'gesture_mode')),
+            navigate: (c) => _openControls(c, highlightField: 'gesture_mode')),
         _SearchableSetting(
             title: 'Enable player gestures',
             category: 'Controls & Gestures',
@@ -301,43 +310,39 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
             highlightField: 'auto_hide_nav',
-            navigate: (c) =>
-                _openControls(c, highlightField: 'auto_hide_nav')),
+            navigate: (c) => _openControls(c, highlightField: 'auto_hide_nav')),
         _SearchableSetting(
             title: 'Library source',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
             highlightField: 'library_source',
-            navigate: (c) =>
-                _openLibrary(c, highlightField: 'library_source')),
+            navigate: (c) => _openLibrary(c, highlightField: 'library_source')),
         _SearchableSetting(
             title: 'Folder for library scans',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
             highlightField: 'library_folder',
-            navigate: (c) =>
-                _openLibrary(c, highlightField: 'library_folder')),
+            navigate: (c) => _openLibrary(c, highlightField: 'library_folder')),
         _SearchableSetting(
             title: 'List density',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
             highlightField: 'list_density',
-            navigate: (c) =>
-                _openLibrary(c, highlightField: 'list_density')),
+            navigate: (c) => _openLibrary(c, highlightField: 'list_density')),
         _SearchableSetting(
             title: 'Group Artists view by album artist',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
             highlightField: 'group_by_album_artist',
-            navigate: (c) => _openLibrary(c,
-                highlightField: 'group_by_album_artist')),
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'group_by_album_artist')),
         _SearchableSetting(
             title: 'Short-track threshold',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
             highlightField: 'short_track_threshold',
-            navigate: (c) => _openLibrary(c,
-                highlightField: 'short_track_threshold')),
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'short_track_threshold')),
         _SearchableSetting(
             title: 'Install a plugin',
             category: 'Plugins',
@@ -399,8 +404,7 @@ class _SettingsPageState extends State<SettingsPage> {
           if (query.isNotEmpty) ...[
             if (matches.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    vertical: OmnisSpacing.md),
+                padding: const EdgeInsets.symmetric(vertical: OmnisSpacing.md),
                 child: Text('No settings match "$_query".',
                     style: Theme.of(context).textTheme.bodyMedium),
               )
@@ -419,8 +423,7 @@ class _SettingsPageState extends State<SettingsPage> {
             _CategoryCard(
               icon: Icons.palette_outlined,
               title: 'Appearance & Layout',
-              subtitle:
-                  'Theme, colors, and the Now Playing screen arrangement',
+              subtitle: 'Theme, colors, and the Now Playing screen arrangement',
               onTap: () => _openAppearance(context),
             ),
             _CategoryCard(
@@ -448,6 +451,13 @@ class _SettingsPageState extends State<SettingsPage> {
               title: 'Accessibility',
               subtitle: 'Reduce motion, reduce transparency, haptic feedback',
               onTap: () => _openAccessibility(context),
+            ),
+            _CategoryCard(
+              icon: Icons.keyboard_outlined,
+              title: 'Keyboard',
+              subtitle: 'Global playback shortcuts — play/pause, seek, '
+                  'volume, next/previous',
+              onTap: () => _openKeyboard(context),
             ),
             _CategoryCard(
               icon: Icons.extension_outlined,
