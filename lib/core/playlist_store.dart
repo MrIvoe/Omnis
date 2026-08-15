@@ -103,6 +103,44 @@ class PLSImportResult {
   });
 }
 
+/// Result of [PlaylistStore.exportXSPF].
+class XSPFExportResult {
+  /// The XSPF (XML) file content, ready to write to disk.
+  final String content;
+
+  /// How many playlist entries were written.
+  final int writtenCount;
+
+  /// How many entries were skipped — same reasons as
+  /// [M3UExportResult.skippedCount].
+  final int skippedCount;
+
+  const XSPFExportResult({
+    required this.content,
+    required this.writtenCount,
+    required this.skippedCount,
+  });
+}
+
+/// Result of [PlaylistStore.importXSPF].
+class XSPFImportResult {
+  /// The new playlist, built from whichever entries matched the current
+  /// library. Not yet saved — same contract as [M3UImportResult.playlist].
+  final Playlist playlist;
+
+  /// How many entries matched a track in the current library.
+  final int matchedCount;
+
+  /// How many entries didn't match.
+  final int skippedCount;
+
+  const XSPFImportResult({
+    required this.playlist,
+    required this.matchedCount,
+    required this.skippedCount,
+  });
+}
+
 /// Persists named playlists to disk, the same load/save shape as
 /// `LibraryStore` — one JSON file in the app's documents directory, the
 /// caller owns the in-memory list and decides when to save.
@@ -348,6 +386,143 @@ class PlaylistStore {
       createdAt: DateTime.now(),
     );
     return PLSImportResult(
+      playlist: playlist,
+      matchedCount: trackIds.length,
+      skippedCount: skipped,
+    );
+  }
+
+  /// Matches an XSPF `<location>` element's text content — the only XSPF
+  /// field this store reads on import, same "only read what we need to
+  /// resolve a track" stance [importPLS] takes for `TitleN`/`LengthN`.
+  /// `dotAll` since a hand-formatted file could plausibly wrap long
+  /// content across a line (unlikely for a URI, but cheap to tolerate);
+  /// case-insensitive for the same real-world-files-aren't-perfectly-
+  /// consistent reason [_plsFileLine] already is, even though XSPF's own
+  /// spec mandates lowercase element names.
+  static final _xspfLocationLine =
+      RegExp(r'<location>(.*?)</location>', caseSensitive: false, dotAll: true);
+
+  static String _xmlEscape(String input) => input
+      .replaceAll('&', '&amp;') // must run first — every other escape below introduces a literal '&'
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
+
+  static String _xmlUnescape(String input) => input
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&apos;', "'")
+      .replaceAll('&amp;', '&'); // must run last, mirroring _xmlEscape's "first" ordering
+
+  /// A `<location>` element's content is a URI, not a bare path — export
+  /// writes a real `file://` URI via [Uri.file], so this reverses that
+  /// for a well-formed one. Falls back to treating [location] as a plain
+  /// path when it isn't a `file:` URI at all (a hand-edited or
+  /// non-conforming XSPF file, or one produced by a tool that — despite
+  /// the spec — wrote a bare path) rather than discarding the entry.
+  static String _locationToPath(String location) {
+    if (location.startsWith('file:')) {
+      try {
+        return Uri.parse(location).toFilePath();
+      } catch (_) {
+        // Not a well-formed file:// URI after all — fall through.
+      }
+    }
+    return location;
+  }
+
+  /// Renders [playlist] as XSPF content, the same track-resolution rules
+  /// [exportM3U]/[exportPLS] use. XSPF is XML (unlike M3U/PLS's plain
+  /// key=value text), built directly here rather than via a dependency —
+  /// the shape needed (one `<playlist><trackList>` with a flat list of
+  /// `<track>` elements) is simple and fixed enough that hand-writing it
+  /// avoids a new package dependency for a handful of `StringBuffer`
+  /// lines, the same reasoning every other format reader/writer in this
+  /// codebase (`audio_format_reader.dart`'s binary parsers, M3U/PLS
+  /// above) already follows.
+  XSPFExportResult exportXSPF(Playlist playlist, List<BaseTrack> tracks) {
+    final byId = {for (final t in tracks) t.id: t};
+    final entries = <BaseTrack>[];
+    var skipped = 0;
+    for (final id in playlist.trackIds) {
+      final track = byId[id];
+      if (track == null || track.type != TrackType.local || track.localPath == null) {
+        skipped++;
+        continue;
+      }
+      entries.add(track);
+    }
+    final buffer = StringBuffer();
+    buffer.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+    buffer.writeln('<playlist version="1" xmlns="http://xspf.org/ns/0/">');
+    buffer.writeln('  <trackList>');
+    for (final track in entries) {
+      final artist = track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown Artist';
+      final location = Uri.file(track.localPath!).toString();
+      buffer.writeln('    <track>');
+      buffer.writeln('      <location>${_xmlEscape(location)}</location>');
+      buffer.writeln('      <title>${_xmlEscape(track.title)}</title>');
+      buffer.writeln('      <creator>${_xmlEscape(artist)}</creator>');
+      // XSPF durations are milliseconds; BaseTrack.duration is seconds.
+      buffer.writeln('      <duration>${track.duration * 1000}</duration>');
+      buffer.writeln('    </track>');
+    }
+    buffer.writeln('  </trackList>');
+    buffer.writeln('</playlist>');
+    return XSPFExportResult(
+      content: buffer.toString(),
+      writtenCount: entries.length,
+      skippedCount: skipped,
+    );
+  }
+
+  /// Parses XSPF [content] into a new playlist named [name] — the same
+  /// path-then-filename matching [importM3U]/[importPLS] use. Never
+  /// throws — this is a regex extraction of `<location>` text, not a
+  /// real XML parse, so malformed XML around a `<location>` element (an
+  /// unclosed unrelated tag elsewhere, wrong attribute quoting) doesn't
+  /// prevent still finding and resolving every `<location>` that *is*
+  /// well-formed.
+  ///
+  /// Not persisted — see [XSPFImportResult.playlist]'s doc.
+  XSPFImportResult importXSPF(
+    String content,
+    List<BaseTrack> tracks, {
+    required String name,
+  }) {
+    final byPath = {
+      for (final t in tracks)
+        if (t.localPath != null) t.localPath!: t,
+    };
+    final byFilename = {
+      for (final t in tracks)
+        if (t.localPath != null) _basename(t.localPath!): t,
+    };
+
+    final trackIds = <String>[];
+    var skipped = 0;
+    for (final match in _xspfLocationLine.allMatches(content)) {
+      final raw = _xmlUnescape(match.group(1)!.trim());
+      if (raw.isEmpty) continue;
+      final path = _locationToPath(raw);
+      final track = byPath[path] ?? byFilename[_basename(path)];
+      if (track != null) {
+        trackIds.add(track.id);
+      } else {
+        skipped++;
+      }
+    }
+
+    final playlist = Playlist(
+      id: 'playlist_${DateTime.now().microsecondsSinceEpoch}',
+      name: name,
+      trackIds: trackIds,
+      createdAt: DateTime.now(),
+    );
+    return XSPFImportResult(
       playlist: playlist,
       matchedCount: trackIds.length,
       skippedCount: skipped,

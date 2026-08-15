@@ -375,6 +375,189 @@ NumberOfEntries=1
     });
   });
 
+  group('XSPF export/import (item 13)', () {
+    BaseTrack track(String id,
+            {String artist = 'Artist',
+            String title = 'Title',
+            bool local = true}) =>
+        BaseTrack(
+          id: id,
+          title: title,
+          artists: [artist],
+          album: 'Album',
+          duration: 200,
+          type: local ? TrackType.local : TrackType.youtube,
+          localPath: local ? '/music/${id}_file.mp3' : null,
+        );
+
+    test('exportXSPF writes local tracks and skips the rest, with the '
+        'standard XSPF playlist/trackList/track shape (duration in '
+        'milliseconds)', () {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise'),
+        track('b', local: false),
+        track('c', artist: 'Bo', title: 'Dusk'),
+      ];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'b', 'c', 'missing'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportXSPF(playlist, tracks);
+
+      expect(result.writtenCount, 2);
+      expect(result.skippedCount, 2);
+      expect(result.content, contains('<playlist version="1"'));
+      expect(result.content, contains('<trackList>'));
+      expect(result.content, contains('<location>file:///music/a_file.mp3</location>'));
+      expect(result.content, contains('<title>Sunrise</title>'));
+      expect(result.content, contains('<creator>Ava</creator>'));
+      expect(result.content, contains('<duration>200000</duration>'));
+      expect(result.content, contains('file:///music/c_file.mp3'));
+      expect(result.content, isNot(contains('b_file')));
+    });
+
+    test('exportXSPF escapes XML-significant characters in title/creator',
+        () {
+      final tracks = [track('a', artist: 'AT&T <Band>', title: 'Rock & "Roll"')];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportXSPF(playlist, tracks);
+
+      expect(result.content, contains('<title>Rock &amp; &quot;Roll&quot;</title>'));
+      expect(result.content, contains('<creator>AT&amp;T &lt;Band&gt;</creator>'));
+    });
+
+    test('importXSPF resolves <location> file:// URIs back to a matching '
+        'track', () async {
+      final tracks = [track('a')]; // localPath: /music/a_file.mp3
+      const content = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <trackList>
+    <track>
+      <location>file:///music/a_file.mp3</location>
+      <title>Title</title>
+      <creator>Artist</creator>
+      <duration>200000</duration>
+    </track>
+  </trackList>
+</playlist>
+''';
+
+      final result = PlaylistStore.instance
+          .importXSPF(content, tracks, name: 'Imported');
+
+      expect(result.matchedCount, 1);
+      expect(result.skippedCount, 0);
+      expect(result.playlist.name, 'Imported');
+      expect(result.playlist.trackIds, ['a']);
+    });
+
+    test('importXSPF falls back to filename matching for a location that '
+        "doesn't line up exactly, and skips one that matches nothing at "
+        'all', () async {
+      final tracks = [
+        track('a'), // localPath: /music/a_file.mp3
+        track('b'), // localPath: /music/b_file.mp3
+      ];
+      const content = '''
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <trackList>
+    <track><location>file:///music/a_file.mp3</location></track>
+    <track><location>file:///some/other/machine/path/b_file.mp3</location></track>
+    <track><location>file:///does/not/exist.mp3</location></track>
+  </trackList>
+</playlist>
+''';
+
+      final result = PlaylistStore.instance
+          .importXSPF(content, tracks, name: 'Imported');
+
+      expect(result.matchedCount, 2);
+      expect(result.skippedCount, 1);
+      expect(result.playlist.trackIds, ['a', 'b']);
+    });
+
+    test('importXSPF also accepts a bare (non-URI) path in <location>, not '
+        'just a real file:// URI', () async {
+      final tracks = [track('a')];
+      const content = '<playlist><trackList><track>'
+          '<location>/music/a_file.mp3</location>'
+          '</track></trackList></playlist>';
+
+      final result =
+          PlaylistStore.instance.importXSPF(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+    });
+
+    test('importXSPF unescapes XML entities in <location> before matching',
+        () async {
+      final tracks = [
+        BaseTrack(
+          id: 'a',
+          title: 'T',
+          artists: const ['Artist'],
+          album: 'Album',
+          duration: 200,
+          type: TrackType.local,
+          localPath: '/music/a & b.mp3',
+        ),
+      ];
+      const content = '<playlist><trackList><track>'
+          '<location>file:///music/a%20&amp;%20b.mp3</location>'
+          '</track></trackList></playlist>';
+
+      final result =
+          PlaylistStore.instance.importXSPF(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+    });
+
+    test('malformed/incomplete XML around a <location> element does not '
+        'prevent finding the ones that are well-formed', () async {
+      final tracks = [track('a')];
+      const content = '<playlist><trackList>'
+          '<track><unclosed-tag<location>file:///music/a_file.mp3</location></track>'
+          '</trackList></playlist>';
+
+      final result =
+          PlaylistStore.instance.importXSPF(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+    });
+
+    test('a round trip through export then import recovers the same '
+        'tracks', () async {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise'),
+        track('c', artist: 'Bo', title: 'Dusk'),
+      ];
+      final original = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'c'],
+        createdAt: DateTime.now(),
+      );
+
+      final exported = PlaylistStore.instance.exportXSPF(original, tracks);
+      final imported = PlaylistStore.instance
+          .importXSPF(exported.content, tracks, name: 'Mix (imported)');
+
+      expect(imported.matchedCount, 2);
+      expect(imported.skippedCount, 0);
+      expect(imported.playlist.trackIds, ['a', 'c']);
+    });
+  });
+
   test('Playlist.copyWith replaces only the given fields', () {
     final playlist = Playlist(
       id: 'p1',
