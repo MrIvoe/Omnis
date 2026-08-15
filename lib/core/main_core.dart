@@ -13,6 +13,7 @@ import 'package:omnis/core/playback_state.dart';
 import 'package:omnis/core/playback_watchdog.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/core/recovery_journal.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis_plugins/bundled_plugins.dart';
@@ -60,6 +61,7 @@ class MainCore {
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<BaseTrack?>? _trackForHistorySub;
+  StreamSubscription<List<BaseTrack>>? _queueHistorySub;
   Duration _lastPosition = Duration.zero;
   Duration _lastDuration = Duration.zero;
   BaseTrack? _trackBeingTracked;
@@ -180,6 +182,16 @@ class MainCore {
         RecoveryJournal.instance.save(_audioEngine.captureState());
       }
     });
+    // Queue history (§7 of the product spec) — an automatic, capped
+    // rolling log of past queues. Observes queueStream from outside the
+    // engine entirely, the same "external listener, no engine-side
+    // dependency" shape PlaylistPage's own queueStream subscription
+    // already uses, rather than teaching AudioEngine.setQueue itself
+    // about persistence.
+    _queueHistorySub = _audioEngine.queueStream.listen((queue) {
+      // ignore: unawaited_futures
+      QueueHistoryStore.instance.recordAutoHistory(queue);
+    });
 
     // Belt-and-suspenders periodic snapshot — see [_journalTimer]'s doc.
     _journalTimer = Timer.periodic(const Duration(seconds: 20), (_) {
@@ -222,6 +234,7 @@ class MainCore {
     await _durationSub?.cancel();
     await _playerStateSub?.cancel();
     await _trackForHistorySub?.cancel();
+    await _queueHistorySub?.cancel();
     await HomeWidgetService.instance.dispose();
     await _watchdog.dispose();
     await _pluginManager.dispose();

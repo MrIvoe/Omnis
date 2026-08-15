@@ -14,8 +14,10 @@ import 'package:omnis/plugin_api/play_record.dart';
 import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis/ui/queue_history_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
@@ -571,6 +573,41 @@ class _PlaylistPageState extends State<PlaylistPage> {
     await widget.engine.play();
   }
 
+  /// Saves the current queue as a user-named, permanently-kept
+  /// [QueueHistoryEntry] (spec §7's "Queue snapshots") — distinct from
+  /// the automatic rolling history `MainCore` already records on every
+  /// real queue change.
+  Future<void> _saveQueueSnapshot(List<BaseTrack> tracks) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save queue as snapshot'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    await QueueHistoryStore.instance.saveSnapshot(trimmed, tracks);
+    if (!mounted) return;
+    _snack('Saved "$trimmed".');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -628,6 +665,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
               subtitle: Text('${queue.length} tracks'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => setState(() => _openSmart = _SmartList.queue),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.restore)),
+              title: const Text('Queue history'),
+              subtitle: const Text('Past queues and saved snapshots'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (context) => QueueHistoryPage(engine: widget.engine),
+              )),
             ),
           ),
           Card(
@@ -886,6 +934,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
         title: Text(title),
         actions: [
+          if (kind == _SmartList.queue)
+            IconButton(
+              icon: const Icon(Icons.bookmark_add_outlined),
+              tooltip: 'Save as snapshot',
+              onPressed: tracks.isEmpty ? null : () => _saveQueueSnapshot(tracks),
+            ),
           IconButton(
             icon: const Icon(Icons.play_arrow),
             tooltip: 'Play all',

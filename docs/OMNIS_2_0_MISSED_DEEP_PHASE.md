@@ -34,12 +34,14 @@
   there). The bigger `AudioEngine` split is still real, separate work
   not attempted in this pass, but "no way to smoke-test it at all" is no
   longer the blocker — only "hasn't been done yet."
-- **§7 — Queue engine depth.** No queue history/snapshots, no
-  smart/rule-based continuation (mood/artist/genre/similar-track
-  auto-continuation), no advanced shuffle modes beyond what
-  `ShuffleRepeatPlugin` already does. `playNext()` exists on `AudioEngine`
-  but isn't exposed through `PluginContext` (a cross-repo
-  `omnis_plugin_api` change) or a track context menu yet.
+- **§7 — Queue engine depth.** `playNext()` exposure through
+  `PluginContext` and a track context menu closed 2026-08-14; queue
+  history (an automatic, capped rolling log) and queue snapshots
+  (permanent, user-named saves) closed 2026-08-15 — see item 2's
+  build-log entry. Still no smart/rule-based continuation (mood/artist/
+  genre/similar-track auto-continuation), no advanced shuffle modes
+  beyond what `ShuffleRepeatPlugin` already does, no queue rules/
+  exclusions, no multiple queue sources.
 - **§4/§41 — Real indexed database.** Every store is still a JSON file
   (now atomic-write-safe and per-entry-decode-safe, but not an indexed
   DB). Schema migration system closed 2026-08-14: `lib/core/
