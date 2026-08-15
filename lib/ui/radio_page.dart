@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
@@ -33,6 +34,7 @@ class RadioPage extends StatefulWidget {
 class _RadioPageState extends State<RadioPage> {
   final _searchController = TextEditingController();
   List<BaseTrack> _stations = const [];
+  List<CustomRadioStation> _customStations = const [];
   bool _loading = false;
   bool _searched = false;
 
@@ -62,6 +64,13 @@ class _RadioPageState extends State<RadioPage> {
   void initState() {
     super.initState();
     _loadTopStations();
+    _loadCustomStations();
+  }
+
+  Future<void> _loadCustomStations() async {
+    final stations = await CustomRadioStationStore.instance.load();
+    if (!mounted) return;
+    setState(() => _customStations = stations);
   }
 
   @override
@@ -106,6 +115,82 @@ class _RadioPageState extends State<RadioPage> {
     await widget.engine.play();
   }
 
+  Future<void> _playCustom(CustomRadioStation station) async {
+    await widget.engine.setQueue([station.toTrack()]);
+    await widget.engine.play();
+  }
+
+  Future<void> _deleteCustomStation(CustomRadioStation station) async {
+    final updated = await CustomRadioStationStore.instance.delete(station.id);
+    if (!mounted) return;
+    setState(() => _customStations = updated);
+  }
+
+  /// Prompts for a name + stream URL and, once both look real (a
+  /// non-empty name, a URL that parses with an http/https scheme —
+  /// no attempt to actually reach the stream first, the same
+  /// "trust what's entered, fail at play time if it's wrong" stance a
+  /// Radio Browser-fetched URL already gets), persists it via
+  /// [CustomRadioStationStore].
+  Future<void> _addCustomStation() async {
+    final nameController = TextEditingController();
+    final urlController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add radio station'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Station name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: urlController,
+              decoration: const InputDecoration(
+                labelText: 'Stream URL',
+                hintText: 'https://stream.example.com/live',
+              ),
+              keyboardType: TextInputType.url,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final name = nameController.text.trim();
+    final url = urlController.text.trim();
+    final uri = Uri.tryParse(url);
+    final validUrl = uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
+    if (name.isEmpty || !validUrl) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:
+            Text('Enter a station name and a valid http(s) stream URL.'),
+      ));
+      return;
+    }
+
+    final updated = await CustomRadioStationStore.instance.add(name, url);
+    if (!mounted) return;
+    setState(() => _customStations = updated);
+  }
+
   @override
   Widget build(BuildContext context) {
     final plugin = _plugin;
@@ -125,7 +210,16 @@ class _RadioPageState extends State<RadioPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Radio')),
+      appBar: AppBar(
+        title: const Text('Radio'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Add station',
+            onPressed: _addCustomStation,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -152,82 +246,142 @@ class _RadioPageState extends State<RadioPage> {
               onSubmitted: _search,
             ),
           ),
-          if (!_loading && _stations.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _searched ? 'Search results' : 'Top stations',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ),
-            ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _stations.isEmpty
-                    ? Center(
-                        child: Text(
-                          _searched
-                              ? 'No stations found.'
-                              : 'No stations available right now.',
+                : ListView(
+                    children: [
+                      if (_customStations.isNotEmpty) ...[
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 16),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'My stations',
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: _stations.length,
-                        itemBuilder: (context, index) {
-                          final station = _stations[index];
-                          final current = widget.engine.currentTrack;
-                          final isPlaying = current?.id == station.id;
-                          return ListTile(
-                            leading: _StationIcon(station: station),
-                            title: Text(
-                              station.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        for (final custom in _customStations)
+                          _buildCustomStationTile(custom),
+                        const Divider(),
+                      ],
+                      if (_stations.isNotEmpty)
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 16),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _searched ? 'Search results' : 'Top stations',
+                              style: Theme.of(context).textTheme.labelLarge,
                             ),
-                            subtitle: Text(
-                              [
-                                if (station.artists.isNotEmpty)
-                                  station.artists.first,
-                                if (station.genres.isNotEmpty)
-                                  station.genres.take(2).join(', '),
-                              ].join(' • '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      if (_stations.isEmpty && _customStations.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 48),
+                          child: Center(
+                            child: Text(
+                              _searched
+                                  ? 'No stations found.'
+                                  : 'No stations available right now.',
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(
-                                    _isFavorite(station.id)
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                  ),
-                                  color: _isFavorite(station.id)
-                                      ? Theme.of(context).colorScheme.primary
-                                      : null,
-                                  tooltip: _isFavorite(station.id)
-                                      ? 'Remove from favorites'
-                                      : 'Add to favorites',
-                                  onPressed: () =>
-                                      _toggleFavorite(station.id),
-                                ),
-                                isPlaying
-                                    ? const Icon(Icons.graphic_eq,
-                                        color: Colors.deepPurple)
-                                    : const Icon(Icons.play_circle_outline),
-                              ],
-                            ),
-                            onTap: () => _play(index),
-                          );
-                        },
-                      ),
+                          ),
+                        ),
+                      for (var index = 0; index < _stations.length; index++)
+                        _buildStationTile(_stations[index], index),
+                    ],
+                  ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStationTile(BaseTrack station, int index) {
+    final current = widget.engine.currentTrack;
+    final isPlaying = current?.id == station.id;
+    return ListTile(
+      leading: _StationIcon(station: station),
+      title: Text(
+        station.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        [
+          if (station.artists.isNotEmpty) station.artists.first,
+          if (station.genres.isNotEmpty) station.genres.take(2).join(', '),
+        ].join(' • '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              _isFavorite(station.id) ? Icons.favorite : Icons.favorite_border,
+            ),
+            color: _isFavorite(station.id)
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            tooltip: _isFavorite(station.id)
+                ? 'Remove from favorites'
+                : 'Add to favorites',
+            onPressed: () => _toggleFavorite(station.id),
+          ),
+          isPlaying
+              ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
+              : const Icon(Icons.play_circle_outline),
+        ],
+      ),
+      onTap: () => _play(index),
+    );
+  }
+
+  Widget _buildCustomStationTile(CustomRadioStation custom) {
+    final current = widget.engine.currentTrack;
+    final isPlaying = current?.id == custom.id;
+    return ListTile(
+      leading: const CircleAvatar(child: Icon(Icons.radio)),
+      title: Text(
+        custom.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        custom.streamUrl,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              _isFavorite(custom.id) ? Icons.favorite : Icons.favorite_border,
+            ),
+            color: _isFavorite(custom.id)
+                ? Theme.of(context).colorScheme.primary
+                : null,
+            tooltip:
+                _isFavorite(custom.id) ? 'Remove from favorites' : 'Add to favorites',
+            onPressed: () => _toggleFavorite(custom.id),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove station',
+            onPressed: () => _deleteCustomStation(custom),
+          ),
+          isPlaying
+              ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
+              : const Icon(Icons.play_circle_outline),
+        ],
+      ),
+      onTap: () => _playCustom(custom),
     );
   }
 }

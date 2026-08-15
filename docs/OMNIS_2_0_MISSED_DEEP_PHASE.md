@@ -907,8 +907,11 @@ for any multi-word tag) — a test asserting the decoded path segment
 caught it immediately. Still gaps: talks to a single fixed API mirror
 rather than the full DNS-round-robin server discovery Radio Browser's
 own docs recommend at production scale (reasonable for one app's search
-traffic, but a documented simplification); no manual/custom stream URL
-entry for a station not in the directory. Play history's "recorded but silently invisible on Home" half closed
+traffic, but a documented simplification). Manual/custom stream URL
+entry for a station not in the directory closed 2026-08-15 — see item
+41's build-log entry: a new `CustomRadioStationStore` persists
+user-entered name/URL pairs, converted to an ordinary `BaseTrack` so
+favoriting/queueing/history all work with zero special-casing. Play history's "recorded but silently invisible on Home" half closed
 2026-08-14. Root cause was confirmed broader than radio: any played
 track never scanned/imported into `LibraryRepository` — not just a
 station, but equally a Spotify/YouTube/Jellyfin/Plex/Subsonic/DLNA/Emby
