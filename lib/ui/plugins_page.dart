@@ -37,6 +37,8 @@ class PluginsPage extends StatefulWidget {
 
 class _PluginsPageState extends State<PluginsPage> {
   final _urlController = TextEditingController();
+  final _catalogSearchController = TextEditingController();
+  String _catalogQuery = '';
   bool _installing = false;
   String? _installError;
   List<ManagedPlugin> _plugins = [];
@@ -89,11 +91,29 @@ class _PluginsPageState extends State<PluginsPage> {
     setState(() => _catalog = fetched);
   }
 
+  /// [_catalog] filtered by [_catalogQuery] against a plugin's name and
+  /// description, case-insensitively — item 30's "not browsable/
+  /// searchable" gap. A blank query (the common case, and always true
+  /// while the catalog only has a handful of entries) returns the whole
+  /// list unchanged, matching `library_search.dart`'s own "no search
+  /// term means no filtering" convention rather than something bespoke
+  /// here.
+  List<CatalogPluginEntry> get _filteredCatalog {
+    final query = _catalogQuery.trim().toLowerCase();
+    if (query.isEmpty) return _catalog;
+    return _catalog
+        .where((entry) =>
+            entry.name.toLowerCase().contains(query) ||
+            entry.description.toLowerCase().contains(query))
+        .toList();
+  }
+
   @override
   void dispose() {
     _pluginsSub?.cancel();
     widget.sandbox.removeHealthListener(_healthListener);
     _urlController.dispose();
+    _catalogSearchController.dispose();
     super.dispose();
   }
 
@@ -377,18 +397,38 @@ class _PluginsPageState extends State<PluginsPage> {
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
-                  for (final entry in _catalog)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.extension_outlined),
-                      title: Text(entry.name),
-                      subtitle: Text(entry.description),
-                      trailing: FilledButton.tonal(
-                        onPressed:
-                            _installing ? null : () => _installFromCatalog(entry),
-                        child: const Text('Install'),
-                      ),
+                  TextField(
+                    controller: _catalogSearchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Search plugins',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                      isDense: true,
                     ),
+                    onChanged: (value) =>
+                        setState(() => _catalogQuery = value),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_filteredCatalog.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text('No plugins match "$_catalogQuery".',
+                          style: theme.textTheme.bodySmall),
+                    )
+                  else
+                    for (final entry in _filteredCatalog)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.extension_outlined),
+                        title: Text(entry.name),
+                        subtitle: Text(entry.description),
+                        trailing: FilledButton.tonal(
+                          onPressed: _installing
+                              ? null
+                              : () => _installFromCatalog(entry),
+                          child: const Text('Install'),
+                        ),
+                      ),
                 ],
               ),
             ),

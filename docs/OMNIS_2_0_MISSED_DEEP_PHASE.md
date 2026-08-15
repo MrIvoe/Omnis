@@ -520,17 +520,26 @@ file's location from an arbitrary zip URL, so `fetchRemoteManifest`
 returns `null` for those (silently skipped in `checkForUpdates`, not
 reported as a failure).
 
-**30. Marketplace/catalog** — Partial. A real permission-confirmation
-install flow exists for two paths: a hardcoded `officialPluginCatalog`
-(currently one entry, `sample_logger`) and a free-text "paste a
-GitHub/zip URL" field (`PluginInstaller.installFromUrl` — zip-bomb/
-zip-slip guarded, manifest-validated). `docs/PLUGIN_SECURITY.md` states
-outright: "No plugin registry or curation today... Installing means
-trusting whoever's GitHub URL you pasted." No fetched `catalog.json`
-from any endpoint, no browsable UI (search/categories/featured/
-ratings/screenshots), no `omnis-plugin-hub` meta-repo — `Omnis-Plugins`
-itself is a flat package of plugin *sources*, not a hub of references
-to separate plugin repos as spec §6.2 describes.
+**30. Marketplace/catalog** — Partial, narrower than when this section
+was first written. A real permission-confirmation install flow exists
+for two paths: a catalog (`PluginInstaller.fetchCatalog()`, closed
+2026-08-14 — fetches a real, live `catalog.json` published at the root
+of the `Omnis-Plugins` repo via `raw.githubusercontent.com`, falling
+back to the hardcoded `officialPluginCatalog` list only when that fetch
+fails) and a free-text "paste a GitHub/zip URL" field
+(`PluginInstaller.installFromUrl` — zip-bomb/zip-slip guarded,
+manifest-validated). The catalog is now searchable too (closed
+2026-08-14, same day): `PluginsPage` filters the fetched/fallback list
+by name or description via a `TextField` above it, case-insensitively,
+with an explicit "no plugins match" message rather than a silent empty
+list. `docs/PLUGIN_SECURITY.md` still states outright: "No plugin
+registry or curation today... Installing means trusting whoever's
+GitHub URL you pasted" — that half of this item is genuinely unchanged
+and deliberately so; the two closures above only ever addressed
+*discovery/browsing*, not curation/trust. Still no categories/featured/
+ratings/screenshots, and no `omnis-plugin-hub` meta-repo — `Omnis-Plugins`
+itself is still a flat package of plugin *sources*, not a hub of
+references to separate plugin repos as spec §6.2 describes.
 
 ### Phase 5 — Connectivity
 

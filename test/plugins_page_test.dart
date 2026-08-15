@@ -270,6 +270,11 @@ void main() {
       await tester.pump();
 
       expect(find.text('Check for updates'), findsOneWidget);
+      // Below the fold now that the catalog card's own search box adds
+      // extra height above it — same sliver-cache-extent reasoning as
+      // the "Update" button tap further down this file.
+      await tester.ensureVisible(find.text('Check for updates'));
+      await tester.pump();
       await tester.tap(find.text('Check for updates'));
       await _settle(tester);
 
@@ -290,6 +295,8 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
       ));
+      await tester.pump();
+      await tester.ensureVisible(find.text('Check for updates'));
       await tester.pump();
       await tester.tap(find.text('Check for updates'));
       await _settle(tester);
@@ -312,6 +319,8 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
       ));
+      await tester.pump();
+      await tester.ensureVisible(find.text('Check for updates'));
       await tester.pump();
       await tester.tap(find.text('Check for updates'));
       await _settle(tester);
@@ -378,6 +387,118 @@ void main() {
         await _settle(tester);
 
         expect(find.text('Sample Logger'), findsOneWidget);
+      });
+    });
+  });
+
+  group('Plugin catalog search (item 30)', () {
+    Future<PluginManager> pumpMultiEntryCatalog(WidgetTester tester) async {
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('catalog.json')) {
+          return http.Response(
+              jsonEncode([
+                {
+                  'folder': 'radio',
+                  'name': 'Radio Browser',
+                  'description': 'Live internet radio stations.',
+                },
+                {
+                  'folder': 'jellyfin',
+                  'name': 'Jellyfin',
+                  'description': 'Stream from a self-hosted media server.',
+                },
+                {
+                  'folder': 'ratings',
+                  'name': 'Ratings',
+                  'description': 'Rate tracks 0-5 stars.',
+                },
+              ]),
+              200);
+        }
+        return http.Response('', 404);
+      });
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+      ));
+      await _settle(tester);
+      return manager;
+    }
+
+    testWidgets('with no search text, every catalog entry is shown',
+        (tester) async {
+      await tester.runAsync(() async {
+        await pumpMultiEntryCatalog(tester);
+
+        expect(find.text('Radio Browser'), findsOneWidget);
+        expect(find.text('Jellyfin'), findsOneWidget);
+        expect(find.text('Ratings'), findsOneWidget);
+      });
+    });
+
+    testWidgets('typing a query filters by plugin name, '
+        'case-insensitively', (tester) async {
+      await tester.runAsync(() async {
+        await pumpMultiEntryCatalog(tester);
+
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Search plugins'), 'radio');
+        await tester.pump();
+
+        expect(find.text('Radio Browser'), findsOneWidget);
+        expect(find.text('Jellyfin'), findsNothing);
+        expect(find.text('Ratings'), findsNothing);
+      });
+    });
+
+    testWidgets('a query also matches the description, not just the name',
+        (tester) async {
+      await tester.runAsync(() async {
+        await pumpMultiEntryCatalog(tester);
+
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Search plugins'), 'self-hosted');
+        await tester.pump();
+
+        expect(find.text('Jellyfin'), findsOneWidget);
+        expect(find.text('Radio Browser'), findsNothing);
+        expect(find.text('Ratings'), findsNothing);
+      });
+    });
+
+    testWidgets('a query matching nothing shows an explicit '
+        '"no plugins match" message rather than an empty silent gap',
+        (tester) async {
+      await tester.runAsync(() async {
+        await pumpMultiEntryCatalog(tester);
+
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Search plugins'), 'nonexistent');
+        await tester.pump();
+
+        expect(find.text('Radio Browser'), findsNothing);
+        expect(find.textContaining('No plugins match'), findsOneWidget);
+      });
+    });
+
+    testWidgets('clearing the search box restores the full catalog',
+        (tester) async {
+      await tester.runAsync(() async {
+        await pumpMultiEntryCatalog(tester);
+
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Search plugins'), 'radio');
+        await tester.pump();
+        expect(find.text('Jellyfin'), findsNothing);
+
+        await tester.enterText(
+            find.widgetWithText(TextField, 'Search plugins'), '');
+        await tester.pump();
+
+        expect(find.text('Radio Browser'), findsOneWidget);
+        expect(find.text('Jellyfin'), findsOneWidget);
+        expect(find.text('Ratings'), findsOneWidget);
       });
     });
   });

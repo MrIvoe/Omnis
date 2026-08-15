@@ -134,6 +134,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
+    // Below the fold now that the catalog card's own search box (item 30)
+    // adds extra height above the installed-plugins list.
+    await tester.ensureVisible(find.text('Has Settings'));
+    await tester.pump();
     await tester.tap(find.text('Has Settings'));
     await tester.pumpAndSettle();
 
