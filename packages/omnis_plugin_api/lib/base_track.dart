@@ -295,6 +295,23 @@ class BaseTrack {
     );
   }
 
+  /// Content equality for a `List<String>` — [artists]/[genres] compare
+  /// with this rather than plain `==` in [operator ==]/[hashCode] below.
+  /// Dart's `List` doesn't override `==`/`hashCode` for content equality
+  /// (two structurally-identical lists built from separate literals are
+  /// only `==` if they're the *same instance*), which previously made
+  /// two structurally-identical [BaseTrack]s built from separate list
+  /// literals never compare equal — a latent trap for any future code
+  /// that assumes value equality (e.g. deduping via `Set<BaseTrack>`).
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -302,13 +319,13 @@ class BaseTrack {
     return other is BaseTrack &&
         other.id == id &&
         other.title == title &&
-        other.artists == artists &&
+        _listEquals(other.artists, artists) &&
         other.album == album &&
         other.duration == duration &&
         other.trackNumber == trackNumber &&
         other.discNumber == discNumber &&
         other.year == year &&
-        other.genres == genres &&
+        _listEquals(other.genres, genres) &&
         other.bpm == bpm &&
         other.key == key &&
         other.mood == mood &&
@@ -339,13 +356,13 @@ class BaseTrack {
     return Object.hashAll([
       id,
       title,
-      artists,
+      Object.hashAll(artists), // content hash, not List's identity-based one
       album,
       duration,
       trackNumber,
       discNumber,
       year,
-      genres,
+      Object.hashAll(genres),
       bpm,
       key,
       mood,
@@ -495,4 +512,24 @@ class ReplayGainValues {
       albumPeak: json['albumPeak'] as double?,
     );
   }
+
+  /// Same "found alongside the `BaseTrack` list-equality bug while fixing
+  /// it" story — [BaseTrack.operator ==]/[BaseTrack.hashCode] compare
+  /// [BaseTrack.replayGain] with plain `==`, which (absent an override
+  /// here) is identity-based, the identical defect class the `artists`/
+  /// `genres` fix addresses. Without this, two structurally-identical
+  /// [ReplayGainValues] built from separate constructor calls — which is
+  /// exactly what `ReplayGainValues.fromJson` produces on every load —
+  /// would never compare equal to one another either.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ReplayGainValues &&
+          other.trackGain == trackGain &&
+          other.albumGain == albumGain &&
+          other.trackPeak == trackPeak &&
+          other.albumPeak == albumPeak);
+
+  @override
+  int get hashCode => Object.hash(trackGain, albumGain, trackPeak, albumPeak);
 }

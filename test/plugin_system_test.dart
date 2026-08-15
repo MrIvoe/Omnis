@@ -2037,13 +2037,12 @@ dynamic provideLyrics(dynamic track, dynamic positionMs) => 'x';
       expect(restored.bitDepth, 24);
       expect(restored.bitrateKbps, 2304);
       expect(restored.channels, 2);
-      // Not `expect(restored, track)`: BaseTrack's `==` compares list
-      // fields (artists/genres) with plain `==`, which Dart's List
-      // doesn't override for content equality — a pre-existing gap this
-      // test isn't the place to fix, so it checks scalar fields instead,
-      // matching the pattern the test above already uses.
-      expect(restored.id, track.id);
-      expect(restored.title, track.title);
+      // BaseTrack's `==`/`hashCode` now do content equality on
+      // artists/genres (fixed alongside item 40's similarity work — see
+      // OMNIS_2_0_MISSED_DEEP_PHASE.md's §22 entry), so a full-object
+      // round-trip check is meaningful here, not just individual fields.
+      expect(restored, track);
+      expect(restored.hashCode, track.hashCode);
     });
 
     test('audio-format fields decode as null from JSON written before '
@@ -2067,6 +2066,96 @@ dynamic provideLyrics(dynamic track, dynamic positionMs) => 'x';
       expect(restored.bitDepth, isNull);
       expect(restored.bitrateKbps, isNull);
       expect(restored.channels, isNull);
+    });
+  });
+
+  group('BaseTrack/ReplayGainValues content equality (§22 fix)', () {
+    BaseTrack track({
+      List<String> artists = const ['A'],
+      List<String> genres = const [],
+      ReplayGainValues? replayGain,
+    }) =>
+        BaseTrack(
+          id: '1',
+          title: 'Title',
+          artists: artists,
+          album: 'Album',
+          duration: 200,
+          type: TrackType.local,
+          genres: genres,
+          replayGain: replayGain,
+        );
+
+    test('two tracks built from separate-but-equal artists/genres list '
+        'literals are == and share a hashCode', () {
+      final a = track(artists: ['X', 'Y'], genres: ['Rock', 'Pop']);
+      final b = track(artists: ['X', 'Y'], genres: ['Rock', 'Pop']);
+
+      expect(identical(a.artists, b.artists), isFalse,
+          reason: 'the fixture must build genuinely separate list '
+              'instances, or this test proves nothing');
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('a genuinely different genres list breaks equality', () {
+      final a = track(genres: ['Rock']);
+      final b = track(genres: ['Jazz']);
+      expect(a, isNot(b));
+    });
+
+    test('a different artist list length breaks equality', () {
+      final a = track(artists: ['X']);
+      final b = track(artists: ['X', 'Y']);
+      expect(a, isNot(b));
+    });
+
+    test('list order matters — these are ordered lists, not sets', () {
+      final a = track(genres: ['Rock', 'Pop']);
+      final b = track(genres: ['Pop', 'Rock']);
+      expect(a, isNot(b));
+    });
+
+    test('two ReplayGainValues built from separate constructor calls with '
+        'the same fields are == and share a hashCode', () {
+      final a = ReplayGainValues(trackGain: -6.0, albumGain: -4.0);
+      final b = ReplayGainValues(trackGain: -6.0, albumGain: -4.0);
+      expect(identical(a, b), isFalse);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('a differing ReplayGainValues field breaks its own equality', () {
+      final a = ReplayGainValues(trackGain: -6.0);
+      final b = ReplayGainValues(trackGain: -5.0);
+      expect(a, isNot(b));
+    });
+
+    test('two tracks with separate-but-equal replayGain instances (the '
+        'shape ReplayGainValues.fromJson always produces on load) are '
+        'now == end-to-end', () {
+      final a = track(replayGain: ReplayGainValues(trackGain: -6.0));
+      final b = track(replayGain: ReplayGainValues(trackGain: -6.0));
+      expect(identical(a.replayGain, b.replayGain), isFalse);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('a real JSON round-trip (BaseTrack.fromJson(track.toJson())) '
+        'produces a track that is == the original, and can now dedupe '
+        'correctly through a Set<BaseTrack>', () {
+      final original = track(
+        artists: ['X', 'Y'],
+        genres: ['Rock', 'Pop'],
+        replayGain: ReplayGainValues(trackGain: -6.0, albumPeak: 0.98),
+      );
+      final restored = BaseTrack.fromJson(original.toJson());
+
+      expect(restored, original);
+      expect(restored.hashCode, original.hashCode);
+      expect({original, restored}, hasLength(1),
+          reason: 'a Set should collapse these to one entry now that '
+              'value equality actually holds');
     });
   });
 }
