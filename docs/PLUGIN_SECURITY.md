@@ -28,8 +28,11 @@ downloaded plugin's code:
 - **Gets exactly the permissions its manifest declares, nothing more.**
   `omnis_plugin.yaml`'s `permissions:` list is the complete grant — today
   that's `storage`/`filesystem` (grants dart_eval's
-  `FilesystemPermission.any`) and `network` (declarative only right now —
-  see "Known gaps" below). A plugin that declares nothing gets neither.
+  `FilesystemPermission.any`, all-or-nothing) and `network`, which can be
+  scoped to one host (`network:host.example.com` grants a real
+  `NetworkPermission.url(...)` for just that host) or left bare
+  (`network`, granting any host — the only option before scoping
+  existed). A plugin that declares nothing gets neither.
 - **Shows you what it's asking for before any of its code runs.** Pasting
   a URL downloads and parses the manifest first; a confirmation dialog
   (`PluginsPage._confirmPermissions`) lists every declared permission —
@@ -61,13 +64,18 @@ sounding impressive:
   that thread until it returns on its own. Closing that remaining gap
   would need the interpreter moved to its own isolate; worth doing before
   a security-sensitive deployment, and a reasonable thing to contribute.
-- **`network` permission isn't currently enforced separately from
-  everything else** — dart_eval's sandbox restricts imports, not
-  outbound socket calls a plugin might reach through whatever's
-  available in its restricted environment. Treat the permission list as
-  disclosure (what the author says the plugin does), not as a hard
-  technical guarantee for network access specifically, the way
-  `storage`'s `FilesystemPermission.any` grant actually is enforced.
+- **`network` is now enforced, scoped to the exact host declared** — a
+  real `httpGet(url)` bridge function (the only way a sandboxed plugin
+  can reach the network at all, since it can't import a real Dart HTTP
+  client) checks the requested URL against the plugin's granted
+  `NetworkPermission` before ever making the call, throwing a catchable
+  exception rather than silently succeeding or silently no-op'ing for a
+  host that wasn't declared. This closes the gap this section used to
+  describe here (`network` used to be declarative-only, unlike
+  `storage`'s `FilesystemPermission.any`) for every network path this
+  sandbox actually offers — it can't retroactively cover some other
+  outbound channel a future bridged capability might add without its
+  own equivalent check.
 - **No plugin registry or curation today.** Installing means trusting
   whoever's GitHub URL you pasted, same as installing any other
   unreviewed code from the internet. There's no built-in "verified

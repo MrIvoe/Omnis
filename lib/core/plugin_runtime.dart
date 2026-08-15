@@ -2,6 +2,7 @@ import 'package:dart_eval/dart_eval.dart';
 import 'package:dart_eval/dart_eval_bridge.dart';
 import 'package:dart_eval/dart_eval_security.dart';
 import 'package:dart_eval/stdlib/core.dart';
+import 'package:http/http.dart' as http;
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
 import 'package:omnis_plugin_api/plugin_context.dart';
 
@@ -92,6 +93,7 @@ class PluginRuntime {
     String pluginSource, {
     List<String> declaredPermissions = const [],
     PluginContext? Function()? getContext,
+    http.Client Function()? httpClientFactory,
   }) {
     Map<dynamic, dynamic> metadata;
     Runtime runtime;
@@ -103,7 +105,8 @@ class PluginRuntime {
       // is applied lazily on first setup, which executeLib triggers.
       // Registering only one side leaves the guest call throwing
       // UnimplementedError instead of doing anything.
-      final bridge = PluginSandboxBridge(getContext ?? () => null);
+      final bridge = PluginSandboxBridge(getContext ?? () => null,
+          httpClientFactory: httpClientFactory);
       final compiler = Compiler()..addPlugin(bridge);
       final program = compiler.compile({
         'default': {'main.dart': pluginSource},
@@ -123,6 +126,25 @@ class PluginRuntime {
       }
       if (declaredPermissions.contains('playback')) {
         runtime.grant(const PlaybackControlPermission());
+      }
+      // Granular network scoping: `network:host.example.com` grants only
+      // that host (any scheme/path on it — a real dart_eval
+      // `NetworkPermission`, checked against the actual requested URL at
+      // call time by `httpGet` below, not just declarative text). A bare
+      // `network` (no host) still grants unrestricted access for
+      // backward compatibility with manifests written before this
+      // existed — `plugins_page.dart`'s confirmation dialog calls this
+      // out more strongly than a scoped entry.
+      for (final perm in declaredPermissions) {
+        if (perm == 'network') {
+          runtime.grant(NetworkPermission.any);
+        } else if (perm.startsWith('network:')) {
+          final host = perm.substring('network:'.length).trim();
+          if (host.isNotEmpty) {
+            final urlish = host.contains('://') ? host : 'https://$host';
+            runtime.grant(NetworkPermission.url(urlish));
+          }
+        }
       }
       runtime.args = [
         <String, dynamic>{'omnisVersion': '0.1.0'},

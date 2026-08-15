@@ -1,6 +1,7 @@
 import 'package:dart_eval/dart_eval_bridge.dart';
 import 'package:dart_eval/dart_eval_security.dart';
 import 'package:dart_eval/stdlib/core.dart';
+import 'package:http/http.dart' as http;
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis_plugin_api/plugin_context.dart';
@@ -118,7 +119,17 @@ class PluginSandboxBridge implements EvalPlugin {
   /// context rather than one snapshotted at `PluginRuntime.create` time.
   final PluginContext? Function() getContext;
 
-  const PluginSandboxBridge(this.getContext);
+  /// Builds the `http.Client` [_HttpGet] performs its request with —
+  /// injectable so tests can substitute `package:http/testing.dart`'s
+  /// `MockClient` (the same pattern `RadioPlugin`/`OpenSubsonicPlugin`
+  /// already use for a real, non-mocked-away HTTP call), while normal
+  /// use just gets a plain `http.Client()` per call, closed immediately
+  /// after — the same lifecycle the top-level `http.get()` function
+  /// itself already has, just made overridable.
+  final http.Client Function() _httpClientFactory;
+
+  PluginSandboxBridge(this.getContext, {http.Client Function()? httpClientFactory})
+      : _httpClientFactory = httpClientFactory ?? (() => http.Client());
 
   static const libraryUri = 'package:omnis/sandbox_api.dart';
 
@@ -133,6 +144,8 @@ class PluginSandboxBridge implements EvalPlugin {
       BridgeParameter('wrap', BridgeTypeAnnotation(BridgeTypeRef(CoreTypes.bool)), false);
   static const _intParam = BridgeParameter(
       'positionMs', BridgeTypeAnnotation(BridgeTypeRef(CoreTypes.int)), false);
+  static const _urlParam = BridgeParameter(
+      'url', BridgeTypeAnnotation(BridgeTypeRef(CoreTypes.string)), false);
 
   @override
   void configureForCompile(BridgeDeclarationRegistry registry) {
@@ -158,6 +171,7 @@ class PluginSandboxBridge implements EvalPlugin {
     declare('playbackPrevious', returns: _futureDynamicReturn);
     declare('playbackSeek',
         returns: _futureDynamicReturn, params: [_intParam]);
+    declare('httpGet', returns: _futureDynamicReturn, params: [_urlParam]);
   }
 
   @override
@@ -184,6 +198,8 @@ class PluginSandboxBridge implements EvalPlugin {
         _PlaybackPrevious(getContext).call);
     runtime.registerBridgeFunc(
         libraryUri, 'playbackSeek', _PlaybackSeek(getContext).call);
+    runtime.registerBridgeFunc(
+        libraryUri, 'httpGet', _HttpGet(_httpClientFactory).call);
   }
 }
 
@@ -350,5 +366,41 @@ class _PlaybackSeek implements EvalCallable {
     return $Future.wrap(context
         .seek(Duration(milliseconds: positionMs))
         .then((_) => const $null()));
+  }
+}
+
+/// The first real network capability bridged into the sandbox — before
+/// this, declaring `network` in a manifest only populated the install-
+/// confirmation dialog's text; there was no bridged function that could
+/// actually reach the network at all, so the permission was purely
+/// declarative. `runtime.assertPermission('network', url)` checks the
+/// *requested URL itself* against whatever `NetworkPermission`(s)
+/// `PluginRuntime.create` granted (a bare `network` grants
+/// `NetworkPermission.any`; a scoped `network:host.example.com` grants
+/// only that host) — the real dart_eval permission mechanism, not a
+/// separate check this bridge would need to keep in sync. A non-2xx
+/// response throws (the request reached the network but the server said
+/// no), matching this bridge's existing "fail loud enough to notice"
+/// stance for a denied permission.
+class _HttpGet implements EvalCallable {
+  final http.Client Function() clientFactory;
+  const _HttpGet(this.clientFactory);
+
+  @override
+  $Value? call(Runtime runtime, $Value? target, List<$Value?> args) {
+    final url = args.isNotEmpty ? args[0]?.$value as String? : null;
+    if (url == null || url.isEmpty) {
+      throw Exception('httpGet requires a non-empty URL.');
+    }
+    runtime.assertPermission('network', url);
+    final client = clientFactory();
+    final future = client.get(Uri.parse(url)).then<$Value>((response) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(
+            'httpGet: server returned ${response.statusCode} for $url');
+      }
+      return $String(response.body);
+    }).whenComplete(client.close);
+    return $Future.wrap(future);
   }
 }

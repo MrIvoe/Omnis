@@ -455,15 +455,20 @@ distinct, still-open follow-ups.
 
 **27. Permissions** — Solid. Manifest `permissions:` map to real
 `dart_eval` grants (`FilesystemPermission`, `LibraryReadPermission`,
-`EventsPermission`, `PlaybackControlPermission`), checked via
-`PluginRuntime.hasPermission`. Plain-English disclosure via
+`EventsPermission`, `PlaybackControlPermission`, and now
+`NetworkPermission`), checked via `PluginRuntime.hasPermission`/
+`Runtime.assertPermission`. Plain-English disclosure via
 `plugins_page.dart`'s `_confirmPermissions` dialog, shown *before* any
-plugin code executes. Gap: coarse, un-namespaced categories (`network`,
-`storage`) rather than the spec's granular `network:musicbrainz`-style
-scoping; `docs/PLUGIN_SECURITY.md` itself states `network` is
-declarative-only (not technically enforced) and `storage` is
-all-or-nothing. No `privacy:`/`data-collected:`/`network-hosts:`
-manifest section parsed or shown.
+plugin code executes. Granular network scoping closed 2026-08-15:
+`network:host.example.com`-shaped manifest entries (exactly the spec's
+own `network:musicbrainz`-style ask) grant a real, per-host-enforced
+`NetworkPermission.url(...)`, checked against the actual requested URL
+by a new `httpGet` bridge function — the first bridged capability that
+lets a sandboxed plugin reach the network at all. Remaining gap:
+`storage` is still coarse/all-or-nothing (`FilesystemPermission.any`) —
+dart_eval has no per-directory scoping at that layer the way it already
+had a ready-made per-host primitive for network. No `privacy:`/
+`data-collected:` manifest section parsed or shown.
 
 **28. Plugin health** — Partial. `PluginSandbox.healthRecords` (capped
 at 200) is populated automatically on every sandboxed failure, with a

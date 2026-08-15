@@ -333,12 +333,19 @@ class _PluginsPageState extends State<PluginsPage> {
   }
 
   String _permissionLabel(String perm) {
+    if (perm.startsWith('network:')) {
+      final host = perm.substring('network:'.length).trim();
+      return host.isEmpty
+          ? 'Network — can make internet requests'
+          : 'Network access to $host — can make internet requests to that '
+              'host only';
+    }
     switch (perm) {
       case 'storage':
       case 'filesystem':
         return 'Storage — can read/write files on this device';
       case 'network':
-        return 'Network — can make internet requests';
+        return 'Network — can make internet requests to any host';
       case 'library':
         return 'Library — can read your music library (titles, artists, '
             'albums — read-only)';

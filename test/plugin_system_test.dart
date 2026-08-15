@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/omnis_version.dart';
@@ -669,6 +671,132 @@ dynamic onTrackStart(dynamic track) async {
             'message',
             contains("Permission 'omnis.library' denied"),
           )),
+        );
+      });
+    });
+
+    group('sandbox bridge — httpGet (item 27 network scoping)', () {
+      const source = '''
+import 'package:omnis/sandbox_api.dart';
+
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'network_reader',
+    'name': 'Network Reader',
+    'version': '0.1.0',
+    'author': 'test',
+    'hooks': ['onTrackStart'],
+  };
+}
+
+dynamic onTrackStart(dynamic track) async {
+  return await httpGet(track['url'] as String);
+}
+''';
+
+      Future<dynamic> callWith(PluginRuntime runtime, String url) async {
+        final raw = runtime.callHook('onTrackStart', [
+          {'url': url}
+        ]);
+        return raw is Future ? await raw : raw;
+      }
+
+      test(
+          'a plugin granted network:host.example can httpGet that exact '
+          'host and get the real response body back', () async {
+        final client = MockClient((req) async {
+          expect(req.url.host, 'api.example.com');
+          return http.Response('{"ok":true}', 200);
+        });
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: ['network:api.example.com'],
+          httpClientFactory: () => client,
+        );
+
+        final result =
+            await callWith(runtime, 'https://api.example.com/v1/ping');
+
+        expect(result, '{"ok":true}');
+      });
+
+      test(
+          'a plugin granted network:host.example is denied for a different '
+          'host — scoped, not treated as blanket network access', () async {
+        final client = MockClient((req) async => http.Response('nope', 200));
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: ['network:api.example.com'],
+          httpClientFactory: () => client,
+        );
+
+        expect(
+          () => callWith(runtime, 'https://evil.example.com/steal'),
+          throwsA(isA<PluginRuntimeException>().having(
+            (e) => e.message,
+            'message',
+            contains("Permission 'network' denied"),
+          )),
+        );
+      });
+
+      test('a bare "network" permission (no host) can reach any host — '
+          'backward compatible with manifests written before scoping '
+          'existed', () async {
+        final client = MockClient((req) async => http.Response('body', 200));
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: ['network'],
+          httpClientFactory: () => client,
+        );
+
+        final result =
+            await callWith(runtime, 'https://anything.example.org/x');
+
+        expect(result, 'body');
+      });
+
+      test('no network permission declared at all denies the request',
+          () async {
+        final client = MockClient((req) async => http.Response('body', 200));
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: const [],
+          httpClientFactory: () => client,
+        );
+
+        expect(
+          () => callWith(runtime, 'https://api.example.com/v1/ping'),
+          throwsA(isA<PluginRuntimeException>().having(
+            (e) => e.message,
+            'message',
+            contains("Permission 'network' denied"),
+          )),
+        );
+      });
+
+      test('a non-2xx response throws rather than returning the body '
+          'silently', () async {
+        final client =
+            MockClient((req) async => http.Response('not found', 404));
+        final runtime = PluginRuntime.create(
+          source,
+          declaredPermissions: ['network:api.example.com'],
+          httpClientFactory: () => client,
+        );
+
+        // Unlike the synchronous permission-denied cases above (which
+        // throw before the guest's `await` ever suspends, so
+        // PluginRuntime.callHook's own try/catch wraps them as
+        // PluginRuntimeException), a real network response only ever
+        // arrives after a genuine suspend — the error surfaces through
+        // the awaited Future's own rejection, which callHook's
+        // synchronous try/catch doesn't wrap. The raw exception message
+        // itself is still real and descriptive either way.
+        expect(
+          () => callWith(runtime, 'https://api.example.com/missing'),
+          throwsA(isA<Exception>()
+              .having((e) => e.toString(), 'message', contains('404'))),
         );
       });
     });
