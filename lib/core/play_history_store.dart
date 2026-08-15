@@ -27,12 +27,29 @@ class TrackPlayStats {
   /// computed without a second lookup.
   final int durationSeconds;
 
+  /// A full `BaseTrack.toJson()` snapshot, captured at [PlayHistoryStore
+  /// .recordPlay] time — **only** for a track whose [BaseTrack.type] isn't
+  /// [TrackType.local]. Item 41's "a station's history entry is recorded
+  /// but never rendered" gap (and the same gap for every other
+  /// non-scanned track type — Spotify/YouTube/Jellyfin/Plex/Subsonic/
+  /// DLNA/Emby — which shares the identical root cause, not just radio):
+  /// `HomeDashboardPage` previously joined every history entry against
+  /// `LibraryRepository`'s scanned library purely by id, which a live,
+  /// never-imported track (a radio station fetched from Radio Browser,
+  /// a streaming-service track) is never part of — the play genuinely
+  /// happened and was genuinely recorded, but there was nothing to
+  /// display for it. `null` for a local track — its full metadata is
+  /// already in the scanned library, so storing a second copy here would
+  /// be pure duplication for the overwhelmingly common case.
+  final Map<String, dynamic>? trackSnapshot;
+
   const TrackPlayStats({
     required this.trackId,
     required this.playCount,
     required this.lastPlayedAt,
     this.lastPositionSeconds = 0,
     this.durationSeconds = 0,
+    this.trackSnapshot,
   });
 
   TrackPlayStats copyWith({
@@ -40,6 +57,7 @@ class TrackPlayStats {
     DateTime? lastPlayedAt,
     int? lastPositionSeconds,
     int? durationSeconds,
+    Map<String, dynamic>? trackSnapshot,
   }) {
     return TrackPlayStats(
       trackId: trackId,
@@ -47,6 +65,7 @@ class TrackPlayStats {
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       lastPositionSeconds: lastPositionSeconds ?? this.lastPositionSeconds,
       durationSeconds: durationSeconds ?? this.durationSeconds,
+      trackSnapshot: trackSnapshot ?? this.trackSnapshot,
     );
   }
 
@@ -56,15 +75,19 @@ class TrackPlayStats {
         'lastPlayedAt': lastPlayedAt.toIso8601String(),
         'lastPositionSeconds': lastPositionSeconds,
         'durationSeconds': durationSeconds,
+        if (trackSnapshot != null) 'trackSnapshot': trackSnapshot,
       };
 
   factory TrackPlayStats.fromJson(Map<String, dynamic> json) {
+    final snapshot = json['trackSnapshot'];
     return TrackPlayStats(
       trackId: json['trackId'] as String,
       playCount: json['playCount'] as int,
       lastPlayedAt: DateTime.parse(json['lastPlayedAt'] as String),
       lastPositionSeconds: json['lastPositionSeconds'] as int? ?? 0,
       durationSeconds: json['durationSeconds'] as int? ?? 0,
+      trackSnapshot:
+          snapshot is Map ? Map<String, dynamic>.from(snapshot) : null,
     );
   }
 }
@@ -197,6 +220,8 @@ class PlayHistoryStore {
           trackId: track.id,
           playCount: (existing?.playCount ?? 0) + 1,
           lastPlayedAt: DateTime.now(),
+          trackSnapshot:
+              track.type == TrackType.local ? null : track.toJson(),
         );
         await _save(stats);
       });

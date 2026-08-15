@@ -839,17 +839,26 @@ caught it immediately. Still gaps: talks to a single fixed API mirror
 rather than the full DNS-round-robin server discovery Radio Browser's
 own docs recommend at production scale (reasonable for one app's search
 traffic, but a documented simplification); no manual/custom stream URL
-entry for a station not in the directory. Play history is a real but
-half-working case: `MainCore.recordPlay` fires unconditionally on track
-start, so a played station's `radio:<uuid>` id does get a genuine
-`PlayHistoryStore` entry, same as any other track — but
-`HomeDashboardPage`'s "Recently Played"/"Most Played" rows join those
-history entries against `LibraryRepository`'s persisted library
-(`libraryById[s.trackId]`) to render them, and a radio station is never
-saved into that library (it's fetched live from the API, not
-scanned/imported) — so the entry is recorded but silently invisible on
-Home. No favorites integration for stations either. Both are real,
-distinct follow-up work, not attempted here.
+entry for a station not in the directory. Play history's "recorded but silently invisible on Home" half closed
+2026-08-14. Root cause was confirmed broader than radio: any played
+track never scanned/imported into `LibraryRepository` — not just a
+station, but equally a Spotify/YouTube/Jellyfin/Plex/Subsonic/DLNA/Emby
+track — shared the identical failure, since `HomeDashboardPage`'s join
+only ever checked `libraryById[s.trackId]`. Fixed generally, not with a
+radio-specific special case: new `TrackPlayStats.trackSnapshot` field —
+`PlayHistoryStore.recordPlay` now captures a full `BaseTrack.toJson()`
+at record time whenever `track.type != TrackType.local` (a local
+track's complete metadata already lives in the scanned library, so a
+second copy would be pure waste) — and the dashboard's join falls back
+to `BaseTrack.fromJson(snapshot)` when the library lookup misses,
+wrapped so a corrupted snapshot skips just that entry rather than
+breaking the whole load. 6 new tests, including a widget test that
+deliberately never calls `LibraryStore.save()` at all, so it can't
+accidentally pass via the old library-join path instead of proving the
+new snapshot fallback. No favorites integration for stations exists
+yet — genuinely still open, and a separate, larger piece of work than
+the history fix: `radio_page.dart` has no favorite-toggle UI for a
+station at all today, not just a data-model gap the way history's was.
 
 **42. Smart playlists** — Partial (the rule-engine gap closed
 2026-08-14). `SmartPlaylistPlugin` is still, as before, a flat,

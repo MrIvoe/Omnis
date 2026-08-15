@@ -87,9 +87,32 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     final library = await LibraryRepository.instance.load();
     final libraryById = {for (final t in library) t.id: t};
 
+    // A played track that was never scanned/imported into the library —
+    // a radio station, a Spotify/YouTube/Jellyfin/Plex/Subsonic/DLNA/
+    // Emby track — has no entry in `libraryById` by definition, but its
+    // play was still genuinely recorded. `TrackPlayStats.trackSnapshot`
+    // (captured at record time, only for a non-local track) is the
+    // fallback that makes it displayable/replayable here too instead of
+    // the entry silently vanishing — item 41's "recorded but never
+    // rendered" gap.
+    // A snapshot decode failure (a corrupted/partially-written record,
+    // the same real-world failure mode every other JSON-backed store in
+    // this app defends against per-entry) must skip just that one
+    // history entry, not the whole dashboard load.
+    BaseTrack? decodeSnapshot(Map<String, dynamic> json) {
+      try {
+        return BaseTrack.fromJson(json);
+      } catch (_) {
+        return null;
+      }
+    }
+
     List<BaseTrack> joinStats(List<TrackPlayStats> stats) => [
           for (final s in stats)
-            if (libraryById[s.trackId] != null) libraryById[s.trackId]!,
+            if (libraryById[s.trackId] != null)
+              libraryById[s.trackId]!
+            else if (s.trackSnapshot != null)
+              if (decodeSnapshot(s.trackSnapshot!) case final track?) track,
         ];
 
     final recentlyPlayed =

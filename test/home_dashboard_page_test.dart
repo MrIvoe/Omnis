@@ -168,6 +168,37 @@ void main() {
     });
   });
 
+  testWidgets('a played track that is not in the scanned library (a '
+      'radio station, or anything from a streaming/server plugin) still '
+      'shows up in Recently Played/Most Played via its recorded '
+      'snapshot — item 41\'s "recorded but never rendered" gap',
+      (tester) async {
+    await tester.runAsync(() async {
+      // Deliberately no LibraryStore.save() at all — the whole point is
+      // that this track was never scanned/imported, only played.
+      final station = BaseTrack(
+        id: 'station-1',
+        title: 'MANGORADIO',
+        artists: const ['Radio Browser'],
+        album: '',
+        duration: 0,
+        type: TrackType.radio,
+        streamUrl: 'https://stream.example/station-1',
+      );
+      await PlayHistoryStore.instance.recordPlay(station);
+
+      await tester.pumpWidget(MaterialApp(
+        home: HomeDashboardPage(
+            engine: _FakeEngine(), pluginManager: PluginManager()),
+      ));
+      await _settle(tester);
+
+      expect(find.text('Recently Played'), findsOneWidget);
+      expect(find.text('Most Played'), findsOneWidget);
+      expect(find.text('MANGORADIO'), findsWidgets);
+    });
+  });
+
   testWidgets('Favorites only appears once FavoritesPlugin is registered '
       'and has a favorite — and picks it up live via FavoriteChangedEvent, '
       'not just on the page\'s first load', (tester) async {

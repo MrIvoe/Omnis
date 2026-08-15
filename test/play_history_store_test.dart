@@ -216,4 +216,86 @@ void main() {
         reason: 'the rest of the play history must not be lost over one '
             'bad record');
   });
+
+  group('trackSnapshot (item 41)', () {
+    BaseTrack radioTrack(String id) => BaseTrack(
+          id: id,
+          title: 'Station $id',
+          artists: const ['Radio Browser'],
+          album: '',
+          duration: 0,
+          type: TrackType.radio,
+          streamUrl: 'https://stream.example/$id',
+        );
+
+    test('recordPlay captures a full snapshot for a non-local track',
+        () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(radioTrack('station-1'));
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.trackSnapshot, isNotNull);
+      expect(stats.single.trackSnapshot!['title'], 'Station station-1');
+      expect(stats.single.trackSnapshot!['streamUrl'],
+          'https://stream.example/station-1');
+    });
+
+    test('recordPlay stores no snapshot for a local track — its full '
+        'metadata already lives in the scanned library, so a second '
+        'copy here would be pure duplication', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('local-1'));
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.trackSnapshot, isNull);
+    });
+
+    test('the snapshot round-trips through toJson/fromJson exactly',
+        () async {
+      final original = TrackPlayStats(
+        trackId: 'r1',
+        playCount: 2,
+        lastPlayedAt: DateTime(2026, 1, 1),
+        trackSnapshot: radioTrack('r1').toJson(),
+      );
+
+      final decoded = TrackPlayStats.fromJson(original.toJson());
+
+      expect(decoded.trackSnapshot, isNotNull);
+      expect(decoded.trackSnapshot!['id'], 'r1');
+      expect(decoded.trackSnapshot!['type'], 'radio');
+    });
+
+    test('a record persisted before this field existed decodes with '
+        'trackSnapshot null, not a throw — additive field, not a '
+        'breaking one', () async {
+      final dir =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      final file = File('$dir/omnis_play_history.json');
+      await file.writeAsString(jsonEncode({
+        'old_record': {
+          'trackId': 'old_record',
+          'playCount': 1,
+          'lastPlayedAt': DateTime(2024, 1, 1).toIso8601String(),
+        },
+      }));
+
+      final stats = await PlayHistoryStore.instance.mostPlayed();
+
+      expect(stats.single.trackSnapshot, isNull);
+    });
+
+    test('recordPosition preserves an existing snapshot rather than '
+        'wiping it', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(radioTrack('station-2'));
+
+      await store.recordPosition(
+          'station-2', const Duration(seconds: 30), const Duration(seconds: 200));
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.trackSnapshot, isNotNull);
+      expect(stats.single.lastPositionSeconds, 30);
+    });
+  });
 }
