@@ -210,6 +210,22 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     Navigator.pop(context, ok);
   }
 
+  /// Restores the file to its tags as they stood before the *last* save
+  /// made through this plugin — item 17's "no undo/backup/restore for
+  /// tag edits" gap. Pops the dialog with `true` (a real change was
+  /// made) the same as a normal save, so the caller re-reads the track
+  /// exactly as it would after any other edit.
+  Future<void> _undo() async {
+    final path = widget.track.localPath;
+    if (path == null) return;
+    setState(() => _saving = true);
+    final ok = await _plugin.undoLastEdit(path);
+    ArtworkProvider.invalidate(widget.track.id);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    Navigator.pop(context, ok);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -337,6 +353,11 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                   ),
       ),
       actions: [
+        if (!noFile && !_loading && _plugin.hasUndoSnapshot(widget.track.localPath!))
+          TextButton(
+            onPressed: _saving ? null : _undo,
+            child: const Text('Undo last edit'),
+          ),
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context, false),
           child: const Text('Cancel'),

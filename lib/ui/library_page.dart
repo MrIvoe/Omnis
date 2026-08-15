@@ -1548,6 +1548,13 @@ class _LibraryPageState extends State<LibraryPage> {
 
     var done = 0;
     var changed = 0;
+    // The *original* track (before this batch's edit) for every track
+    // actually changed — item 17's "no undo/backup/restore for tag
+    // edits" gap. `TagEditorPlugin.writeTags` already snapshots each
+    // file's own pre-write tags for `undoLastEdit`; this list is what
+    // lets a single "Undo" action revert the *whole batch*, including
+    // this page's in-memory `_tracks` copy, not just one file at a time.
+    final changedOriginals = <BaseTrack>[];
     // Same try/catch/finally rationale as _enrichAll/_analyzeAll: this
     // dialog is barrierDismissible: false, so an uncaught exception
     // anywhere in here (a file-write failure, a save failure) would
@@ -1564,6 +1571,7 @@ class _LibraryPageState extends State<LibraryPage> {
             artist: cleaned.artists.join(', '),
           );
           if (ok) {
+            changedOriginals.add(track);
             final index = _tracks.indexWhere((t) => t.id == track.id);
             if (index >= 0) {
               final updated = _tracks[index]
@@ -1591,12 +1599,55 @@ class _LibraryPageState extends State<LibraryPage> {
       changedNotifier.dispose();
       if (mounted) {
         Navigator.of(context, rootNavigator: false).pop();
-        _toast(failed
+        final message = failed
             ? 'Auto-tagging stopped after an error — $changed of $done '
                 'tracks were fixed before it happened.'
-            : 'Auto-tagging finished: $changed of $done tracks fixed.');
+            : 'Auto-tagging finished: $changed of $done tracks fixed.';
+        if (changedOriginals.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => _undoAutoTagBatch(changedOriginals),
+            ),
+          ));
+        } else {
+          _toast(message);
+        }
       }
     }
+  }
+
+  /// Restores every track in [originalTracks] to its tags as they stood
+  /// before the auto-tag batch that just ran — the "Undo" action on
+  /// that batch's completion snackbar. Reverts both the file itself
+  /// (`TagEditorPlugin.undoLastEdit`, using the snapshot `writeTags`
+  /// already saved) and this page's in-memory `_tracks` copy, then
+  /// re-persists the library so the reverted titles/artists survive a
+  /// restart too — the exact same two-sided update `writeTags`'s own
+  /// success path already does, just in reverse.
+  Future<void> _undoAutoTagBatch(List<BaseTrack> originalTracks) async {
+    final tagEditor = _tagEditorPlugin;
+    if (tagEditor == null) return;
+    var restored = 0;
+    for (final original in originalTracks) {
+      final path = original.localPath;
+      if (path == null) continue;
+      final ok = await tagEditor.undoLastEdit(path);
+      if (!ok) continue;
+      restored++;
+      final index = _tracks.indexWhere((t) => t.id == original.id);
+      if (index < 0) continue;
+      if (mounted) {
+        setState(() => _tracks[index] = original);
+      } else {
+        _tracks[index] = original;
+      }
+    }
+    await LibraryRepository.instance.save(_tracks);
+    _toast('Restored $restored track${restored == 1 ? '' : 's'} to their '
+        'previous tags.');
   }
 
   @override

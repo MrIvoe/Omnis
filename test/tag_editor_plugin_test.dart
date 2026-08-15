@@ -260,4 +260,119 @@ void main() {
       expect(plugin.cleanArtistFields(track), isNull);
     });
   });
+
+  group('undo last edit (item 17)', () {
+    test('hasUndoSnapshot is false until a write has actually happened',
+        () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+
+      expect(plugin.hasUndoSnapshot(file.path), isFalse);
+    });
+
+    test('a write against a completely untagged file creates a real '
+        'undo point — undoing restores it to untagged, not a no-op',
+        () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+
+      await plugin.writeTags(file.path, title: 'New Title');
+      expect(plugin.hasUndoSnapshot(file.path), isTrue);
+
+      final undone = await plugin.undoLastEdit(file.path);
+
+      expect(undone, isTrue);
+      final tags = await plugin.readTags(file.path);
+      // The TIT2 frame is genuinely cleared back to empty (readTags
+      // round-trips an empty frame as '', not null) — either way, the
+      // "New Title" value from the undone edit is gone.
+      expect(tags.title?.isEmpty ?? true, isTrue);
+    });
+
+    test('undoLastEdit restores every field to its pre-write value',
+        () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+      await plugin.writeTags(file.path,
+          title: 'Original', artist: 'Original Artist', genre: 'Jazz');
+
+      await plugin.writeTags(file.path,
+          title: 'Edited', artist: 'Edited Artist', genre: 'Rock');
+      final undone = await plugin.undoLastEdit(file.path);
+
+      expect(undone, isTrue);
+      final tags = await plugin.readTags(file.path);
+      expect(tags.title, 'Original');
+      expect(tags.artist, 'Original Artist');
+      expect(tags.genre, 'Jazz');
+    });
+
+    test('undoLastEdit is a no-op (returns false) when there is no '
+        'snapshot for this file', () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+
+      final undone = await plugin.undoLastEdit(file.path);
+
+      expect(undone, isFalse);
+    });
+
+    test('undo toggles rather than dead-ending — a fresh snapshot of '
+        'the just-undone state means calling undoLastEdit a second '
+        'time restores back to it, not a no-op', () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+      await plugin.writeTags(file.path, title: 'Original');
+      await plugin.writeTags(file.path, title: 'Edited');
+
+      final firstUndo = await plugin.undoLastEdit(file.path);
+      expect(firstUndo, isTrue);
+
+      // The undo itself was a real writeTags call, which creates its
+      // own fresh snapshot (the just-undone "Edited" state) — so a
+      // *second* hasUndoSnapshot check is true again, but it now points
+      // at "Edited," not a repeat of "Original."
+      expect(plugin.hasUndoSnapshot(file.path), isTrue);
+      final secondUndo = await plugin.undoLastEdit(file.path);
+      expect(secondUndo, isTrue);
+      final tags = await plugin.readTags(file.path);
+      expect(tags.title, 'Edited');
+    });
+
+    test('only the most recent snapshot is kept per file — two writes '
+        'in a row means undo only reverses the second one', () async {
+      final plugin = TagEditorPlugin();
+      final file = freshAudioFile();
+      await plugin.writeTags(file.path, title: 'First');
+      await plugin.writeTags(file.path, title: 'Second');
+      await plugin.writeTags(file.path, title: 'Third');
+
+      await plugin.undoLastEdit(file.path);
+
+      final tags = await plugin.readTags(file.path);
+      expect(tags.title, 'Second',
+          reason: 'undo only ever reverses the single most recent write, '
+              'not a full history back to "First"');
+    });
+
+    test('snapshots for different files are independent', () async {
+      final plugin = TagEditorPlugin();
+      final fileA = File('${(await Directory.systemTemp.createTemp(
+          'omnis_tag_editor_test')).path}/a.mp3')
+        ..writeAsBytesSync(List.filled(200, 0xFF));
+      final fileB = freshAudioFile();
+      await plugin.writeTags(fileA.path, title: 'A Original');
+      await plugin.writeTags(fileB.path, title: 'B Original');
+      await plugin.writeTags(fileA.path, title: 'A Edited');
+
+      expect(plugin.hasUndoSnapshot(fileB.path), isTrue);
+      final undoneB = await plugin.undoLastEdit(fileB.path);
+      expect(undoneB, isTrue);
+
+      final tagsA = await plugin.readTags(fileA.path);
+      expect(tagsA.title, 'A Edited',
+          reason: 'undoing file B must not touch file A\'s own edit');
+      await fileA.parent.delete(recursive: true);
+    });
+  });
 }

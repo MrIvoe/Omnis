@@ -125,8 +125,29 @@
   one-button "Analyze Library" producing a report ("1,421 missing
   artwork, 832 inconsistent artists, ..." style) with guided cleanup.
   `library_page.dart` has a narrower duplicate/short-track cleanup tool
-  today, not this broader analysis. No undo/backup/restore for tag
-  edits either.
+  today, not this broader analysis.
+
+  Undo/backup/restore for tag edits closed 2026-08-14 (item 17):
+  `TagEditorPlugin.writeTags` snapshots the pre-write tag field values
+  (decoded from bytes already in memory, not a second disk read) on
+  every successful write, keyed by file path — a small JSON blob, not a
+  full-file byte copy, since a whole-file backup per edited track
+  wouldn't scale to a library-wide batch operation. New
+  `undoLastEdit`/`hasUndoSnapshot`, wired into both a real single-track
+  "Undo last edit" button (`TagEditorDialog`) and a real "Undo" action
+  on the batch auto-tag completion snackbar (`library_page.dart`),
+  reverting every track a batch actually changed — file and in-memory/
+  persisted library both. Two real bugs caught purely by writing tests
+  against a real ID3 file: restoring a field to `null` silently left
+  the edited value in place (title/artist/album are unconditionally
+  passed to the encoder regardless of null-ness, unlike a custom
+  `TXXX` field, so only an empty string genuinely clears them); and an
+  early version deleted the undo snapshot using a stale in-memory copy
+  read before the restore's own write ran, erasing the fresh snapshot
+  that write had just correctly saved — the identical "lost update from
+  a stale read" bug class this session already fixed in
+  `LibraryStore`/`PlayHistoryStore` the same day, recreated by hand and
+  caught the same way.
 
 ---
 
