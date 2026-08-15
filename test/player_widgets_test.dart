@@ -152,6 +152,37 @@ void main() {
       expect(find.byIcon(Icons.repeat), findsNothing);
       expect(find.byIcon(Icons.repeat_one), findsNothing);
     });
+
+    testWidgets(
+        'the full 6-button standard layout does not overflow at a real '
+        'narrow phone width — item 47\'s TV-mode verification found this '
+        'exact overflow (~4.6px on a real ~360dp device) and left it '
+        'unfixed at the time; FittedBox(scaleDown) is the fix',
+        (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final errors = <FlutterErrorDetails>[];
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) => errors.add(details);
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: Center(child: PlayerControlsRow(data: _dataFor()))),
+      ));
+      await tester.pump();
+
+      expect(errors, isEmpty,
+          reason: 'a RenderFlex overflow (or any other render error) at a '
+              'narrow width means the button row is clipping/overflowing '
+              'again');
+      // All six buttons are still genuinely present and tappable —
+      // scaleDown shrinks the row, it doesn't drop any of its children.
+      expect(find.byIcon(Icons.skip_previous), findsOneWidget);
+      expect(find.byIcon(Icons.skip_next), findsOneWidget);
+    });
   });
 
   group('PlayerControlsRow accessibility', () {

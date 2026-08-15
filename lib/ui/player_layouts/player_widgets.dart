@@ -142,9 +142,7 @@ class PlayerProgressBar extends StatelessWidget {
     final total = data.duration ?? Duration.zero;
     final hasLength = total.inMilliseconds > 0;
     final value = hasLength
-        ? data.position.inMilliseconds
-            .clamp(0, total.inMilliseconds)
-            .toDouble()
+        ? data.position.inMilliseconds.clamp(0, total.inMilliseconds).toDouble()
         : 0.0;
     final max = hasLength ? total.inMilliseconds.toDouble() : 1.0;
 
@@ -280,8 +278,8 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
     final layout = data.settings.buttonLayout;
     final compact = layout != ButtonLayout.standard;
     final activeColor = color ?? theme.colorScheme.primary;
-    final inactiveColor = (color ?? theme.colorScheme.onSurface)
-        .withValues(alpha: 0.6);
+    final inactiveColor =
+        (color ?? theme.colorScheme.onSurface).withValues(alpha: 0.6);
 
     Widget iconButton(IconData icon,
         {required VoidCallback onPressed,
@@ -334,65 +332,85 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
             RepeatMode.off => 'Sequential',
           };
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (layout == ButtonLayout.standard)
-          iconButton(playModeIcon,
-              onPressed: data.onCyclePlayMode,
-              size: shuffleRepeatSize,
-              tooltip: playModeTooltip,
-              iconColor: playModeActive ? activeColor : inactiveColor),
-        if (layout != ButtonLayout.minimal)
-          iconButton(Icons.skip_previous,
-              onPressed: data.onPrevious,
-              size: compact ? iconSize * 0.8 : iconSize,
-              tooltip: 'Previous'),
-        if (layout == ButtonLayout.standard) ...[
-          iconButton(seekIcons.$1,
-              onPressed: () => skip(-seekIncrement),
-              size: shuffleRepeatSize,
-              tooltip: 'Back $seekIncrement seconds'),
-          const SizedBox(width: 4),
-        ],
-        const SizedBox(width: 16),
-        data.buffering
-            ? Semantics(
-                label: 'Buffering',
-                child: SizedBox(
-                  width: playIconSize - 8,
-                  height: playIconSize - 8,
-                  child: CircularProgressIndicator(color: color),
+    // Wrapped in FittedBox(scaleDown) rather than left as a bare Row:
+    // the Standard layout's full button set (play-mode/prev/seek-back/
+    // play-pause/seek-forward/next, each with its own fixed IconButton
+    // tap-target minimum plus the fixed gaps below) has a real,
+    // documented overflow of a few pixels on a real phone's ~360dp
+    // width — item 47's TV-mode verification found this and explicitly
+    // left it unfixed as out of scope at the time. `scaleDown` is a
+    // no-op whenever the row already fits (every wider screen, and
+    // every existing widget test here, which all render at the
+    // default 800px test viewport), and shrinks the whole row
+    // uniformly by the few percent needed on a genuinely narrow
+    // screen instead of clipping/overflowing by a few pixels — simpler
+    // than hand-computing per-button proportional widths the way
+    // `TvModeLayout`'s own three-button row does, since this row can
+    // have anywhere from 3 to 6 buttons across three `ButtonLayout`
+    // variants and doesn't need TV mode's "Play/Pause deliberately
+    // much larger than its neighbors" width budgeting.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (layout == ButtonLayout.standard)
+            iconButton(playModeIcon,
+                onPressed: data.onCyclePlayMode,
+                size: shuffleRepeatSize,
+                tooltip: playModeTooltip,
+                iconColor: playModeActive ? activeColor : inactiveColor),
+          if (layout != ButtonLayout.minimal)
+            iconButton(Icons.skip_previous,
+                onPressed: data.onPrevious,
+                size: compact ? iconSize * 0.8 : iconSize,
+                tooltip: 'Previous'),
+          if (layout == ButtonLayout.standard) ...[
+            iconButton(seekIcons.$1,
+                onPressed: () => skip(-seekIncrement),
+                size: shuffleRepeatSize,
+                tooltip: 'Back $seekIncrement seconds'),
+            const SizedBox(width: 4),
+          ],
+          const SizedBox(width: 16),
+          data.buffering
+              ? Semantics(
+                  label: 'Buffering',
+                  child: SizedBox(
+                    width: playIconSize - 8,
+                    height: playIconSize - 8,
+                    child: CircularProgressIndicator(color: color),
+                  ),
+                )
+              // `AnimatedIcon` morphs the glyph itself (play triangle <->
+              // pause bars) instead of the old hard swap between two
+              // separate `Icons.*_circle_filled` icons.
+              : IconButton(
+                  iconSize: playSize,
+                  icon: AnimatedIcon(
+                    icon: AnimatedIcons.play_pause,
+                    progress: _playPauseController,
+                    size: playSize,
+                    color: color ?? theme.colorScheme.onSurface,
+                  ),
+                  tooltip: data.playing ? 'Pause' : 'Play',
+                  onPressed: data.onPlayPause,
                 ),
-              )
-            // `AnimatedIcon` morphs the glyph itself (play triangle <->
-            // pause bars) instead of the old hard swap between two
-            // separate `Icons.*_circle_filled` icons.
-            : IconButton(
-                iconSize: playSize,
-                icon: AnimatedIcon(
-                  icon: AnimatedIcons.play_pause,
-                  progress: _playPauseController,
-                  size: playSize,
-                  color: color ?? theme.colorScheme.onSurface,
-                ),
-                tooltip: data.playing ? 'Pause' : 'Play',
-                onPressed: data.onPlayPause,
-              ),
-        const SizedBox(width: 16),
-        if (layout == ButtonLayout.standard) ...[
-          const SizedBox(width: 4),
-          iconButton(seekIcons.$2,
-              onPressed: () => skip(seekIncrement),
-              size: shuffleRepeatSize,
-              tooltip: 'Forward $seekIncrement seconds'),
+          const SizedBox(width: 16),
+          if (layout == ButtonLayout.standard) ...[
+            const SizedBox(width: 4),
+            iconButton(seekIcons.$2,
+                onPressed: () => skip(seekIncrement),
+                size: shuffleRepeatSize,
+                tooltip: 'Forward $seekIncrement seconds'),
+          ],
+          if (layout != ButtonLayout.minimal)
+            iconButton(Icons.skip_next,
+                onPressed: data.onNext,
+                size: compact ? iconSize * 0.8 : iconSize,
+                tooltip: 'Next'),
         ],
-        if (layout != ButtonLayout.minimal)
-          iconButton(Icons.skip_next,
-              onPressed: data.onNext,
-              size: compact ? iconSize * 0.8 : iconSize,
-              tooltip: 'Next'),
-      ],
+      ),
     );
   }
 }
