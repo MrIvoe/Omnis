@@ -212,11 +212,16 @@ or room/headphone/speaker correction. No explicit "visualizer tap" —
 (`audify`), not a tap on this pipeline.
 
 **19. ReplayGain** — Partial. `ReplayGainPlugin` reads
-`BaseTrack.replayGain.trackGain` (populated from existing file tags via
+`BaseTrack.replayGain` (populated from existing file tags via
 `TagEditorPlugin`/`MediaScanner`) and applies it as a gain multiplier,
-plus a user preamp (-6..+6 dB). Omnis never *scans*/computes ReplayGain
-itself — it only consumes values some other tool already wrote. No
-album-gain mode toggle, no true-peak/limiter clip protection.
+plus a user preamp (-6..+6 dB). Album-gain mode toggle closed
+2026-08-15: `trackGain` and `albumGain` were both already being parsed
+into `BaseTrack.replayGain`, but `setReplayGain` only ever read
+`trackGain` — a persisted toggle now prefers `albumGain` when enabled,
+falling back to `trackGain` for a track with no album gain tag. Omnis
+still never *scans*/computes ReplayGain itself — it only consumes
+values some other tool already wrote — and there's still no true-peak/
+limiter clip protection.
 
 **20. EQ** — Partial. `EqualizerPlugin` has two real modes: hardware
 (Android only, drives the OS `android.media.audiofx.Equalizer` via
