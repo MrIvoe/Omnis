@@ -287,11 +287,38 @@ they actually start — a well-formed test file silently decoded to
 all-null fields instead of throwing, the harder class of bug to catch)
 and a missing `'aifc'` case in the format-dispatch `switch` (every
 `.aifc` file silently fell through to the generic unknown-extension
-path, never reaching the new reader at all). 7 new tests. Still gaps:
-M4A/AAC, OGG/Opus, and WMA still only get a codec label from their
-extension — full MP4-box/Ogg-page/ASF-header parsing for those
-containers is real, separate work, deliberately not attempted here to
-avoid shipping wrong numbers. And the DSP/output half is still fully 0%:
+path, never reaching the new reader at all). 7 new tests.
+
+Ogg Vorbis/Opus parsing closed the same day, as the second format
+(after AIFF): reads the first Ogg page (`OggS` capture pattern, a fixed
+header, and the segment-table lacing values summed to get the exact
+packet length) and parses its payload — the stream's identification-
+header packet — sniffed by signature (`"\x01vorbis"` vs `"OpusHead"`)
+rather than trusted from the `.ogg`/`.opus` extension, so a
+mismatched extension still identifies correctly. Real sample rate and
+channel count for both; no bitrate for either, a deliberate scope
+decision: Vorbis's header "nominal bitrate" field is spec-documented
+as a non-binding encoder hint, not a real derivable number the way
+MP3's Xing-derived or FLAC's file-size/duration-derived averages are
+(a real Ogg average would need the *last* page's granule position — a
+backward scan near EOF for variable-sized pages, genuinely separate
+work), and Opus's header has no bitrate field at all. Opus always
+reports `48000`Hz regardless of its header's own "input sample rate"
+field, since the decoder always outputs at 48kHz and that field is
+just informational provenance about the source material. A page whose
+payload matches neither signature (a real Ogg FLAC or Theora stream)
+degrades to a generic `'Ogg'` label rather than misreporting or
+crashing. 6 new tests, all passing on the first real run — zero bugs
+found this time, worth noting against AIFF's two, as a data point that
+getting the pattern right once (hand-packed independent-encoder tests,
+real header-format research) pays off on the next format.
+
+Still gaps: M4A/AAC and WMA still only get a codec label from their
+extension — full MP4-box/ASF-header parsing for those containers is
+real, separate work, deliberately not attempted here to avoid shipping
+wrong numbers (MP4's nested box structure and ASF's GUID-object layout
+both have more surface area than AIFF's single COMM chunk or Ogg's flat
+page format did). And the DSP/output half is still fully 0%:
 no source→DSP→resampling→output *chain* display, no exclusive/
 WASAPI-style output mode. Also found and left as-is (out of scope for
 this pass): `BaseTrack`'s `==`/`hashCode` compare list fields

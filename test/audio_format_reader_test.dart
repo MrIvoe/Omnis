@@ -184,6 +184,65 @@ void main() {
     ];
   }
 
+  /// Wraps [payload] in a single, spec-correct Ogg page (`OggS` capture
+  /// pattern, a minimal fixed header, and a one-entry segment table) —
+  /// sufficient for a test payload well under 255 bytes, which every id
+  /// header here is.
+  List<int> buildOggPage(List<int> payload) {
+    return <int>[
+      ...'OggS'.codeUnits,
+      0, // version
+      0x02, // header_type: beginning-of-stream
+      ...List.filled(8, 0), // granule position (unused by the reader)
+      ...List.filled(4, 0), // bitstream serial number (unused)
+      0, 0, 0, 0, // page sequence number (unused)
+      0, 0, 0, 0, // CRC checksum (unused — the reader doesn't verify it)
+      1, // page_segments: one segment
+      payload.length & 0xFF, // segment table: this page's one segment
+      ...payload,
+    ];
+  }
+
+  /// Builds a real, spec-correct Vorbis identification-header packet
+  /// (packet type 1, `"vorbis"` signature, 30 bytes total) —
+  /// independently of `AudioFormatReader._readOgg`'s own field offsets.
+  List<int> buildVorbisIdHeader({
+    required int sampleRate,
+    required int channels,
+  }) {
+    return <int>[
+      0x01,
+      ...'vorbis'.codeUnits,
+      0, 0, 0, 0, // vorbis_version
+      channels & 0xFF,
+      sampleRate & 0xFF, (sampleRate >> 8) & 0xFF,
+      (sampleRate >> 16) & 0xFF, (sampleRate >> 24) & 0xFF,
+      0, 0, 0, 0, // bitrate_maximum (unset)
+      0, 0, 0, 0, // bitrate_nominal (unset — deliberately not reported)
+      0, 0, 0, 0, // bitrate_minimum (unset)
+      0x00, // blocksize_0/blocksize_1
+      0x01, // framing_flag
+    ];
+  }
+
+  /// Builds a real, spec-correct Opus `OpusHead` identification packet
+  /// (19 bytes, the minimum/no-channel-mapping-table form).
+  List<int> buildOpusHead({
+    required int inputSampleRate,
+    required int channels,
+  }) {
+    return <int>[
+      ...'OpusHead'.codeUnits,
+      1, // version
+      channels & 0xFF,
+      0, 0, // pre-skip
+      inputSampleRate & 0xFF, (inputSampleRate >> 8) & 0xFF,
+      (inputSampleRate >> 16) & 0xFF, (inputSampleRate >> 24) & 0xFF,
+      0, 0, // output gain
+      0, // channel mapping family
+    ];
+  }
+
   group('FLAC', () {
     test('reads real sample rate, bit depth, channels, and a computed '
         'average bitrate from the STREAMINFO block', () async {
@@ -394,6 +453,83 @@ void main() {
     });
   });
 
+  group('Ogg Vorbis/Opus', () {
+    test('reads sample rate and channels from a Vorbis identification '
+        'header, and leaves bitrate null (nominal bitrate is a '
+        "non-binding encoder hint, not a real number)", () async {
+      final page = buildOggPage(
+          buildVorbisIdHeader(sampleRate: 44100, channels: 2));
+      final file = writeFile('test.ogg', page);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'Ogg Vorbis');
+      expect(info.sampleRateHz, 44100);
+      expect(info.channels, 2);
+      expect(info.bitrateKbps, isNull);
+      expect(info.bitDepth, isNull);
+    });
+
+    test('reads a mono, less common sample rate correctly — proves the '
+        'field offsets aren\'t hardcoded to one fixture', () async {
+      final page =
+          buildOggPage(buildVorbisIdHeader(sampleRate: 48000, channels: 1));
+      final file = writeFile('test.ogg', page);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 1);
+    });
+
+    test('reads channels from an OpusHead identification header and '
+        "always reports 48000Hz — the rate Opus's decoder actually "
+        "outputs at, not the header's own informational input-rate "
+        'field', () async {
+      final page = buildOggPage(
+          buildOpusHead(inputSampleRate: 44100, channels: 2));
+      final file = writeFile('test.opus', page);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'Opus');
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 2);
+      expect(info.bitrateKbps, isNull);
+    });
+
+    test('an .oga extension is recognized as Ogg too', () async {
+      final page = buildOggPage(
+          buildVorbisIdHeader(sampleRate: 44100, channels: 2));
+      final file = writeFile('test.oga', page);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'Ogg Vorbis');
+    });
+
+    test('a real Ogg page whose payload is neither Vorbis nor Opus '
+        '(e.g. a real Ogg FLAC/Theora stream) still gets a generic Ogg '
+        'label rather than crashing or reporting unknown', () async {
+      final page = buildOggPage(List.filled(20, 0x41)); // arbitrary payload
+      final file = writeFile('test.ogg', page);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'Ogg');
+      expect(info.sampleRateHz, isNull);
+    });
+
+    test('degrades to unknown for a non-OggS file with a .ogg extension',
+        () async {
+      final file = writeFile('fake.ogg', List.filled(50, 0));
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, isNull);
+    });
+  });
+
   group('MP3', () {
     test('reads sample rate/channels/CBR bitrate from a plain (non-VBR) '
         'frame header', () async {
@@ -492,11 +628,9 @@ void main() {
     test('still labels the codec by extension for formats without a full '
         'header parser', () async {
       final m4a = writeFile('song.m4a', List.filled(20, 0));
-      final ogg = writeFile('song.ogg', List.filled(20, 0));
 
       expect((await AudioFormatReader.read(m4a.path)).codec,
           'AAC/ALAC (M4A)');
-      expect((await AudioFormatReader.read(ogg.path)).codec, 'Ogg Vorbis');
       // No numeric fields guessed for these.
       expect((await AudioFormatReader.read(m4a.path)).sampleRateHz, isNull);
     });

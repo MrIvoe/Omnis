@@ -26,15 +26,19 @@ class AudioFormatInfo {
 
 /// Sniffs [AudioFormatInfo] straight from a local audio file's header —
 /// no native decoder, no ffprobe (this app has no native build step to
-/// bundle one into; see `docs/BUILDING.md`). FLAC, WAV, MP3, and AIFF/
-/// AIFC headers are simple enough to parse reliably in pure Dart and
-/// are fully supported, including a real average bitrate (from a VBR
-/// header's frame/byte counts for MP3, from file-size/duration for
-/// FLAC, computed directly from channels/rate/bit-depth for the
-/// uncompressed PCM formats). Every other recognized extension still
-/// gets a codec label, with the numeric fields deliberately left `null`
-/// rather than guessed — full parsing of MP4/M4A boxes, Ogg pages, or
-/// WMA's ASF headers is real, separate work not attempted here.
+/// bundle one into; see `docs/BUILDING.md`). FLAC, WAV, MP3, AIFF/AIFC,
+/// and Ogg Vorbis/Opus headers are parsed for real: sample rate and
+/// channel count in every case, plus a real average bitrate for the
+/// formats where one can be derived honestly rather than guessed (a VBR
+/// header's frame/byte counts for MP3, file-size/duration for FLAC,
+/// computed directly from channels/rate/bit-depth for the uncompressed
+/// PCM formats — Ogg deliberately doesn't get one: Vorbis's header
+/// "nominal bitrate" is an explicitly non-binding encoder hint, not a
+/// real number, and Opus's header carries no bitrate field at all).
+/// Every other recognized extension still gets a codec label, with the
+/// numeric fields deliberately left `null` rather than guessed — full
+/// parsing of MP4/M4A boxes or WMA's ASF headers is real, separate work
+/// not attempted here.
 class AudioFormatReader {
   const AudioFormatReader._();
 
@@ -59,9 +63,9 @@ class AudioFormatReader {
         case 'aac':
           return const AudioFormatInfo(codec: 'AAC');
         case 'ogg':
-          return const AudioFormatInfo(codec: 'Ogg Vorbis');
+        case 'oga':
         case 'opus':
-          return const AudioFormatInfo(codec: 'Opus');
+          return await _readOgg(File(path));
         case 'wma':
           return const AudioFormatInfo(codec: 'WMA');
         case 'aiff':
@@ -291,6 +295,90 @@ class AudioFormatReader {
       mantissa = mantissa * 256 + bytes[i];
     }
     return sign * mantissa * math.pow(2.0, exponent - 63);
+  }
+
+  /// Reads just the first Ogg page's payload — the identification
+  /// header packet, for both Vorbis and Opus streams — to determine
+  /// sample rate/channels. Deliberately does not look inside the
+  /// payload's own codec-specific bitrate story the way MP3's Xing tag
+  /// does: Vorbis's declared "nominal bitrate" is a rough target the
+  /// encoder aimed for, not a computable-from-first-principles number
+  /// the way PCM's `rate * channels * depth` is, and Opus's header
+  /// carries no bitrate field at all (it's adaptive, no header-declared
+  /// rate exists to report) — both left `null` rather than reported as
+  /// if they were exact, the same "don't guess what can't be derived
+  /// honestly" stance every other reader here already holds. Neither
+  /// format has a fixed PCM bit depth to report either (both are lossy,
+  /// decoded internally at whatever precision the decoder chooses), so
+  /// `bitDepth` stays `null` too — the same convention MP3 already
+  /// follows in this reader.
+  static Future<AudioFormatInfo> _readOgg(File file) async {
+    final raf = await file.open();
+    try {
+      final pageHeader = await raf.read(27);
+      if (pageHeader.length < 27 ||
+          pageHeader[0] != 0x4F || // O
+          pageHeader[1] != 0x67 || // g
+          pageHeader[2] != 0x67 || // g
+          pageHeader[3] != 0x53) {
+        // S
+        return AudioFormatInfo.unknown;
+      }
+      final segmentCount = pageHeader[26];
+      final segmentTable = await raf.read(segmentCount);
+      if (segmentTable.length < segmentCount) {
+        return const AudioFormatInfo(codec: 'Ogg');
+      }
+      // The first packet's total length is the sum of consecutive
+      // 255-valued ("continues into the next segment") lacing values up
+      // to and including the first one under 255 — for an id header
+      // packet (always well under 255 bytes), that's just its own single
+      // segment entry, but summing correctly handles the general case
+      // instead of assuming exactly one segment.
+      var packetLength = 0;
+      for (final segmentSize in segmentTable) {
+        packetLength += segmentSize;
+        if (segmentSize < 255) break;
+      }
+      if (packetLength <= 0) {
+        return const AudioFormatInfo(codec: 'Ogg');
+      }
+      final payload = await raf.read(packetLength);
+
+      if (payload.length >= 30 &&
+          payload[0] == 0x01 &&
+          String.fromCharCodes(payload.sublist(1, 7)) == 'vorbis') {
+        final channels = payload[11];
+        final sampleRate = payload[12] |
+            (payload[13] << 8) |
+            (payload[14] << 16) |
+            (payload[15] << 24);
+        return AudioFormatInfo(
+          codec: 'Ogg Vorbis',
+          sampleRateHz: sampleRate > 0 ? sampleRate : null,
+          channels: channels > 0 ? channels : null,
+        );
+      }
+
+      if (payload.length >= 19 &&
+          String.fromCharCodes(payload.sublist(0, 8)) == 'OpusHead') {
+        final channels = payload[9];
+        // Opus always decodes at 48kHz regardless of the header's own
+        // "input sample rate" field (which just records the source
+        // material's original rate for reference) — reporting 48000
+        // matches what actually comes out of the decoder, the same
+        // "report what's real" stance the rest of this reader takes.
+        return AudioFormatInfo(
+          codec: 'Opus',
+          sampleRateHz: 48000,
+          channels: channels > 0 ? channels : null,
+        );
+      }
+
+      return const AudioFormatInfo(codec: 'Ogg');
+    } finally {
+      await raf.close();
+    }
   }
 
   static const _mpeg1Layer3Bitrates = [
