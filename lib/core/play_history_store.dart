@@ -3,7 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/schema_versioning.dart';
 import 'package:path_provider/path_provider.dart';
+
+/// This store's current on-disk shape version — see
+/// `schema_versioning.dart`. [_migrations] is empty because no real
+/// migration has ever been needed yet (this is the payload's first
+/// versioned release, item 4's "no schema migration system" gap); a
+/// future format change adds an entry keyed by the version it upgrades
+/// *from*.
+const _currentSchemaVersion = 1;
+const _migrations = <int, SchemaMigration>{};
 
 /// One track's aggregate play stats — not a per-play event log (unlike
 /// `ScrobblePlugin`'s `PlayRecord` list, which exists for a different
@@ -106,12 +116,16 @@ class TrackPlayStats {
 /// over one bad entry. Same rationale as `LibraryStore`'s identical
 /// per-entry guard.
 Map<String, TrackPlayStats> _decodeStats(String raw) {
-  final decoded = jsonDecode(raw) as Map<String, dynamic>;
+  final decoded = jsonDecode(raw);
+  final unwrapped = unwrapVersioned(decoded);
+  final migrated = runMigrations(
+      unwrapped.data, unwrapped.version, _currentSchemaVersion, _migrations);
   final stats = <String, TrackPlayStats>{};
-  for (final entry in decoded.entries) {
-    if (entry.value is! Map) continue;
+  if (migrated is! Map) return stats;
+  for (final entry in migrated.entries) {
+    if (entry.key is! String || entry.value is! Map) continue;
     try {
-      stats[entry.key] =
+      stats[entry.key as String] =
           TrackPlayStats.fromJson(Map<String, dynamic>.from(entry.value));
     } catch (_) {
       continue;
@@ -120,8 +134,9 @@ Map<String, TrackPlayStats> _decodeStats(String raw) {
   return stats;
 }
 
-String _encodeStats(Map<String, TrackPlayStats> stats) =>
-    jsonEncode(stats.map((id, s) => MapEntry(id, s.toJson())));
+String _encodeStats(Map<String, TrackPlayStats> stats) => jsonEncode(
+    wrapVersioned(
+        stats.map((id, s) => MapEntry(id, s.toJson())), _currentSchemaVersion));
 
 /// Persists per-track play aggregates so the Home dashboard's Recently
 /// Played / Most Played / Continue Listening sections work regardless of

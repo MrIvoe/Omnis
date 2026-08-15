@@ -4,7 +4,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/schema_versioning.dart';
 import 'package:path_provider/path_provider.dart';
+
+/// This store's current on-disk shape version — see
+/// `schema_versioning.dart`. [_migrations] is empty because no real
+/// migration has ever been needed yet (this is the payload's first
+/// versioned release, item 4's "no schema migration system" gap); a
+/// future format change adds an entry keyed by the version it upgrades
+/// *from*.
+const _currentSchemaVersion = 1;
+const _migrations = <int, SchemaMigration>{};
 
 /// Decodes a raw JSON string into tracks. A top-level function (not a
 /// method/closure) because [compute] spawns a new isolate to run it in,
@@ -20,9 +30,13 @@ import 'package:path_provider/path_provider.dart';
 /// empty over one bad entry. Same rationale as `PlaybackState.fromJson`'s
 /// identical per-entry guard for its queue.
 List<BaseTrack> _decodeTracks(String raw) {
-  final decoded = jsonDecode(raw) as List<dynamic>;
+  final decoded = jsonDecode(raw);
+  final unwrapped = unwrapVersioned(decoded);
+  final migrated = runMigrations(
+      unwrapped.data, unwrapped.version, _currentSchemaVersion, _migrations);
+  if (migrated is! List) return [];
   final tracks = <BaseTrack>[];
-  for (final entry in decoded) {
+  for (final entry in migrated) {
     if (entry is! Map) continue;
     try {
       tracks.add(BaseTrack.fromJson(Map<String, dynamic>.from(entry)));
@@ -35,8 +49,8 @@ List<BaseTrack> _decodeTracks(String raw) {
 
 /// Encodes tracks into a raw JSON string — the [compute]-friendly
 /// top-level counterpart to [_decodeTracks].
-String _encodeTracks(List<BaseTrack> tracks) =>
-    jsonEncode(tracks.map((t) => t.toJson()).toList());
+String _encodeTracks(List<BaseTrack> tracks) => jsonEncode(wrapVersioned(
+    tracks.map((t) => t.toJson()).toList(), _currentSchemaVersion));
 
 /// Persists the scanned library to disk so it survives app restarts.
 ///

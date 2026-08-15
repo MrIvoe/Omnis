@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/schema_versioning.dart';
 import 'package:omnis_plugin_api/playlist.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -11,6 +12,15 @@ import 'package:path_provider/path_provider.dart';
 // `import 'package:omnis/core/playlist_store.dart'` in this app keeps
 // getting both `PlaylistStore` and `Playlist` unchanged.
 export 'package:omnis_plugin_api/playlist.dart' show Playlist;
+
+/// This store's current on-disk shape version — see
+/// `schema_versioning.dart`. [_migrations] is empty because no real
+/// migration has ever been needed yet (this is the payload's first
+/// versioned release, item 4's "no schema migration system" gap); a
+/// future format change adds an entry keyed by the version it upgrades
+/// *from*.
+const _currentSchemaVersion = 1;
+const _migrations = <int, SchemaMigration>{};
 
 /// Result of [PlaylistStore.exportM3U].
 class M3UExportResult {
@@ -87,9 +97,13 @@ class PlaylistStore {
       if (!await file.exists()) return [];
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return [];
-      final decoded = jsonDecode(raw) as List<dynamic>;
+      final decoded = jsonDecode(raw);
+      final unwrapped = unwrapVersioned(decoded);
+      final migrated = runMigrations(unwrapped.data, unwrapped.version,
+          _currentSchemaVersion, _migrations);
+      if (migrated is! List) return [];
       final playlists = <Playlist>[];
-      for (final entry in decoded) {
+      for (final entry in migrated) {
         if (entry is! Map) continue;
         try {
           playlists.add(Playlist.fromJson(Map<String, dynamic>.from(entry)));
@@ -115,7 +129,8 @@ class PlaylistStore {
   Future<void> save(List<Playlist> playlists) async {
     try {
       final file = await _getFile();
-      final json = jsonEncode(playlists.map((p) => p.toJson()).toList());
+      final json = jsonEncode(wrapVersioned(
+          playlists.map((p) => p.toJson()).toList(), _currentSchemaVersion));
       final tmp = File('${file.path}.tmp');
       await tmp.writeAsString(json, flush: true);
       await tmp.rename(file.path);

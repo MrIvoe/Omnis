@@ -194,4 +194,70 @@ void main() {
             'all three');
     expect(loaded.single.id, '3');
   });
+
+  group('schema versioning (item 4)', () {
+    test('a legacy pre-versioning file (a bare JSON array, the exact '
+        'shape every real on-disk library predates this scaffold with) '
+        'still loads correctly — no one-time conversion is required',
+        () async {
+      final store = LibraryStore.instance;
+      final f = File('$tempDir/omnis_library.json');
+      await f.writeAsString(jsonEncode([
+        {
+          'id': '1',
+          'title': 'Legacy Track',
+          'artists': ['A'],
+          'album': 'Al',
+          'duration': 10,
+          'genres': [],
+          'type': 'local',
+        },
+      ]));
+
+      final loaded = await store.load();
+
+      expect(loaded.single.title, 'Legacy Track');
+    });
+
+    test('save() writes the new versioned envelope shape, not a bare '
+        'array', () async {
+      final store = LibraryStore.instance;
+      await store.save([
+        BaseTrack(
+          id: '1',
+          title: 'T',
+          artists: const ['A'],
+          album: 'Al',
+          duration: 10,
+          type: TrackType.local,
+        ),
+      ]);
+
+      final raw = await File('$tempDir/omnis_library.json').readAsString();
+      final decoded = jsonDecode(raw);
+
+      expect(decoded, isA<Map>());
+      expect(decoded['schemaVersion'], isA<int>());
+      expect(decoded['data'], isA<List>());
+    });
+
+    test('loading a versioned file round-trips through save/load '
+        'exactly the same as the legacy shape did', () async {
+      final store = LibraryStore.instance;
+      await store.save([
+        BaseTrack(
+          id: '1',
+          title: 'Round Trip',
+          artists: const ['A'],
+          album: 'Al',
+          duration: 10,
+          type: TrackType.local,
+        ),
+      ]);
+
+      final loaded = await store.load();
+
+      expect(loaded.single.title, 'Round Trip');
+    });
+  });
 }

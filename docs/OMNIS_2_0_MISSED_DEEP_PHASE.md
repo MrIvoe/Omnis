@@ -42,8 +42,16 @@
   `omnis_plugin_api` change) or a track context menu yet.
 - **§4/§41 — Real indexed database.** Every store is still a JSON file
   (now atomic-write-safe and per-entry-decode-safe, but not an indexed
-  DB). No multi-source libraries, no SQL-like query layer, no schema
-  migration system, no scheduled integrity check.
+  DB). Schema migration system closed 2026-08-14: `lib/core/
+  schema_versioning.dart` gives every store (`LibraryStore`/
+  `PlaylistStore`/`PlayHistoryStore`/`RecoveryJournal`) a versioned
+  envelope (`{"schemaVersion": N, "data": payload}`) and a real
+  migration-dispatch mechanism — no actual field/shape migrations exist
+  yet (nothing has needed one), but the version detection, an old
+  bare-shape file transparently reading as version 0, and the
+  version-to-version dispatch loop are all real and tested, not just a
+  number. Still no multi-source libraries, no SQL-like query layer, no
+  scheduled integrity check.
 - **§5 — Scanning depth.** No filesystem watchers, no scheduled scans, no
   duplicate-file detection beyond the Library page's own manual cleanup
   tool, no content-fingerprint/hash-based track identity (tracks are

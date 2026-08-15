@@ -244,4 +244,45 @@ void main() {
     expect(reordered.name, 'Original');
     expect(reordered.trackIds, ['b', 'a']);
   });
+
+  group('schema versioning (item 4)', () {
+    test('a legacy pre-versioning file (a bare JSON array) still loads '
+        'correctly', () async {
+      final store = PlaylistStore.instance;
+      final f = File('$tempDir/omnis_playlists.json');
+      await f.writeAsString(jsonEncode([
+        {
+          'id': 'legacy',
+          'name': 'Legacy Playlist',
+          'trackIds': ['t1'],
+          'createdAt':
+              DateTime.fromMillisecondsSinceEpoch(0).toIso8601String(),
+        },
+      ]));
+
+      final loaded = await store.load();
+
+      expect(loaded.single.name, 'Legacy Playlist');
+    });
+
+    test('save() writes the new versioned envelope shape, not a bare '
+        'array', () async {
+      final store = PlaylistStore.instance;
+      await store.save([
+        Playlist(
+          id: 'p1',
+          name: 'Versioned',
+          trackIds: const ['a'],
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      ]);
+
+      final raw = await File('$tempDir/omnis_playlists.json').readAsString();
+      final decoded = jsonDecode(raw);
+
+      expect(decoded, isA<Map>());
+      expect(decoded['schemaVersion'], isA<int>());
+      expect(decoded['data'], isA<List>());
+    });
+  });
 }

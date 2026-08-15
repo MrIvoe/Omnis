@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -182,5 +183,32 @@ void main() {
     // either way this must not throw and must not leave a half-written
     // file.
     expect(await journalFile.exists(), isFalse);
+  });
+
+  group('schema versioning (item 4)', () {
+    test('a legacy pre-versioning file (a bare PlaybackState JSON '
+        'object, the exact shape every real on-disk journal predates '
+        'this scaffold with) still loads correctly', () async {
+      await journalFile.writeAsString(jsonEncode(sampleState().toJson()));
+
+      final loaded = await RecoveryJournal.instance.load();
+
+      expect(loaded, isNotNull);
+      expect(loaded!.currentIndex, 1);
+      expect(loaded.queue, hasLength(2));
+    });
+
+    test('save() writes the new versioned envelope shape, not a bare '
+        'PlaybackState object', () async {
+      await RecoveryJournal.instance.save(sampleState());
+
+      final raw = await journalFile.readAsString();
+      final decoded = jsonDecode(raw);
+
+      expect(decoded, isA<Map>());
+      expect(decoded['schemaVersion'], isA<int>());
+      expect(decoded['data'], isA<Map>());
+      expect(decoded['data']['currentIndex'], 1);
+    });
   });
 }

@@ -3,8 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:omnis/core/playback_state.dart';
+import 'package:omnis/core/schema_versioning.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+/// This store's current on-disk shape version — see
+/// `schema_versioning.dart`. No real migration has ever been needed yet
+/// (this is the file's first versioned release), so [_migrations] is
+/// empty; a future format change adds an entry keyed by the version it
+/// upgrades *from*, not a rewrite of the read/write logic below.
+const _currentSchemaVersion = 1;
+const _migrations = <int, SchemaMigration>{};
 
 /// Persists [PlaybackState] snapshots for crash recovery and queue
 /// restoration (§42 of the Omnis 2.0 product spec).
@@ -79,7 +88,8 @@ class RecoveryJournal {
     try {
       final file = await _getFile();
       final tmp = File('${file.path}.tmp');
-      await tmp.writeAsString(jsonEncode(state.toJson()), flush: true);
+      final envelope = wrapVersioned(state.toJson(), _currentSchemaVersion);
+      await tmp.writeAsString(jsonEncode(envelope), flush: true);
       // Rename is atomic on the same filesystem; the temp file shares the
       // journal's directory, so this is a same-volume rename.
       await tmp.rename(file.path);
@@ -97,8 +107,11 @@ class RecoveryJournal {
       final raw = await file.readAsString();
       if (raw.trim().isEmpty) return null;
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
-      return PlaybackState.fromJson(Map<String, dynamic>.from(decoded));
+      final unwrapped = unwrapVersioned(decoded);
+      final migrated = runMigrations(
+          unwrapped.data, unwrapped.version, _currentSchemaVersion, _migrations);
+      if (migrated is! Map) return null;
+      return PlaybackState.fromJson(Map<String, dynamic>.from(migrated));
     } catch (e) {
       debugPrint('Omnis: recovery journal read failed (treating as none): $e');
       return null;

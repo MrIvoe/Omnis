@@ -298,4 +298,42 @@ void main() {
       expect(stats.single.lastPositionSeconds, 30);
     });
   });
+
+  group('schema versioning (item 4)', () {
+    test('a legacy pre-versioning file (a bare JSON object of '
+        'trackId -> stats, the exact shape every real on-disk history '
+        'predates this scaffold with) still loads correctly', () async {
+      final dir =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      final file = File('$dir/omnis_play_history.json');
+      await file.writeAsString(jsonEncode({
+        'legacy': {
+          'trackId': 'legacy',
+          'playCount': 7,
+          'lastPlayedAt': DateTime(2024, 1, 1).toIso8601String(),
+        },
+      }));
+
+      final stats = await PlayHistoryStore.instance.mostPlayed();
+
+      expect(stats.single.trackId, 'legacy');
+      expect(stats.single.playCount, 7);
+    });
+
+    test('recordPlay writes the new versioned envelope shape, not a '
+        'bare object', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+
+      final dir =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      final raw =
+          await File('$dir/omnis_play_history.json').readAsString();
+      final decoded = jsonDecode(raw);
+
+      expect(decoded, isA<Map>());
+      expect(decoded['schemaVersion'], isA<int>());
+      expect(decoded['data'], isA<Map>());
+    });
+  });
 }
