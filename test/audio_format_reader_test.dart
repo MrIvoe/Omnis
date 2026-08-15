@@ -125,6 +125,65 @@ void main() {
     return bytes;
   }
 
+  /// Encodes [value] as a big-endian 80-bit IEEE 754 extended-precision
+  /// float — independently of `AudioFormatReader._decodeExtended80`
+  /// (via `BigInt`, so there's no risk of the same signed-64-bit-shift
+  /// mistake the reader itself has to avoid), the exact format AIFF's
+  /// `COMM` chunk stores its sample rate in.
+  List<int> encodeExtended80(int value) {
+    var bitWidth = 0;
+    var v = value;
+    while (v > 0) {
+      bitWidth++;
+      v >>= 1;
+    }
+    final exponent = bitWidth - 1;
+    final biasedExponent = 16383 + exponent;
+    final mantissa = BigInt.from(value) << (63 - exponent);
+    final bytes = <int>[
+      (biasedExponent >> 8) & 0xFF,
+      biasedExponent & 0xFF,
+    ];
+    for (var i = 7; i >= 0; i--) {
+      bytes.add(((mantissa >> (i * 8)) & BigInt.from(0xFF)).toInt());
+    }
+    return bytes;
+  }
+
+  /// Builds a real, spec-correct AIFF or AIFC `FORM`/`COMM` header —
+  /// [compressionType] (e.g. `'NONE'`, `'sowt'`, `'ima4'`) makes it an
+  /// AIFC container with that field appended to `COMM`; `null` builds a
+  /// plain AIFF container with no such field at all.
+  List<int> buildAiffHeader({
+    required int sampleRate,
+    required int channels,
+    required int bitDepth,
+    required int numSampleFrames,
+    String? compressionType,
+  }) {
+    final rateBytes = encodeExtended80(sampleRate);
+    final commData = <int>[
+      (channels >> 8) & 0xFF, channels & 0xFF,
+      (numSampleFrames >> 24) & 0xFF, (numSampleFrames >> 16) & 0xFF,
+      (numSampleFrames >> 8) & 0xFF, numSampleFrames & 0xFF,
+      (bitDepth >> 8) & 0xFF, bitDepth & 0xFF,
+      ...rateBytes,
+      if (compressionType != null) ...compressionType.codeUnits,
+    ];
+    final formType = compressionType != null ? 'AIFC' : 'AIFF';
+    final formChunkSize = 4 + (8 + commData.length);
+    return <int>[
+      ...'FORM'.codeUnits,
+      (formChunkSize >> 24) & 0xFF, (formChunkSize >> 16) & 0xFF,
+      (formChunkSize >> 8) & 0xFF, formChunkSize & 0xFF,
+      ...formType.codeUnits,
+      ...'COMM'.codeUnits,
+      (commData.length >> 24) & 0xFF, (commData.length >> 16) & 0xFF,
+      (commData.length >> 8) & 0xFF, commData.length & 0xFF,
+      ...commData,
+    ];
+  }
+
   group('FLAC', () {
     test('reads real sample rate, bit depth, channels, and a computed '
         'average bitrate from the STREAMINFO block', () async {
@@ -213,6 +272,125 @@ void main() {
       final info = await AudioFormatReader.read(file.path);
 
       expect(info.codec, isNull);
+    });
+  });
+
+  group('AIFF/AIFC', () {
+    test('reads sample rate, bit depth, channels, and a computed PCM '
+        'bitrate from a plain AIFF COMM chunk', () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 44100,
+        channels: 2,
+        bitDepth: 16,
+        numSampleFrames: 1000,
+      );
+      final file = writeFile('test.aiff', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AIFF');
+      expect(info.sampleRateHz, 44100);
+      expect(info.bitDepth, 16);
+      expect(info.channels, 2);
+      // 44100 * 2 * 16 = 1411200 bits/s -> /1000 kbps.
+      expect(info.bitrateKbps, 1411);
+    });
+
+    test('reads a less common sample rate (48000, 24-bit, mono) '
+        'correctly — proves the 80-bit extended-float decode isn\'t '
+        'hardcoded to 44100/16-bit', () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 48000,
+        channels: 1,
+        bitDepth: 24,
+        numSampleFrames: 500,
+      );
+      final file = writeFile('test.aiff', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.sampleRateHz, 48000);
+      expect(info.bitDepth, 24);
+      expect(info.channels, 1);
+      expect(info.bitrateKbps, 1152); // 48000 * 1 * 24 / 1000
+    });
+
+    test("an AIFC container with compressionType 'NONE' is real PCM — "
+        'gets the same computed bitrate a plain AIFF would', () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 44100,
+        channels: 2,
+        bitDepth: 16,
+        numSampleFrames: 1000,
+        compressionType: 'NONE',
+      );
+      final file = writeFile('test.aifc', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AIFC (NONE)');
+      expect(info.bitrateKbps, 1411);
+    });
+
+    test("an AIFC container with compressionType 'sowt' (byte-swapped, "
+        'still-uncompressed PCM) also gets a computed bitrate', () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 44100,
+        channels: 2,
+        bitDepth: 16,
+        numSampleFrames: 1000,
+        compressionType: 'sowt',
+      );
+      final file = writeFile('test.aifc', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AIFC (sowt)');
+      expect(info.bitrateKbps, 1411);
+    });
+
+    test('a genuinely compressed AIFC (e.g. ima4) leaves bitrateKbps '
+        'null rather than reporting a wrong PCM-derived number, while '
+        'still reporting the real sample rate/channels/bit depth',
+        () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 44100,
+        channels: 2,
+        bitDepth: 16,
+        numSampleFrames: 1000,
+        compressionType: 'ima4',
+      );
+      final file = writeFile('test.aifc', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AIFC (ima4)');
+      expect(info.sampleRateHz, 44100);
+      expect(info.channels, 2);
+      expect(info.bitrateKbps, isNull);
+    });
+
+    test('degrades to unknown for a non-FORM file with a .aiff extension',
+        () async {
+      final file = writeFile('fake.aiff', List.filled(50, 0));
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, isNull);
+    });
+
+    test('a .aif extension is recognized the same as .aiff', () async {
+      final bytes = buildAiffHeader(
+        sampleRate: 44100,
+        channels: 2,
+        bitDepth: 16,
+        numSampleFrames: 1000,
+      );
+      final file = writeFile('test.aif', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AIFF');
     });
   });
 
@@ -315,12 +493,10 @@ void main() {
         'header parser', () async {
       final m4a = writeFile('song.m4a', List.filled(20, 0));
       final ogg = writeFile('song.ogg', List.filled(20, 0));
-      final aiff = writeFile('song.aiff', List.filled(20, 0));
 
       expect((await AudioFormatReader.read(m4a.path)).codec,
           'AAC/ALAC (M4A)');
       expect((await AudioFormatReader.read(ogg.path)).codec, 'Ogg Vorbis');
-      expect((await AudioFormatReader.read(aiff.path)).codec, 'AIFF');
       // No numeric fields guessed for these.
       expect((await AudioFormatReader.read(m4a.path)).sampleRateHz, isNull);
     });

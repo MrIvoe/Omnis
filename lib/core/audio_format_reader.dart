@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 /// Real audio-format facts sniffed directly from a local file's own
 /// header bytes — codec/container, sample rate, bit depth, channel
@@ -25,14 +26,15 @@ class AudioFormatInfo {
 
 /// Sniffs [AudioFormatInfo] straight from a local audio file's header —
 /// no native decoder, no ffprobe (this app has no native build step to
-/// bundle one into; see `docs/BUILDING.md`). FLAC, WAV, and MP3 headers
-/// are simple enough to parse reliably in pure Dart and are fully
-/// supported, including a real average bitrate (from a VBR header's
-/// frame/byte counts for MP3, from file-size/duration for FLAC). Every
-/// other recognized extension still gets a codec label, with the
-/// numeric fields deliberately left `null` rather than guessed — full
-/// parsing of MP4/M4A boxes, Ogg pages, or WMA's ASF headers is real,
-/// separate work not attempted here.
+/// bundle one into; see `docs/BUILDING.md`). FLAC, WAV, MP3, and AIFF/
+/// AIFC headers are simple enough to parse reliably in pure Dart and
+/// are fully supported, including a real average bitrate (from a VBR
+/// header's frame/byte counts for MP3, from file-size/duration for
+/// FLAC, computed directly from channels/rate/bit-depth for the
+/// uncompressed PCM formats). Every other recognized extension still
+/// gets a codec label, with the numeric fields deliberately left `null`
+/// rather than guessed — full parsing of MP4/M4A boxes, Ogg pages, or
+/// WMA's ASF headers is real, separate work not attempted here.
 class AudioFormatReader {
   const AudioFormatReader._();
 
@@ -63,7 +65,9 @@ class AudioFormatReader {
         case 'wma':
           return const AudioFormatInfo(codec: 'WMA');
         case 'aiff':
-          return const AudioFormatInfo(codec: 'AIFF');
+        case 'aif':
+        case 'aifc':
+          return await _readAiff(File(path));
         default:
           return AudioFormatInfo.unknown;
       }
@@ -180,6 +184,113 @@ class AudioFormatReader {
     } finally {
       await raf.close();
     }
+  }
+
+  static Future<AudioFormatInfo> _readAiff(File file) async {
+    final raf = await file.open();
+    try {
+      final formHeader = await raf.read(12);
+      if (formHeader.length < 12 ||
+          formHeader[0] != 0x46 || // F
+          formHeader[1] != 0x4F || // O
+          formHeader[2] != 0x52 || // R
+          formHeader[3] != 0x4D) {
+        // M
+        return AudioFormatInfo.unknown;
+      }
+      final formType = String.fromCharCodes(formHeader.sublist(8, 12));
+      // AIFF (plain PCM) and AIFC (compressed, possibly-just-byte-swapped
+      // PCM) share the same FORM container and the same leading COMM
+      // fields — only AIFC's COMM has an extra compressionType after them.
+      if (formType != 'AIFF' && formType != 'AIFC') {
+        return AudioFormatInfo.unknown;
+      }
+
+      final fileLength = await file.length();
+      var pos = 12;
+      // AIFF chunks are big-endian, word-aligned exactly like RIFF's:
+      // an odd-sized chunk's data is followed by one unpadded pad byte.
+      while (pos + 8 <= fileLength) {
+        await raf.setPosition(pos);
+        final chunkHeader = await raf.read(8);
+        if (chunkHeader.length < 8) break;
+        final chunkId = String.fromCharCodes(chunkHeader.sublist(0, 4));
+        final chunkSize = (chunkHeader[4] << 24) |
+            (chunkHeader[5] << 16) |
+            (chunkHeader[6] << 8) |
+            chunkHeader[7];
+        if (chunkId == 'COMM') {
+          // channels(2) | numSampleFrames(4) | sampleSize(2) |
+          // sampleRate(10, 80-bit IEEE 754 extended) | [compressionType(4)]
+          final toRead = chunkSize < 18 ? chunkSize : 18;
+          final comm = await raf.read(toRead);
+          if (comm.length < 18) {
+            return AudioFormatInfo(codec: formType);
+          }
+          final channels = (comm[0] << 8) | comm[1];
+          final bitDepth = (comm[6] << 8) | comm[7];
+          final sampleRate = _decodeExtended80(comm.sublist(8, 18)).round();
+
+          String? compressionType;
+          if (formType == 'AIFC' && chunkSize >= 22) {
+            final extra = await raf.read(4);
+            if (extra.length == 4) {
+              compressionType = String.fromCharCodes(extra);
+            }
+          }
+          // 'NONE' is AIFC's own uncompressed marker; 'sowt' is
+          // little-endian PCM (still uncompressed, just byte-swapped) —
+          // both have a real, computable PCM bitrate. Any other
+          // compressionType (e.g. 'ima4') genuinely isn't PCM, so the
+          // straightforward channels*rate*bitDepth formula would be
+          // wrong for it — left null rather than guessed, same stance
+          // the MP3/WAV readers already take for anything they can't
+          // derive honestly.
+          final isPcm = formType == 'AIFF' ||
+              compressionType == null ||
+              compressionType == 'NONE' ||
+              compressionType == 'sowt';
+          final bitrateKbps = isPcm &&
+                  sampleRate > 0 &&
+                  channels > 0 &&
+                  bitDepth > 0
+              ? (sampleRate * channels * bitDepth / 1000).round()
+              : null;
+
+          return AudioFormatInfo(
+            codec: formType == 'AIFC'
+                ? 'AIFC (${compressionType ?? "unknown"})'
+                : 'AIFF',
+            sampleRateHz: sampleRate > 0 ? sampleRate : null,
+            bitDepth: bitDepth > 0 ? bitDepth : null,
+            channels: channels > 0 ? channels : null,
+            bitrateKbps: bitrateKbps,
+          );
+        }
+        pos += 8 + chunkSize + (chunkSize.isOdd ? 1 : 0);
+      }
+      return AudioFormatInfo(codec: formType);
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// Decodes a big-endian 80-bit IEEE 754 extended-precision float — the
+  /// format AIFF's `COMM` chunk stores its sample rate in (the one field
+  /// neither WAV nor FLAC need, since both use a plain 32-bit integer).
+  /// Unlike 32/64-bit IEEE floats, the 80-bit format's mantissa has an
+  /// *explicit* leading integer bit rather than an implicit one, so the
+  /// decode is: value = sign * (64-bit mantissa, as an integer) *
+  /// 2^(exponent - 63) — the `- 63` accounts for the mantissa being a
+  /// whole 64-bit integer rather than a fraction in `[1, 2)`.
+  static double _decodeExtended80(List<int> bytes) {
+    final sign = (bytes[0] & 0x80) != 0 ? -1.0 : 1.0;
+    final exponent = (((bytes[0] & 0x7F) << 8) | bytes[1]) - 16383;
+    var mantissa = 0.0;
+    for (var i = 2; i < 10; i++) {
+      mantissa = mantissa * 256 + bytes[i];
+    }
+    return sign * mantissa * math.pow(2.0, exponent - 63);
   }
 
   static const _mpeg1Layer3Bitrates = [

@@ -253,8 +253,38 @@ including a real byte-rate-derived bitrate), and MP3 frame headers
 Xing/Info VBR header's frame/byte counts when present, not just the
 misleading first-frame value for VBR files). Surfaced via a new
 "Audio info" dialog on each track (`library_page.dart`'s track menu).
-Still gaps: M4A/AAC, OGG/Opus, WMA, and AIFF only get a codec label from
-their extension — full MP4-box/Ogg-page/ASF-header parsing for those
+AIFF/AIFC parsing closed 2026-08-14 (was the first of the four
+extension-only formats to get real parsing, chosen since it's the
+closest cousin to the already-parsed WAV — both simple, linear,
+chunk-based containers): walks `FORM`/`COMM` chunks, big-endian and
+word-aligned the same way RIFF chunks are, for real channels/bit-depth/
+sample-rate, and a computed PCM bitrate (`sampleRate * channels *
+bitDepth`, since unlike WAV's `fmt` chunk, AIFF's `COMM` has no
+byte-rate field to read directly). The one piece needing genuinely new
+decoding: AIFF stores its sample rate as an 80-bit IEEE 754
+extended-precision float (explicit rather than implicit leading
+mantissa bit, unlike ordinary 32/64-bit floats) — decoded with a new,
+from-scratch `_decodeExtended80`. AIFC (the compressed variant, sharing
+AIFF's container shape plus a `compressionType` field appended to
+`COMM`) is distinguished via the `FORM` chunk's own type field and only
+gets a computed bitrate when its declared compression is actually
+uncompressed (`NONE`, or `sowt` — byte-swapped PCM); a genuinely
+compressed codec (e.g. `ima4`) still reports real channels/rate/depth
+but leaves `bitrateKbps` `null` — the same "don't guess what can't be
+derived honestly" stance the MP3/WAV readers already hold, extended
+here rather than reused, since AIFC's bitrate genuinely can't be
+computed from the same formula. Two real bugs, both caught purely by
+testing against independently hand-packed bytes (a from-scratch
+`BigInt`-based 80-bit-float encoder, not the reader's decode logic run
+backwards) rather than by inspecting the parsing code: an off-by-two
+`COMM` field offset (bit-depth/sample-rate read two bytes past where
+they actually start — a well-formed test file silently decoded to
+all-null fields instead of throwing, the harder class of bug to catch)
+and a missing `'aifc'` case in the format-dispatch `switch` (every
+`.aifc` file silently fell through to the generic unknown-extension
+path, never reaching the new reader at all). 7 new tests. Still gaps:
+M4A/AAC, OGG/Opus, and WMA still only get a codec label from their
+extension — full MP4-box/Ogg-page/ASF-header parsing for those
 containers is real, separate work, deliberately not attempted here to
 avoid shipping wrong numbers. And the DSP/output half is still fully 0%:
 no source→DSP→resampling→output *chain* display, no exclusive/
