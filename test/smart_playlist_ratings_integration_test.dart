@@ -4,6 +4,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_rule.dart';
@@ -156,5 +157,62 @@ void main() {
 
     final result = smartPlaylist.buildQueueForRule(tracks, 'loved-rock');
     expect(result.map((t) => t.id), ['rock-loved']);
+  });
+
+  test('a saved rule with a favorite: condition matches through the real '
+      'registered IFavoritesProvider, not just a caller-supplied lookup',
+      () async {
+    final favorites = FavoritesPlugin();
+    final smartPlaylist = SmartPlaylistPlugin();
+    await managerWith([favorites, smartPlaylist]);
+
+    await favorites.setFavorite('loved', true);
+
+    await smartPlaylist.saveRule(const SmartPlaylistRule(
+      id: 'my-favorites',
+      name: 'My Favorites',
+      matchType: RuleMatchType.all,
+      conditions: [
+        RuleCondition(
+          field: RuleField.favorite,
+          operator: RuleOperator.equals,
+          value: 'true',
+        ),
+      ],
+    ));
+
+    final tracks = [track(id: 'loved'), track(id: 'not-loved')];
+
+    final result = smartPlaylist.buildQueueForRule(tracks, 'my-favorites');
+    expect(result.map((t) => t.id), ['loved']);
+  });
+
+  test('disabling FavoritesPlugin unregisters IFavoritesProvider, so a '
+      'favorite: condition stops matching without SmartPlaylistPlugin '
+      'itself changing', () async {
+    final favorites = FavoritesPlugin();
+    final smartPlaylist = SmartPlaylistPlugin();
+    final manager = await managerWith([favorites, smartPlaylist]);
+
+    await favorites.setFavorite('loved', true);
+    await smartPlaylist.saveRule(const SmartPlaylistRule(
+      id: 'my-favorites',
+      name: 'My Favorites',
+      matchType: RuleMatchType.all,
+      conditions: [
+        RuleCondition(
+          field: RuleField.favorite,
+          operator: RuleOperator.equals,
+          value: 'true',
+        ),
+      ],
+    ));
+
+    final favoritesManaged = manager.byId('favorites')!;
+    await manager.disablePlugin(favoritesManaged);
+
+    final result = smartPlaylist
+        .buildQueueForRule([track(id: 'loved')], 'my-favorites');
+    expect(result, isEmpty);
   });
 }
