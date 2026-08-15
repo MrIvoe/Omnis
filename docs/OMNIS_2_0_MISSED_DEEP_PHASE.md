@@ -739,13 +739,32 @@ to every other self-hosted-server plugin this session
 `home_page.dart`) is effectively one algorithm from the spec's list — a
 crude Mood Radio, built by trying each registered `IQueueBuilder`
 (`SmartPlaylistPlugin` then `QueuePresetPlugin`) until one returns a
-non-empty queue. None of the spec's other named algorithms (Similar
-Track/Artist, Album/Artist/Genre Radio, Discovery, Deep Cuts, Forgotten
-Favorites, Rediscover, New Releases, Daily/Weekly Mix, Energy Flow)
-exist anywhere — confirmed via repo-wide search, zero matches. No
-provider-neutral recommendation framework/interface. `favorites_plugin.dart`
-and `ratings_plugin.dart` store real signal data but nothing consumes
-it for recommendations.
+non-empty queue.
+
+Two of the spec's other named algorithms closed 2026-08-14, both as new
+presets on `QueuePresetPlugin`, alongside its original BPM/genre ones:
+"Forgotten Favorites" (real most-played tracks, via
+`IPlayHistoryProvider`, that have dropped out of the recent-plays
+window) and "Rediscover" (tracks rated 4+ stars, via `IRatingsProvider`,
+also absent from recent plays) — the first two real consumers of
+`ScrobblePlugin`'s and `RatingsPlugin`'s persisted signal data for a
+recommendation respectively. Deliberately distinct algorithms, not one
+duplicated under two names: "Forgotten Favorites" ranks by objective
+play count, "Rediscover" by explicit rating, so a track can qualify for
+one without qualifying for the other (a five-star track played only
+once would never rank among the *most played*, but is exactly what
+"Rediscover" is for). Both share the same honesty stance — empty,
+never a misleading whole-library-shuffle fallback, when the data they'd
+need isn't available.
+
+Still 0% for every other named algorithm (Similar Track/Artist, Album/
+Artist/Genre Radio, Discovery, Deep Cuts, New Releases, Daily/Weekly
+Mix, Energy Flow) — confirmed via repo-wide search, zero matches. No
+provider-neutral recommendation framework/interface (each preset is
+still its own bespoke method on `QueuePresetPlugin`, not built against
+a shared "recommendation algorithm" abstraction). `favorites_plugin.dart`'s
+data (as opposed to `ratings_plugin.dart`'s, now consumed by
+"Rediscover") still isn't used by any recommendation.
 
 **40. Sonic similarity** — Partial. `AudioAnalysisPlugin` extracts real
 acoustic features (BPM/key/mood/genre) via Essentia — genuine

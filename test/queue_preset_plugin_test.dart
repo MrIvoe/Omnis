@@ -40,6 +40,16 @@ class _FakeHistoryProvider implements IPlayHistoryProvider {
       mostPlayed.firstWhere((e) => e.key == trackId, orElse: () => const MapEntry('', 0)).value;
 }
 
+/// A controllable [IRatingsProvider] double, same "fake stands in for
+/// whatever real provider is registered" reasoning as
+/// [_FakeHistoryProvider] above.
+class _FakeRatingsProvider implements IRatingsProvider {
+  Map<String, int> ratings = const {};
+
+  @override
+  int ratingOf(String trackId) => ratings[trackId] ?? 0;
+}
+
 PlayRecord _playedRecord(String trackId) => PlayRecord(
       trackId: trackId,
       title: 'T$trackId',
@@ -236,6 +246,134 @@ void main() {
       final queue = plugin.buildQueueFor(tracks, 'forgotten favorites');
 
       expect(queue.map((t) => t.id), ['old-favorite']);
+    });
+  });
+
+  group('Rediscover', () {
+    QueuePresetPlugin pluginWith({
+      IRatingsProvider? ratings,
+      IPlayHistoryProvider? history,
+    }) {
+      final services = ServiceRegistry();
+      if (ratings != null) services.register(IRatingsProvider, ratings);
+      if (history != null) services.register(IPlayHistoryProvider, history);
+      return QueuePresetPlugin()
+        ..attach(OmnisPluginContext(
+          audioEngine: _FakeEngine(),
+          services: services,
+          events: EventBus(),
+        ));
+    }
+
+    test('"Rediscover" is a supported query', () {
+      final plugin = QueuePresetPlugin();
+      expect(plugin.supportedQueries, contains('Rediscover'));
+    });
+
+    test('returns empty when the plugin has no context at all', () {
+      final plugin = QueuePresetPlugin();
+      final tracks = [track(id: '1')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('returns empty when no IRatingsProvider is registered, even '
+        'with real history present', () {
+      final plugin = pluginWith(history: _FakeHistoryProvider());
+      final tracks = [track(id: '1')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('returns empty when no IPlayHistoryProvider is registered, even '
+        'with real ratings present — a highly-rated-but-just-played '
+        "track must never be mislabeled a 'rediscovery'", () {
+      final ratings = _FakeRatingsProvider()..ratings = {'loved': 5};
+      final plugin = pluginWith(ratings: ratings);
+      final tracks = [track(id: 'loved')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('a highly rated track absent from the recent-plays window is a '
+        'real rediscovery candidate', () {
+      final ratings = _FakeRatingsProvider()
+        ..ratings = {'old-favorite': 5, 'current-favorite': 5};
+      final history = _FakeHistoryProvider()
+        ..recent = [_playedRecord('current-favorite')];
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [
+        track(id: 'old-favorite'),
+        track(id: 'current-favorite'),
+      ];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue.map((t) => t.id), ['old-favorite']);
+    });
+
+    test('a track rated below the threshold never qualifies, regardless '
+        'of play history', () {
+      final ratings = _FakeRatingsProvider()..ratings = {'meh': 3};
+      final history = _FakeHistoryProvider();
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [track(id: 'meh')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('an unrated track never qualifies', () {
+      final ratings = _FakeRatingsProvider();
+      final history = _FakeHistoryProvider();
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [track(id: 'unrated')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('a highly rated track missing from the current library (deleted/'
+        'moved) is skipped rather than producing a broken entry', () {
+      final ratings = _FakeRatingsProvider()..ratings = {'gone-track': 5};
+      final history = _FakeHistoryProvider();
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [track(id: 'unrelated')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue, isEmpty);
+    });
+
+    test('query matching is case-insensitive, same as every other preset '
+        'name here', () {
+      final ratings = _FakeRatingsProvider()..ratings = {'old-favorite': 4};
+      final history = _FakeHistoryProvider();
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [track(id: 'old-favorite')];
+
+      final queue = plugin.buildQueueFor(tracks, 'rediscover');
+
+      expect(queue.map((t) => t.id), ['old-favorite']);
+    });
+
+    test('a rating exactly at the minimum threshold (4) qualifies', () {
+      final ratings = _FakeRatingsProvider()..ratings = {'four-star': 4};
+      final history = _FakeHistoryProvider();
+      final plugin = pluginWith(ratings: ratings, history: history);
+      final tracks = [track(id: 'four-star')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Rediscover');
+
+      expect(queue.map((t) => t.id), ['four-star']);
     });
   });
 }
