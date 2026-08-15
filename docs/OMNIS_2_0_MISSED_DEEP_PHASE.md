@@ -95,10 +95,13 @@
   pre-joining ratings onto tracks before calling `filterTracks`, or a
   deliberate design decision about whether `filterTracks` should gain a
   plugin dependency at all.
-- **§9 — No bulk "rate selected" action.** Favorites has a one-tap bulk
-  toggle in selection mode; ratings don't, because a specific 1-5 value
-  doesn't fit that same one-tap pattern. A bulk rating dialog (rate N
-  selected tracks at once) is a reasonable follow-up.
+- **§9 — Bulk "rate selected" action closed 2026-08-14.** Favorites'
+  one-tap bulk toggle in selection mode doesn't fit ratings directly (a
+  specific 1-5 value, not a binary), so a new "Rate selected" button
+  opens the same `_StarPicker` dialog `_rateTrack` already uses for a
+  single track, starting at `0` (no single "current" rating makes
+  sense across a mixed-rating selection), and applies whichever star is
+  tapped to every selected track via `RatingsPlugin.setRating`.
 - **§13 — Playlist folders/groups, collaborative playlists, XSPF/PLS
   import/export** don't exist (M3U/M3U8 does, plus a full
   `SmartPlaylistPlugin`).

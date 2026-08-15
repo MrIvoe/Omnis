@@ -1188,6 +1188,40 @@ class _LibraryPageState extends State<LibraryPage> {
     if (mounted) setState(() {});
   }
 
+  /// Rates every currently selected track — item 9's "no bulk 'rate
+  /// selected' action" gap: a specific 1-5 value doesn't fit the
+  /// one-tap bulk-toggle pattern [Icons.favorite_border]'s handler
+  /// above uses, so this opens the same [_StarPicker] [_rateTrack] uses
+  /// for a single track first, then applies whichever star was tapped
+  /// to the whole selection. Starts at 0 (no single "current" rating
+  /// makes sense across a mixed-rating selection), so the picker's own
+  /// "Clear rating" option — which only appears once something is
+  /// already rated — never shows here; clearing a whole selection's
+  /// ratings is a distinct action this doesn't attempt.
+  Future<void> _bulkRate() async {
+    final plugin = _ratingsPlugin;
+    if (plugin == null) {
+      _toast('The Ratings plugin is disabled in Settings.');
+      return;
+    }
+    final ids = Set<String>.from(_selectedIds);
+    if (ids.isEmpty) return;
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Rate ${ids.length} track${ids.length == 1 ? '' : 's'}'),
+        content: const _StarPicker(initialRating: 0),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    for (final id in ids) {
+      await plugin.setRating(id, selected);
+    }
+    if (mounted) setState(() {});
+    _toast('Rated ${ids.length} track${ids.length == 1 ? '' : 's'} '
+        '$selected star${selected == 1 ? '' : 's'}.');
+  }
+
   /// Adds [trackIds] to a playlist the user picks, or a brand-new one —
   /// used by both the per-track "Add to playlist" menu item and the
   /// multi-select bulk action, so a single track and a batch go through
@@ -1604,6 +1638,11 @@ class _LibraryPageState extends State<LibraryPage> {
                     _toast('Added ${_selectedIds.length} track'
                         '${_selectedIds.length == 1 ? '' : 's'} to favorites.');
                   },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.star_border),
+                  tooltip: 'Rate selected',
+                  onPressed: _bulkRate,
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
