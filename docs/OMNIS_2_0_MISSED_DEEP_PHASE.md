@@ -304,20 +304,36 @@ from two booleans instead); `dart_eval` runs on the same thread, so a
 synchronous non-yielding loop in a downloaded plugin can still hang the
 UI (documented limitation, not an oversight).
 
-**26. Dependency resolution** — Partial for bundled plugins only, 0%
-for the manifest-declared case. `PluginManifest.parse` has **no
-`dependencies:` field at all** — confirmed by reading the parser. What
-exists instead is code-level ordering for bundled plugins:
-`MusicPlugin.requiresSequentialInit` plus `PluginManager.initializeAll()`'s
-two-round init, used for two documented real dependencies
-(`QueuePresetPlugin` after `SmartPlaylistPlugin`; `EqualizerPlugin`
-after `BluetoothPlaybackPlugin`). No manifest syntax for "I need plugin
-X"/"I need capability Y", no dependency graph/resolver,
-`minOmnisVersion` is parsed but never enforced anywhere (3 total hits,
-all in the parser itself), and no handling of a dependency disappearing
-(e.g. disabling `BluetoothPlaybackPlugin` just makes
-`EqualizerPlugin`'s device-profile lookup silently return null, no
-warning).
+**26. Dependency resolution** — Partial (both the manifest-declared
+gaps this section originally flagged are now closed, 2026-08-14; the
+bundled-plugin case below is unchanged). Bundled-plugin ordering is
+still code-level, not manifest-driven: `MusicPlugin.requiresSequentialInit`
+plus `PluginManager.initializeAll()`'s two-round init, used for two
+documented real dependencies (`QueuePresetPlugin` after
+`SmartPlaylistPlugin`; `EqualizerPlugin` after `BluetoothPlaybackPlugin`)
+— no handling of a dependency disappearing there either (disabling
+`BluetoothPlaybackPlugin` just makes `EqualizerPlugin`'s device-profile
+lookup silently return null, no warning); that's a distinct, still-open
+gap this section originally didn't separate from the manifest case.
+
+For *external* (downloaded) plugins, both originally-flagged gaps are
+now real: `PluginManifest.dependencies` (a plugin-id list) is enforced
+at install time (`PluginManager._registerInstalledPlugin` throws,
+naming exactly which declared dependencies aren't installed) and
+re-checkable on demand via `PluginManager.missingDependenciesFor` (the
+Plugins page warns if a dependency's since been uninstalled — not just
+a one-time install-time gate). `minOmnisVersion` is now enforced too,
+in the same `_registerInstalledPlugin` gate: compared against a new
+`omnisCoreVersion` constant (`lib/core/omnis_version.dart`, manually
+kept in sync with `pubspec.yaml`'s `version:` — reading it live would
+need a new `package_info_plus` dependency for one narrow check) via the
+existing `compareVersions` semver comparator already used for
+update-checking; a plugin requiring a newer Omnis than is running is
+refused at install/update time with a message naming both versions.
+Still no dependency *graph*/resolver (a single flat list, not
+transitive resolution) and a missing dependency is detected/surfaced,
+never auto-resolved (no "install this for me" flow) — both real,
+distinct, still-open follow-ups.
 
 **27. Permissions** — Solid. Manifest `permissions:` map to real
 `dart_eval` grants (`FilesystemPermission`, `LibraryReadPermission`,

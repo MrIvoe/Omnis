@@ -20,7 +20,12 @@ class PluginManifest {
   /// Entrypoint file (defaults to `plugin.dart`).
   final String entrypoint;
 
-  /// Minimum Omnis core version required.
+  /// Minimum Omnis core version required — enforced at install/update
+  /// time in `PluginManager._registerInstalledPlugin`, which compares
+  /// this against `omnisCoreVersion` (`lib/core/omnis_version.dart`) via
+  /// `compareVersions` and refuses to register the plugin if the
+  /// running app is older. `null` (no requirement declared) never
+  /// blocks — most plugins don't need to name a floor at all.
   final String? minOmnisVersion;
 
   /// Hooks this plugin declares support for.

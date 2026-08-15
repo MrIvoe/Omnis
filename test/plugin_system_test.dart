@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/library_repository.dart';
+import 'package:omnis/core/omnis_version.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_manifest.dart';
@@ -1045,6 +1046,112 @@ dynamic createPlugin(dynamic api) {
         manager.missingDependenciesFor(manager.byId('standalone')!),
         isEmpty,
       );
+    });
+  });
+
+  group('Plugin minOmnisVersion enforcement (item 26)', () {
+    /// Writes a minimal external-plugin directory declaring
+    /// `min_omnis_version:` in its manifest, when [minOmnisVersion] is
+    /// non-null — the local counterpart to `writeDependentPlugin` above.
+    Future<Directory> writeVersionGatedPlugin(
+      String tempRoot,
+      String dirName, {
+      String? minOmnisVersion,
+    }) async {
+      final pluginDir = Directory(p.join(tempRoot, dirName));
+      await pluginDir.create(recursive: true);
+      await File(p.join(pluginDir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: $dirName
+name: $dirName
+description: Test plugin
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+${minOmnisVersion == null ? '' : 'min_omnis_version: $minOmnisVersion'}
+''');
+      await File(p.join(pluginDir.path, 'plugin.dart')).writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': '$dirName',
+    'name': '$dirName',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [],
+  };
+}
+''');
+      return pluginDir;
+    }
+
+    test('installing a plugin that requires a newer Omnis than is '
+        'running fails with a message naming both versions, rather than '
+        'installing into a plugin that may not actually work', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_minver_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeVersionGatedPlugin(tempRoot, 'future_plugin',
+          minOmnisVersion: '99.0.0');
+      final manager = PluginManager();
+
+      await expectLater(
+        manager.installFromPath(dir.path, sourceUrl: 'local'),
+        throwsA(isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          allOf(contains('99.0.0'), contains(omnisCoreVersion)),
+        )),
+      );
+      expect(manager.byId('future_plugin'), isNull);
+    });
+
+    test('installing a plugin whose minOmnisVersion the running app '
+        'already meets succeeds', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_minver_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeVersionGatedPlugin(tempRoot, 'compatible_plugin',
+          minOmnisVersion: '0.0.1');
+      final manager = PluginManager();
+
+      final managed =
+          await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(managed.id, 'compatible_plugin');
+      expect(manager.byId('compatible_plugin'), isNotNull);
+    });
+
+    test('installing a plugin whose minOmnisVersion exactly matches the '
+        'running app succeeds — the gate is "at least", not "strictly '
+        'newer than"', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_minver_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeVersionGatedPlugin(tempRoot, 'exact_match',
+          minOmnisVersion: omnisCoreVersion);
+      final manager = PluginManager();
+
+      final managed =
+          await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(managed.id, 'exact_match');
+    });
+
+    test('a plugin declaring no minOmnisVersion is never gated by this '
+        'check', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_minver_test')).path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeVersionGatedPlugin(tempRoot, 'no_requirement');
+      final manager = PluginManager();
+
+      final managed =
+          await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      expect(managed.id, 'no_requirement');
     });
   });
 

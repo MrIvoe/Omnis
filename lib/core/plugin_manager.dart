@@ -8,6 +8,7 @@ import 'package:omnis/core/event_bus.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_installer.dart';
+import 'package:omnis/core/omnis_version.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
@@ -556,6 +557,14 @@ class PluginManager {
     required String sourceUrl,
     required PluginManifest manifest,
   }) async {
+    final minVersion = manifest.minOmnisVersion;
+    if (minVersion != null &&
+        compareVersions(omnisCoreVersion, minVersion) < 0) {
+      throw PluginInstallException(
+        'Plugin ${manifest.id} requires Omnis $minVersion or newer '
+        '(this is $omnisCoreVersion). Update Omnis before installing it.',
+      );
+    }
     if (manifest.dependencies.isNotEmpty) {
       final installedIds = _plugins.map((p) => p.id).toSet();
       final missing = manifest.dependencies
