@@ -34,13 +34,13 @@ void main() {
     required int bitDepth,
     required int totalSamples,
   }) {
-    final bytes = <int>[]
-      ..addAll('fLaC'.codeUnits)
+    final bytes = <int>[
+      ...'fLaC'.codeUnits,
       // Metadata block header: last-block=1, type=0 (STREAMINFO), size=34.
-      ..add(0x80)
-      ..addAll([0x00, 0x00, 0x22])
+      0x80, 0x00, 0x00, 0x22,
       // min/max block size, min/max frame size — values don't matter.
-      ..addAll([0x10, 0x00, 0x10, 0x00, 0, 0, 0, 0, 0, 0]);
+      0x10, 0x00, 0x10, 0x00, 0, 0, 0, 0, 0, 0,
+    ];
 
     final channelsMinus1 = channels - 1;
     final bpsMinus1 = bitDepth - 1;
@@ -114,7 +114,7 @@ void main() {
     required bool mono,
     int totalBytes = 200,
   }) {
-    final b1 = 0xE0 | (0x3 << 3) | (0x1 << 1) | 0x1; // MPEG1, Layer III
+    const b1 = 0xE0 | (0x3 << 3) | (0x1 << 1) | 0x1; // MPEG1, Layer III
     final b2 = (bitrateIndex << 4) | (sampleRateIndex << 2);
     final b3 = mono ? 0xC0 : 0x00;
     final bytes = List<int>.filled(totalBytes, 0);
@@ -923,7 +923,7 @@ void main() {
       final info = await AudioFormatReader.read(file.path);
 
       // duration = totalFrames * 1152 (MPEG1 Layer III) / sampleRate
-      final durationSeconds = totalFrames * 1152 / 44100;
+      const durationSeconds = totalFrames * 1152 / 44100;
       final expectedBitrate =
           ((bytes.length * 8) / durationSeconds / 1000).round();
       expect(info.bitrateKbps, expectedBitrate);
