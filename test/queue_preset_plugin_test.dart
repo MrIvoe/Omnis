@@ -50,6 +50,19 @@ class _FakeRatingsProvider implements IRatingsProvider {
   int ratingOf(String trackId) => ratings[trackId] ?? 0;
 }
 
+/// A controllable [IFavoritesProvider] double, same "fake stands in for
+/// whatever real provider is registered" reasoning as
+/// [_FakeHistoryProvider]/[_FakeRatingsProvider] above.
+class _FakeFavoritesProvider implements IFavoritesProvider {
+  List<String> ids = const [];
+
+  @override
+  bool isFavorite(String trackId) => ids.contains(trackId);
+
+  @override
+  List<String> favoriteIds() => ids;
+}
+
 PlayRecord _playedRecord(String trackId) => PlayRecord(
       trackId: trackId,
       title: 'T$trackId',
@@ -374,6 +387,89 @@ void main() {
       final queue = plugin.buildQueueFor(tracks, 'Rediscover');
 
       expect(queue.map((t) => t.id), ['four-star']);
+    });
+  });
+
+  group('Favorites Mix', () {
+    QueuePresetPlugin pluginWith({IFavoritesProvider? favorites}) {
+      final services = ServiceRegistry();
+      if (favorites != null) services.register(IFavoritesProvider, favorites);
+      return QueuePresetPlugin()
+        ..attach(OmnisPluginContext(
+          audioEngine: _FakeEngine(),
+          services: services,
+          events: EventBus(),
+        ));
+    }
+
+    test('"Favorites Mix" is a supported query', () {
+      final plugin = QueuePresetPlugin();
+      expect(plugin.supportedQueries, contains('Favorites Mix'));
+    });
+
+    test('returns empty when the plugin has no context at all', () {
+      final plugin = QueuePresetPlugin();
+      final tracks = [track(id: '1')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Favorites Mix');
+
+      expect(queue, isEmpty);
+    });
+
+    test('returns empty when no IFavoritesProvider is registered', () {
+      final plugin = pluginWith();
+      final tracks = [track(id: '1')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Favorites Mix');
+
+      expect(queue, isEmpty);
+    });
+
+    test('returns empty when there is a provider but nothing is '
+        'favorited', () {
+      final plugin = pluginWith(favorites: _FakeFavoritesProvider());
+      final tracks = [track(id: '1')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Favorites Mix');
+
+      expect(queue, isEmpty);
+    });
+
+    test('favorited tracks present in the library are surfaced; '
+        'non-favorited tracks are excluded', () {
+      final favorites = _FakeFavoritesProvider()..ids = ['loved-1', 'loved-2'];
+      final plugin = pluginWith(favorites: favorites);
+      final tracks = [
+        track(id: 'loved-1'),
+        track(id: 'loved-2'),
+        track(id: 'not-favorited'),
+      ];
+
+      final queue = plugin.buildQueueFor(tracks, 'Favorites Mix');
+
+      expect(queue.map((t) => t.id).toSet(), {'loved-1', 'loved-2'});
+    });
+
+    test('a favorited track missing from the current library (deleted/'
+        'moved) is skipped rather than producing a broken entry', () {
+      final favorites = _FakeFavoritesProvider()..ids = ['gone-track'];
+      final plugin = pluginWith(favorites: favorites);
+      final tracks = [track(id: 'unrelated')];
+
+      final queue = plugin.buildQueueFor(tracks, 'Favorites Mix');
+
+      expect(queue, isEmpty);
+    });
+
+    test('query matching is case-insensitive, same as every other preset '
+        'name here', () {
+      final favorites = _FakeFavoritesProvider()..ids = ['loved'];
+      final plugin = pluginWith(favorites: favorites);
+      final tracks = [track(id: 'loved')];
+
+      final queue = plugin.buildQueueFor(tracks, 'favorites mix');
+
+      expect(queue.map((t) => t.id), ['loved']);
     });
   });
 }

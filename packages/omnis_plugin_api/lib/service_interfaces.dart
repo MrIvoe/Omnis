@@ -71,6 +71,24 @@ abstract class IRatingsProvider {
   int ratingOf(String trackId);
 }
 
+/// Queries a track's favorited state — real signal `FavoritesPlugin`
+/// already collects but that, before this interface existed, nothing
+/// outside that plugin itself could read, the identical gap
+/// [IRatingsProvider]'s own doc already describes for ratings. Added so
+/// `QueuePresetPlugin`'s "Favorites Mix" preset (§39) can build a queue
+/// from favorited tracks without depending on `FavoritesPlugin` by
+/// concrete type.
+abstract class IFavoritesProvider {
+  /// Whether [trackId] is favorited — matches `FavoritesPlugin
+  /// .isFavorite`'s own convention exactly.
+  bool isFavorite(String trackId);
+
+  /// Every currently favorited track id, in favorited order (oldest
+  /// first) — matches the order `FavoritesPlugin`'s own persisted id
+  /// list is stored in.
+  List<String> favoriteIds();
+}
+
 /// Builds a ready-to-play queue for a named query (a mood/preset label
 /// like `"Chill"` or `"Workout"`).
 ///
