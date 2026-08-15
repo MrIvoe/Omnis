@@ -153,6 +153,47 @@ class PluginManager {
       : _installer = installer ?? PluginInstaller(),
         _sandbox = sandbox ?? PluginSandbox() {
     _wireEventForwarding();
+    _sandbox.addHealthListener(_checkAutoDisable);
+  }
+
+  /// A plugin failing this many times within [_autoDisableWindow] gets
+  /// disabled automatically — item 28's "no auto-disable/auto-retry on
+  /// repeated failure" gap. Without this, a plugin stuck in a genuine
+  /// failure loop (a bad server response it mishandles on every track
+  /// change, a corrupted piece of its own persisted state) kept getting
+  /// re-invoked forever: harmless to playback (the sandbox always
+  /// isolates the throw), but a real, ongoing cost — every hook call
+  /// wasted, every health-dashboard entry more noise burying a genuine
+  /// one-off failure from some other plugin.
+  ///
+  /// Counts by *time window*, not true consecutive-since-last-success
+  /// the way `PlaybackWatchdog`'s `_consecutiveFailures` does — deliberately
+  /// different, not an oversight: `PluginHealthRecord`s only exist for
+  /// failures, there is no corresponding "this hook call succeeded"
+  /// event recorded anywhere to reset a true consecutive counter against.
+  /// A rolling window over real failure timestamps is the honest signal
+  /// actually available from `PluginSandbox.healthRecords` today.
+  static const _autoDisableFailureThreshold = 5;
+  static const _autoDisableWindow = Duration(minutes: 5);
+
+  void _checkAutoDisable(List<PluginHealthRecord> records) {
+    final now = DateTime.now();
+    final recentFailureCounts = <String, int>{};
+    for (final record in records) {
+      if (now.difference(record.timestamp) > _autoDisableWindow) continue;
+      recentFailureCounts[record.pluginId] =
+          (recentFailureCounts[record.pluginId] ?? 0) + 1;
+    }
+    for (final entry in recentFailureCounts.entries) {
+      if (entry.value < _autoDisableFailureThreshold) continue;
+      final plugin = byId(entry.key);
+      // Already disabled (including by this exact check, moments ago —
+      // disablePlugin() sets `enabled = false` *before* invoking the
+      // plugin's own `disable()` hook, so even a `disable()` that itself
+      // throws and adds one more health record can't re-trigger this).
+      if (plugin == null || !plugin.enabled) continue;
+      unawaited(disablePlugin(plugin));
+    }
   }
 
   /// Forwards well-known app events to every enabled external plugin that
@@ -987,6 +1028,7 @@ class PluginManager {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _sandbox.removeHealthListener(_checkAutoDisable);
     for (final plugin in _plugins.where((p) => p.initialized)) {
       await _sandbox.run(
         pluginId: plugin.id,

@@ -163,6 +163,34 @@ class _LifecyclePlugin extends MusicPlugin {
   Future<void> dispose() async => calls.add('dispose');
 }
 
+/// A second, distinct plugin id for the auto-disable isolation test
+/// below — needs no behavior of its own beyond existing and staying
+/// enabled, since [_LifecyclePlugin] (registered as `'lifecycle'`
+/// elsewhere) is the one actually driven to failure in that test.
+class _RecordingHealthyPlugin extends MusicPlugin {
+  @override
+  String get id => 'healthy';
+  @override
+  String get name => 'Healthy';
+  @override
+  String get description => 'Never fails';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+
+  @override
+  Future<void> initialize() async {}
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {}
+}
+
 BaseTrack _track({String id = 't1', double? gain}) => BaseTrack(
       id: id,
       title: 'Track $id',
@@ -436,6 +464,94 @@ void main() {
       await manager.onTrackStart(_track());
 
       expect(plugin.calls, isNot(contains('track')));
+    });
+
+    group('auto-disable on repeated failure (item 28)', () {
+      Future<void> fail(PluginManager manager, String pluginId, int times,
+          {String? name}) async {
+        for (var i = 0; i < times; i++) {
+          await manager.sandbox.run(
+            pluginId: pluginId,
+            pluginName: name ?? pluginId,
+            hook: 'onTrackStart',
+            operation: () => throw StateError('boom'),
+          );
+        }
+      }
+
+      test('a plugin that fails 5 times within the window is disabled '
+          'automatically — no per-plugin retry/reset action would ever '
+          'have caught this on its own', () async {
+        final manager = PluginManager();
+        final plugin = _LifecyclePlugin();
+        manager.register(plugin);
+        await manager.initializeAll();
+
+        await fail(manager, 'lifecycle', 5, name: 'Lifecycle');
+
+        expect(manager.byId('lifecycle')!.enabled, isFalse);
+      });
+
+      test('a plugin that fails only 4 times stays enabled — the '
+          'threshold is a real boundary, not an approximation', () async {
+        final manager = PluginManager();
+        final plugin = _LifecyclePlugin();
+        manager.register(plugin);
+        await manager.initializeAll();
+
+        await fail(manager, 'lifecycle', 4, name: 'Lifecycle');
+
+        expect(manager.byId('lifecycle')!.enabled, isTrue);
+      });
+
+      test('failures are counted per plugin — one plugin racking up '
+          'failures never disables an unrelated, healthy one', () async {
+        final manager = PluginManager();
+        final flaky = _LifecyclePlugin();
+        final healthy = _RecordingHealthyPlugin();
+        manager.register(flaky);
+        manager.register(healthy);
+        await manager.initializeAll();
+
+        await fail(manager, 'lifecycle', 5, name: 'Lifecycle');
+
+        expect(manager.byId('lifecycle')!.enabled, isFalse);
+        expect(manager.byId('healthy')!.enabled, isTrue);
+      });
+
+      test('auto-disabling calls the plugin\'s real disable() hook and '
+          'persists the choice, same as a manual disablePlugin() call —'
+          ' it is not a special-cased shortcut', () async {
+        final manager = PluginManager();
+        final plugin = _LifecyclePlugin();
+        manager.register(plugin);
+        await manager.initializeAll();
+
+        await fail(manager, 'lifecycle', 5, name: 'Lifecycle');
+
+        expect(plugin.calls, contains('disable'));
+        expect(AppSettings.instance.isPluginDisabled('lifecycle'), isTrue);
+      });
+
+      test('once auto-disabled, further failures for the same plugin id '
+          'do not repeatedly re-trigger disablePlugin (it is a no-op on '
+          'an already-disabled plugin)', () async {
+        final manager = PluginManager();
+        final plugin = _LifecyclePlugin();
+        manager.register(plugin);
+        await manager.initializeAll();
+
+        await fail(manager, 'lifecycle', 5, name: 'Lifecycle');
+        final disableCallsAfterFirstTrip =
+            plugin.calls.where((c) => c == 'disable').length;
+
+        await fail(manager, 'lifecycle', 5, name: 'Lifecycle');
+
+        expect(
+          plugin.calls.where((c) => c == 'disable').length,
+          disableCallsAfterFirstTrip,
+        );
+      });
     });
 
     test('storage is warmed before initialize() runs, and persists across '

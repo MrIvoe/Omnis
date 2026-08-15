@@ -416,12 +416,26 @@ manifest section parsed or shown.
 at 200) is populated automatically on every sandboxed failure, with a
 live listener mechanism and a real "Plugin Health" section at the
 bottom of the Plugins page (name, hook, human-readable reason, raw
-message, timestamp, "Dismiss all"). Gap: no dedicated health-center
-page (it's a section of the general Plugins page, not the spec's
-separate 🟢/🟡/🔴-per-plugin view), no heartbeat (health is purely
-reactive — a silently-hung plugin that never throws is never detected),
-no per-plugin retry/reset action, no auto-disable/auto-retry on
-repeated failure.
+message, timestamp, "Dismiss all").
+
+Both named-open gaps closed 2026-08-14. Per-plugin retry/reset:
+`PluginManager.resetPlugin()` — a genuine `disable()`→`enable()` cycle,
+not a full re-`initialize()`, since most sandboxed failures are bad
+runtime state a plugin's own `enable()` already resets — reached via a
+"Reset" button on each health record's card, clearing that plugin's
+health history afterward so the dashboard reflects its fresh start.
+Auto-disable on repeated failure: `PluginManager` now listens to
+`PluginSandbox`'s own health-change notifications and calls the real
+`disablePlugin()` for any plugin that racks up 5 failures within a
+rolling 5-minute window — window-based rather than a true
+consecutive-since-last-success counter, since `PluginHealthRecord`s
+only exist for failures with no "hook succeeded" event to reset a
+consecutive counter against.
+
+Still gaps: no dedicated health-center page (it's a section of the
+general Plugins page, not the spec's separate 🟢/🟡/🔴-per-plugin view),
+no heartbeat (health is purely reactive — a silently-hung plugin that
+never throws is never detected).
 
 **29. Plugin updates** — Partial (was genuine 0%, closed 2026-08-13).
 Real update detection now exists: `PluginInstaller.fetchRemoteManifest`
