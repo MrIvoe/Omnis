@@ -19,6 +19,7 @@ import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
+import 'package:omnis/ui/library_cleanup_report_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
@@ -1123,6 +1124,20 @@ class _LibraryPageState extends State<LibraryPage> {
     await _deleteTracks(toDelete);
   }
 
+  /// Opens spec §20's "Music Library Cleanup" report — a broader,
+  /// read-first analysis than [_openCleanupTool]'s duplicates/short-
+  /// tracks-only sheet, covering missing artwork, inconsistent artist/
+  /// genre spellings, albums missing a year, malformed track numbers,
+  /// duplicate albums, and (heuristically) corrupt files too.
+  Future<void> _openCleanupReport() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => LibraryCleanupReportPage(
+        tracks: _tracks,
+        onEditTags: _editTags,
+      ),
+    ));
+  }
+
   // --- Favorites + playlists ---
 
   FavoritesPlugin? get _favoritesPlugin =>
@@ -1714,6 +1729,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     if (value == 'analyze_all') _analyzeAll();
                     if (value == 'measure_durations') _measureDurations();
                     if (value == 'cleanup') _openCleanupTool();
+                    if (value == 'cleanup_report') _openCleanupReport();
                     if (value == 'auto_tag') _autoTagLibrary();
                     if (value == 'retag_all') _autoTagLibrary(force: true);
                   },
@@ -1743,6 +1759,10 @@ class _LibraryPageState extends State<LibraryPage> {
                     PopupMenuItem(
                       value: 'cleanup',
                       child: Text('Find duplicates & short tracks…'),
+                    ),
+                    PopupMenuItem(
+                      value: 'cleanup_report',
+                      child: Text('Analyze library (cleanup report)…'),
                     ),
                   ],
                 ),

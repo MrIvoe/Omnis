@@ -125,11 +125,17 @@
   MediaStore artwork, and `ArtistImagePlugin` (Deezer search) exist —
   no `IArtworkProvider` framework (Cover Art Archive/Fanart.tv lookup),
   no manual/drag-drop artwork override.
-- **§20 — Guided "Music Library Cleanup" report.** The spec describes a
-  one-button "Analyze Library" producing a report ("1,421 missing
-  artwork, 832 inconsistent artists, ..." style) with guided cleanup.
-  `library_page.dart` has a narrower duplicate/short-track cleanup tool
-  today, not this broader analysis.
+- **§20 — Guided "Music Library Cleanup" report.** Closed 2026-08-15.
+  The spec describes a one-button "Analyze Library" producing a report
+  ("1,421 missing artwork, 832 inconsistent artists, ..." style) with
+  guided cleanup — now real: `LibraryCleanupAnalyzer` computes all
+  eight named categories from already-scanned data, and
+  `LibraryCleanupReportPage` (reached from the Library page's tools
+  menu) lists each with a drill-down that either fixes the track
+  directly (via the existing `TagEditorDialog`/`_editTags`) or points
+  at `library_page.dart`'s pre-existing narrower duplicate/short-track
+  cleanup tool for the categories that tool already covers, rather than
+  a second implementation of the same merge logic.
 
   Undo/backup/restore for tag edits closed 2026-08-14 (item 17):
   `TagEditorPlugin.writeTags` snapshots the pre-write tag field values
