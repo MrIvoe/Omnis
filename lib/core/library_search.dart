@@ -21,12 +21,26 @@ import 'package:omnis/core/base_track.dart';
 /// title/artist/album/genre. An empty or whitespace-only query returns
 /// [tracks] unchanged, matching "no search" rather than "match nothing."
 ///
-/// A field value can only be one word this way: `album:greatest hits`
-/// splits into two independent terms (`album:greatest` AND the free-text
-/// `hits`), not one `"greatest hits"` phrase — in practice this still
-/// finds "Greatest Hits" albums (both conditions hold), just not by
-/// matching the exact phrase. Quoted-phrase parsing (`album:"greatest
-/// hits"`) is a reasonable follow-up, not part of this cut.
+/// A bare, unquoted field value can only be one word: `album:greatest
+/// hits` splits into two independent terms (`album:greatest` AND the
+/// free-text `hits`), not one `"greatest hits"` phrase — in practice
+/// this still finds "Greatest Hits" albums (both conditions hold), just
+/// not by matching the exact phrase. Wrap a multi-word value in double
+/// quotes to search it as one phrase instead:
+///
+/// ```text
+/// album:"greatest hits"    -> one phrase, not two AND'd terms
+/// artist:"guns n' roses"
+/// "exact free text phrase" -> quoting works unqualified too
+/// ```
+///
+/// An unterminated quote (`artist:"queen`) extends to the end of the
+/// query rather than being treated as an error — the same forgiving
+/// convention most search boxes use. An empty quoted value
+/// (`artist:""`) leaves nothing after the `:`, so it falls back to
+/// matching as the plain free-text word `artist:` rather than a field
+/// term at all, the same as any other field-looking prefix with no
+/// value.
 ///
 /// `rating:` matches against a track's star rating (0-5, 0 meaning
 /// unrated — the same convention `RatingsPlugin.ratingOf` already uses):
@@ -60,11 +74,44 @@ List<BaseTrack> filterTracks(
   final trimmed = query.trim();
   if (trimmed.isEmpty) return tracks;
 
-  final terms = trimmed.split(RegExp(r'\s+')).map(_SearchTerm.parse).toList();
+  final terms = _tokenize(trimmed).map(_SearchTerm.parse).toList();
   return tracks
       .where((track) => terms.every((term) => term.matches(track, ratingOf)))
       .toList();
 }
+
+/// Splits [query] into terms on whitespace, the same as a plain
+/// `split(RegExp(r'\s+'))` would — except a `"..."` span is kept intact
+/// as one term (its quotes stripped, any whitespace inside preserved)
+/// rather than being split apart, which is what lets `album:"greatest
+/// hits"` reach [_SearchTerm.parse] as a single `album:greatest hits`
+/// token instead of two independent terms. An unterminated quote simply
+/// never closes, so everything from it to the end of the string
+/// collapses into one final term — never throws, matching every other
+/// "a malformed query degrades, it doesn't crash" contract in this file.
+List<String> _tokenize(String query) {
+  final tokens = <String>[];
+  final buffer = StringBuffer();
+  var inQuotes = false;
+  for (final char in query.split('')) {
+    if (char == '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (!inQuotes && _whitespace.hasMatch(char)) {
+      if (buffer.isNotEmpty) {
+        tokens.add(buffer.toString());
+        buffer.clear();
+      }
+      continue;
+    }
+    buffer.write(char);
+  }
+  if (buffer.isNotEmpty) tokens.add(buffer.toString());
+  return tokens;
+}
+
+final _whitespace = RegExp(r'\s');
 
 /// One parsed term from a search query — either `field:value` or a bare
 /// free-text word/phrase-fragment.

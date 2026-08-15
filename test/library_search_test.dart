@@ -242,4 +242,97 @@ void main() {
       );
     });
   });
+
+  group('filterTracks — quoted multi-word values', () {
+    final tracks = [
+      _track(id: 'gnr', title: 'Paradise City', artists: ["Guns N' Roses"],
+          album: 'Appetite for Destruction'),
+      _track(id: 'greatest-hits', title: 'A', artists: ['Queen'],
+          album: 'Greatest Hits'),
+      // Deliberately contains "greatest" and "hits" as separate words,
+      // not as the contiguous phrase "greatest hits" — proves quoting
+      // narrows the match, not just that a substring happens to appear.
+      _track(id: 'other-hits', title: 'B', artists: ['Someone'],
+          album: 'Greatest Rock Hits'),
+      _track(id: 'unrelated', title: 'C', artists: ['Other'], album: 'X'),
+    ];
+
+    test('a quoted field value is matched as one phrase, not split into '
+        "multiple AND'd terms", () {
+      expect(
+        filterTracks(tracks, 'artist:"Guns N\' Roses"').map((t) => t.id),
+        ['gnr'],
+      );
+    });
+
+    test('an unquoted multi-word field value still splits into '
+        "independent terms — the pre-existing, documented behavior "
+        'quoting is meant to fix', () {
+      // "greatest hits" without quotes: album:greatest AND the free-text
+      // term "hits" — both albums below satisfy that looser condition.
+      expect(
+        filterTracks(tracks, 'album:greatest hits').map((t) => t.id).toSet(),
+        {'greatest-hits', 'other-hits'},
+      );
+    });
+
+    test('the same value, quoted, matches only the exact phrase', () {
+      expect(
+        filterTracks(tracks, 'album:"greatest hits"').map((t) => t.id),
+        ['greatest-hits'],
+      );
+    });
+
+    test('a bare quoted phrase (no field prefix) works as one free-text '
+        'term too', () {
+      expect(
+        filterTracks(tracks, '"paradise city"').map((t) => t.id),
+        ['gnr'],
+      );
+    });
+
+    test('a quoted phrase still composes with other terms via AND', () {
+      final withGenre = [
+        _track(id: 'gnr-rock', title: 'Paradise City',
+            artists: ["Guns N' Roses"], genres: ['Rock']),
+        _track(id: 'gnr-other', title: 'Something Else',
+            artists: ["Guns N' Roses"], genres: ['Rock']),
+      ];
+      expect(
+        filterTracks(withGenre, 'artist:"Guns N\' Roses" paradise')
+            .map((t) => t.id),
+        ['gnr-rock'],
+      );
+    });
+
+    test('an unterminated quote extends to the end of the query rather '
+        'than throwing', () {
+      expect(
+        () => filterTracks(tracks, 'artist:"Guns N\' Roses'),
+        returnsNormally,
+      );
+      expect(
+        filterTracks(tracks, 'artist:"Guns N\' Roses').map((t) => t.id),
+        ['gnr'],
+      );
+    });
+
+    test('an empty quoted value falls back to a plain free-text term '
+        'rather than a field match', () {
+      // No text follows "artist:" once the empty quotes are stripped, so
+      // this can never match the field pattern — same as any other
+      // field-looking prefix with nothing after the colon.
+      expect(filterTracks(tracks, 'artist:""'), isEmpty);
+    });
+
+    test('multiple quoted terms in one query all resolve independently',
+        () {
+      expect(
+        filterTracks(tracks, 'artist:"Guns N\' Roses" album:"Appetite for '
+                'Destruction"')
+            .map((t) => t.id),
+        ['gnr'],
+      );
+    });
+  });
 }

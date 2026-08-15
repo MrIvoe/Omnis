@@ -75,14 +75,19 @@
 
 - **§6 — Search is a genuine MVP, not the full spec.** `filterTracks`
   supports free text + `artist:`/`album:`/`genre:`/`title:`/`mood:`/
-  `year:`. Missing: quoted multi-word field values (`album:"greatest
-  hits"` currently splits into two AND'd terms), `rating:`/`bpm:`/
-  `format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:` operators
-  (each needs a feature/data source — several now exist as of this
-  session, e.g. ratings, but aren't wired into search yet), natural-
-  language queries, and **no search scope beyond the Library page** — no
-  global Ctrl+K command palette (§37/§38) searching settings/commands/
-  playlists/moods in one place.
+  `year:`/`rating:` (the last joined 2026-08-13). Quoted multi-word
+  field values (`album:"greatest hits"` — previously split into two
+  AND'd terms) closed 2026-08-14: a small tokenizer keeps a `"..."` span
+  intact (quotes stripped, internal whitespace preserved) instead of
+  splitting on it — the field-value regex itself already accepted
+  multi-word values, it just never got the chance to see one. Still
+  missing: `bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:`
+  operators (each needs a feature/data source that still doesn't
+  exist), natural-language queries, and **no search scope beyond the
+  Library page** — no global Ctrl+K command palette (§37/§38) searching
+  settings/commands/playlists/moods in one place (the global keyboard
+  *shortcuts* closed 2026-08-14 under item 48 are a separate thing —
+  fixed playback bindings, not a searchable command palette).
 - **§9 — `rating:>=4` search/smart-playlist operator not wired.**
   `RatingsPlugin.ratedAtLeast()` exists specifically as the building
   block for this, but `filterTracks` is a pure `BaseTrack`-only function
