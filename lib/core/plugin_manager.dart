@@ -485,6 +485,21 @@ class PluginManager {
   /// enabled one stays enabled, exactly as [disablePlugin] would *not*
   /// preserve (it explicitly persists "disabled," which an update must
   /// never do on the user's behalf).
+  ///
+  /// Backs up the currently-installed directory before attempting the
+  /// download — item 29's "no backup-before-update/rollback" gap.
+  /// `PluginInstaller.installFromUrl` resolves a plugin's directory
+  /// name deterministically from its source URL, so re-installing the
+  /// same plugin targets the *same* directory and unconditionally wipes
+  /// it before extracting the new version; without a snapshot taken
+  /// first, a download that fails partway (network drop, a corrupt zip,
+  /// an invalid manifest) previously left the plugin's files gone or
+  /// partially written while its [ManagedPlugin] record stayed in
+  /// [_plugins] with its services already unregistered above — installed
+  /// in name only, silently broken. On failure now, the snapshot is
+  /// restored and the plugin re-registered from it before the error is
+  /// rethrown, so a failed update leaves the previous working version
+  /// running exactly as before, not a corpse.
   Future<ManagedPlugin> updatePlugin(String pluginId) async {
     final existing = byId(pluginId);
     if (existing == null) {
@@ -493,6 +508,9 @@ class PluginManager {
     if (!existing.isExternal) {
       throw PluginInstallException('Only downloaded plugins can be updated.');
     }
+    final directory = existing.directory;
+    final sourceUrl = existing.sourceUrl;
+
     if (existing.initialized) {
       await _sandbox.run(
         pluginId: existing.id,
@@ -508,7 +526,37 @@ class PluginManager {
       );
     }
     _unregisterProvidedServices(existing);
-    return installFromUrl(existing.sourceUrl);
+
+    final backupPath = directory != null
+        ? await _installer.backupPluginDirectory(directory)
+        : null;
+
+    try {
+      final updated = await installFromUrl(sourceUrl);
+      if (backupPath != null) {
+        await _installer.discardPluginBackup(backupPath);
+      }
+      return updated;
+    } catch (e) {
+      if (backupPath == null || directory == null) rethrow;
+      Object? rollbackError;
+      try {
+        await _installer.restorePluginBackup(backupPath, directory);
+        await installFromPath(directory, sourceUrl: sourceUrl);
+      } catch (err) {
+        rollbackError = err;
+      }
+      if (rollbackError != null) {
+        throw PluginInstallException(
+          'Update failed ($e) and the automatic rollback also failed '
+          '($rollbackError) — the plugin may need to be reinstalled.',
+        );
+      }
+      throw PluginInstallException(
+        'Update failed and was rolled back to the previous working '
+        'version: $e',
+      );
+    }
   }
 
   /// Registers and executes an already-downloaded plugin (the manifest has

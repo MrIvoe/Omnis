@@ -629,4 +629,116 @@ hooks:
       expect(await installer.fetchCatalog(), isNull);
     });
   });
+
+  group('backupPluginDirectory / restorePluginBackup / '
+      'discardPluginBackup (item 29)', () {
+    Future<Directory> writePluginDir(String name,
+        {String manifestVersion = '1.0.0'}) async {
+      final dir = Directory(p.join(tempDir, name));
+      await dir.create(recursive: true);
+      await File(p.join(dir.path, 'omnis_plugin.yaml')).writeAsString('''
+id: $name
+name: $name
+description: Test
+version: $manifestVersion
+author: Tester
+entrypoint: plugin.dart
+''');
+      await File(p.join(dir.path, 'plugin.dart'))
+          .writeAsString('// entrypoint for $name');
+      final assetsDir = Directory(p.join(dir.path, 'assets'));
+      await assetsDir.create();
+      await File(p.join(assetsDir.path, 'data.txt'))
+          .writeAsString('nested content');
+      return dir;
+    }
+
+    test('backs up a plugin directory\'s full contents, including a '
+        'nested subdirectory, to a location outside the plugin itself',
+        () async {
+      final installer = PluginInstaller();
+      final dir = await writePluginDir('sample');
+
+      final backupPath = await installer.backupPluginDirectory(dir.path);
+
+      expect(backupPath, isNotNull);
+      expect(backupPath, isNot(startsWith(dir.path)));
+      expect(
+        await File(p.join(backupPath!, 'omnis_plugin.yaml')).readAsString(),
+        contains('version: 1.0.0'),
+      );
+      expect(
+        await File(p.join(backupPath, 'assets', 'data.txt')).readAsString(),
+        'nested content',
+      );
+    });
+
+    test('returns null (never throws) when the source directory does not '
+        'exist — nothing to back up', () async {
+      final installer = PluginInstaller();
+
+      final backupPath = await installer
+          .backupPluginDirectory(p.join(tempDir, 'does_not_exist'));
+
+      expect(backupPath, isNull);
+    });
+
+    test('restorePluginBackup replaces the target directory\'s contents '
+        'exactly, discarding anything a failed update left behind',
+        () async {
+      final installer = PluginInstaller();
+      final dir = await writePluginDir('sample', manifestVersion: '1.0.0');
+      final backupPath = await installer.backupPluginDirectory(dir.path);
+
+      // Simulate a failed update: the original gets wiped and replaced
+      // with a different, partially-written new version.
+      await dir.delete(recursive: true);
+      await dir.create(recursive: true);
+      await File(p.join(dir.path, 'omnis_plugin.yaml'))
+          .writeAsString('garbage, not even valid yaml content');
+
+      await installer.restorePluginBackup(backupPath!, dir.path);
+
+      final manifest =
+          await File(p.join(dir.path, 'omnis_plugin.yaml')).readAsString();
+      expect(manifest, contains('version: 1.0.0'));
+      expect(
+        await File(p.join(dir.path, 'assets', 'data.txt')).readAsString(),
+        'nested content',
+      );
+    });
+
+    test('restorePluginBackup deletes the backup afterward — a used '
+        'backup is spent, not kept for a second rollback', () async {
+      final installer = PluginInstaller();
+      final dir = await writePluginDir('sample');
+      final backupPath = await installer.backupPluginDirectory(dir.path);
+
+      await installer.restorePluginBackup(backupPath!, dir.path);
+
+      expect(await Directory(backupPath).exists(), isFalse);
+    });
+
+    test('discardPluginBackup removes a backup that is no longer needed',
+        () async {
+      final installer = PluginInstaller();
+      final dir = await writePluginDir('sample');
+      final backupPath = await installer.backupPluginDirectory(dir.path);
+      expect(await Directory(backupPath!).exists(), isTrue);
+
+      await installer.discardPluginBackup(backupPath);
+
+      expect(await Directory(backupPath).exists(), isFalse);
+    });
+
+    test('discardPluginBackup on an already-gone path is a harmless '
+        'no-op', () async {
+      final installer = PluginInstaller();
+
+      await expectLater(
+        installer.discardPluginBackup(p.join(tempDir, 'never_existed')),
+        completes,
+      );
+    });
+  });
 }

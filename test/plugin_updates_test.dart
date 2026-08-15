@@ -82,6 +82,36 @@ class _RoutingClient extends http.BaseClient {
   }
 }
 
+/// Same routing as [_RoutingClient], but can be told to fail the zip
+/// download specifically — used to simulate an update whose download
+/// breaks partway (a network error, a server outage) after a real,
+/// working version is already installed, the scenario item 29's
+/// backup-before-update/rollback gap is about.
+class _FailOnUpdateClient extends http.BaseClient {
+  String manifestVersion;
+  String zipVersion;
+  bool failZipDownload = false;
+
+  _FailOnUpdateClient({required this.manifestVersion, required this.zipVersion});
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (request.url.host == 'raw.githubusercontent.com') {
+      final body = utf8.encode(_manifest(version: manifestVersion));
+      return http.StreamedResponse(Stream.value(body), 200);
+    }
+    if (failZipDownload) {
+      return http.StreamedResponse(
+          Stream.value(utf8.encode('server error')), 500);
+    }
+    final zip = _buildZip({
+      'repo-main/omnis_plugin.yaml': _manifest(version: zipVersion),
+      'repo-main/plugin.dart': _entrypoint(version: zipVersion),
+    });
+    return http.StreamedResponse(Stream.value(zip), 200);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -207,6 +237,76 @@ void main() {
 
       expect(updated.enabled, isTrue);
       expect(updated.initialized, isTrue);
+    });
+
+    group('backup-before-update / rollback (item 29)', () {
+      test('a failed update download rolls back to the previous working '
+          'version, leaving the plugin fully functional rather than a '
+          'broken record with unregistered services', () async {
+        final client =
+            _FailOnUpdateClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+        final manager =
+            PluginManager(installer: PluginInstaller(client: client));
+        await manager.installFromUrl('https://github.com/user/repo');
+        expect(manager.byId('sample_plugin')!.version, '1.0.0');
+
+        client.failZipDownload = true;
+
+        await expectLater(
+          manager.updatePlugin('sample_plugin'),
+          throwsA(isA<PluginInstallException>()),
+        );
+
+        final rolledBack = manager.byId('sample_plugin');
+        expect(rolledBack, isNotNull);
+        expect(rolledBack!.version, '1.0.0');
+        expect(rolledBack.initialized, isTrue);
+        // Exactly one entry — a failed-then-rolled-back update must not
+        // leave a stale broken record alongside a restored one.
+        expect(manager.plugins.where((p) => p.id == 'sample_plugin'),
+            hasLength(1));
+      });
+
+      test('the rollback error message names the original failure', () async {
+        final client =
+            _FailOnUpdateClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+        final manager =
+            PluginManager(installer: PluginInstaller(client: client));
+        await manager.installFromUrl('https://github.com/user/repo');
+        client.failZipDownload = true;
+
+        await expectLater(
+          manager.updatePlugin('sample_plugin'),
+          throwsA(isA<PluginInstallException>().having(
+            (e) => e.toString(),
+            'message',
+            allOf(contains('rolled back'), contains('500')),
+          )),
+        );
+      });
+
+      test('after a rolled-back update, a subsequent successful update '
+          'still works normally — the plugin is not left in some '
+          'half-updated limbo', () async {
+        final client =
+            _FailOnUpdateClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+        final manager =
+            PluginManager(installer: PluginInstaller(client: client));
+        await manager.installFromUrl('https://github.com/user/repo');
+
+        client.failZipDownload = true;
+        await expectLater(
+          manager.updatePlugin('sample_plugin'),
+          throwsA(isA<PluginInstallException>()),
+        );
+
+        client.failZipDownload = false;
+        client.zipVersion = '2.0.0';
+        final updated = await manager.updatePlugin('sample_plugin');
+
+        expect(updated.version, '2.0.0');
+        expect(manager.byId('sample_plugin')!.version, '2.0.0');
+      });
     });
   });
 }

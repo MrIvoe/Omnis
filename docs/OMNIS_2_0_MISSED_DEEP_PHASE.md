@@ -441,11 +441,33 @@ silently left a previously-enabled plugin disabled after every update).
 Wired into a "Check for updates" button and a per-plugin "Update
 available: vX" banner + button on the Plugins page.
 
-Gaps: no backup-before-update (a bad update isn't reversible — no
-snapshot of the old, working plugin directory is kept), no
-rollback-on-failed-update, no automatic/background/scheduled checking
-(purely user-initiated, one tap at a time), and — a real, structural
-limit, not a missed detail — update detection only works for a GitHub
+Backup-before-update + rollback closed 2026-08-14. Root cause of the
+original gap: `installFromUrl` resolves a plugin's directory name
+*deterministically* from its own source URL, so re-installing the same
+plugin during an update always targets the exact directory the working
+version already lives in, and unconditionally deletes it before
+extracting — a download failing partway (network drop, corrupt zip, a
+newly-invalid manifest) previously left that directory empty or
+partially written while the `ManagedPlugin` record stayed registered
+with its services already torn down by `updatePlugin`'s own teardown
+step: installed in name only, silently broken. Fixed with three new
+`PluginInstaller` methods (`backupPluginDirectory`/
+`restorePluginBackup`/`discardPluginBackup`, a recursive directory
+copy to a location *outside* the plugins root — deliberately outside,
+since `listInstalled()` treats every folder under the plugins root
+containing an `omnis_plugin.yaml` as an installed plugin, and a backup
+is a second copy of exactly that file). `updatePlugin()` snapshots
+before attempting the download, discards the snapshot on success, and
+on failure restores it and re-registers the plugin from the restored
+directory (a full `installFromPath`/`_registerInstalledPlugin` cycle,
+not just files copied back) before rethrowing — a failed update now
+leaves the previous working version running, not a corpse. A rollback
+that itself fails surfaces both failures in one message. 9 new tests,
+all passing on the first real run.
+
+Still gaps: no automatic/background/scheduled checking (purely
+user-initiated, one tap at a time), and — a real, structural limit, not
+a missed detail — update detection only works for a GitHub
 `tree/branch[/subfolder]` or bare-repo source URL; a plugin installed
 from a direct `.zip` link has no general way to derive a single raw
 file's location from an arbitrary zip URL, so `fetchRemoteManifest`

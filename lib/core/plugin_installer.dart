@@ -466,6 +466,82 @@ class PluginInstaller {
     }
   }
 
+  /// Recursively copies every file/subdirectory of [source] into
+  /// [destination] — the shared primitive [backupPluginDirectory] and
+  /// [restorePluginBackup] both build on, since plugin directories are
+  /// real trees (a manifest, an entrypoint, and whatever other assets a
+  /// plugin bundles), not one file `File.copy` alone could handle.
+  Future<void> _copyDirectoryContents(
+      Directory source, Directory destination) async {
+    await destination.create(recursive: true);
+    await for (final entity in source.list(recursive: false)) {
+      final newPath = p.join(destination.path, p.basename(entity.path));
+      if (entity is Directory) {
+        await _copyDirectoryContents(entity, Directory(newPath));
+      } else if (entity is File) {
+        await entity.copy(newPath);
+      }
+    }
+  }
+
+  /// Snapshots [directory] — an installed plugin's own folder — to a
+  /// location outside the plugins root, so [PluginManager.updatePlugin]
+  /// can restore exactly what was there if the update it's about to
+  /// attempt fails partway through. Deliberately outside the plugins
+  /// root (not a sibling directory next to the plugin being backed up):
+  /// [listInstalled] treats every folder under the plugins root
+  /// containing an `omnis_plugin.yaml` as an installed plugin, and a
+  /// backup is a second copy of exactly that file.
+  ///
+  /// Returns `null` — never throws — when [directory] doesn't actually
+  /// exist, e.g. a plugin record whose files are already gone for some
+  /// other reason; [PluginManager.updatePlugin] treats that as "nothing
+  /// to roll back to," not a reason to block the update attempt.
+  Future<String?> backupPluginDirectory(String directory) async {
+    final source = Directory(directory);
+    if (!await source.exists()) return null;
+    final backupsRoot = Directory(
+        p.join((await getApplicationSupportDirectory()).path,
+            'plugin_update_backups'));
+    if (!await backupsRoot.exists()) {
+      await backupsRoot.create(recursive: true);
+    }
+    final backupDir = Directory(p.join(backupsRoot.path,
+        '${p.basename(directory)}_${DateTime.now().millisecondsSinceEpoch}'));
+    await _copyDirectoryContents(source, backupDir);
+    return backupDir.path;
+  }
+
+  /// Restores a snapshot made by [backupPluginDirectory] back to
+  /// [targetDirectory] — deletes whatever is currently there first
+  /// (a partially-written failed download, most likely), so restoring
+  /// never leaves stray new-version files mixed in with the rolled-back
+  /// old version. Deletes the backup afterward — a used backup is spent,
+  /// not kept for a second rollback of the same update attempt.
+  Future<void> restorePluginBackup(
+      String backupPath, String targetDirectory) async {
+    final target = Directory(targetDirectory);
+    if (await target.exists()) {
+      await target.delete(recursive: true);
+    }
+    await _copyDirectoryContents(Directory(backupPath), target);
+    try {
+      await Directory(backupPath).delete(recursive: true);
+    } catch (_) {}
+  }
+
+  /// Deletes a snapshot made by [backupPluginDirectory] once it's no
+  /// longer needed — the update it was insurance against succeeded, so
+  /// there's nothing left to ever roll back to.
+  Future<void> discardPluginBackup(String backupPath) async {
+    final dir = Directory(backupPath);
+    if (await dir.exists()) {
+      try {
+        await dir.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   /// Resolves a user-friendly GitHub URL into a direct zip download URL,
   /// plus (for a `.../tree/branch/subfolder` catalog link) the subfolder
   /// within the extracted zip that actually holds the plugin.
