@@ -354,11 +354,17 @@ placeholder legacy fields, a well-documented MP4 quirk) and ALAC's
 bit depth/channels/sample rate/bitrate directly from its magic-cookie
 box — see item 22's build-log entry for the full detail. A bare
 `.aac` file (an ADTS elementary stream, not an MP4 container at all)
-is still label-only, deliberately out of this scope. WMA is now the
-one remaining unparsed container — full ASF GUID-object header
-parsing is real, separate work, deliberately not attempted yet (its
-layout has more surface area than any format parsed so far, including
-M4A's box nesting). And the DSP/output half is still fully 0%:
+is still label-only, deliberately out of this scope. WMA closed
+2026-08-15 too, the fourth and last remaining container:
+`AudioFormatReader._readWma` parses ASF's flat GUID-object header
+(simpler than M4A's box nesting, once written — turned out to have
+less surface area than expected) down to the audio Stream Properties
+Object's embedded `WAVEFORMATEX` structure for real sample rate/
+channels/bit depth, plus a real encoder-declared average bitrate. With
+this closed, every container `AudioFormatReader` recognizes now gets
+real header parsing except a bare `.aac` ADTS elementary stream, which
+remains deliberately out of scope (not a container format at all). And
+the DSP/output half is still fully 0%:
 no source→DSP→resampling→output *chain* display, no exclusive/
 WASAPI-style output mode. Also found and left as-is (out of scope for
 this pass): `BaseTrack`'s `==`/`hashCode` compare list fields

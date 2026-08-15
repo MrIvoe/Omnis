@@ -60,18 +60,18 @@ class _AlacInfo {
 /// Sniffs [AudioFormatInfo] straight from a local audio file's header —
 /// no native decoder, no ffprobe (this app has no native build step to
 /// bundle one into; see `docs/BUILDING.md`). FLAC, WAV, MP3, AIFF/AIFC,
-/// and Ogg Vorbis/Opus headers are parsed for real: sample rate and
-/// channel count in every case, plus a real average bitrate for the
-/// formats where one can be derived honestly rather than guessed (a VBR
-/// header's frame/byte counts for MP3, file-size/duration for FLAC,
-/// computed directly from channels/rate/bit-depth for the uncompressed
-/// PCM formats — Ogg deliberately doesn't get one: Vorbis's header
-/// "nominal bitrate" is an explicitly non-binding encoder hint, not a
-/// real number, and Opus's header carries no bitrate field at all).
-/// Every other recognized extension still gets a codec label, with the
-/// numeric fields deliberately left `null` rather than guessed — full
-/// parsing of MP4/M4A boxes or WMA's ASF headers is real, separate work
-/// not attempted here.
+/// Ogg Vorbis/Opus, M4A/AAC/ALAC, and WMA/ASF headers are all parsed for
+/// real: sample rate and channel count in every case, plus a real
+/// average bitrate for the formats where one can be derived honestly
+/// rather than guessed (a VBR header's frame/byte counts for MP3, file-
+/// size/duration for FLAC, computed directly from channels/rate/bit-
+/// depth for the uncompressed PCM formats, a real encoder-declared
+/// average for AAC/WMA — Ogg deliberately doesn't get one: Vorbis's
+/// header "nominal bitrate" is an explicitly non-binding encoder hint,
+/// not a real number, and Opus's header carries no bitrate field at
+/// all). A bare `.aac` file (an ADTS elementary stream, not a container
+/// format at all) is the one remaining recognized extension left
+/// label-only — deliberately out of scope, see `_readM4a`'s doc comment.
 class AudioFormatReader {
   const AudioFormatReader._();
 
@@ -100,7 +100,7 @@ class AudioFormatReader {
         case 'opus':
           return await _readOgg(File(path));
         case 'wma':
-          return const AudioFormatInfo(codec: 'WMA');
+          return await _readWma(File(path));
         case 'aiff':
         case 'aif':
         case 'aifc':
@@ -837,6 +837,170 @@ class AudioFormatReader {
       bitDepth: bitDepth > 0 ? bitDepth : null,
       avgBitrateBps: avgBitRate > 0 ? avgBitRate : null,
     );
+  }
+
+  // ASF (WMA's container) GUIDs — mixed-endian on disk: the first three
+  // fields of a Microsoft GUID are little-endian, the last (8-byte) field
+  // is stored as-is. Written here as their literal on-disk byte sequence
+  // rather than converted from the human-readable dashed form at
+  // runtime, the same "fixed magic bytes" convention this file already
+  // uses for 'fLaC'/'RIFF'/'FORM'/'OggS'.
+  static const _asfHeaderGuid = [
+    0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, //
+    0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C,
+  ];
+  static const _asfFilePropertiesGuid = [
+    0xA1, 0xDC, 0xAB, 0x8C, 0x47, 0xA9, 0xCF, 0x11, //
+    0x8E, 0xE4, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65,
+  ];
+  static const _asfStreamPropertiesGuid = [
+    0x91, 0x07, 0xDC, 0xB7, 0xB7, 0xA9, 0xCF, 0x11, //
+    0x8E, 0xE6, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65,
+  ];
+  static const _asfAudioMediaGuid = [
+    0x40, 0x9E, 0x69, 0xF8, 0x4D, 0x5B, 0xCF, 0x11, //
+    0xA8, 0xFD, 0x00, 0x80, 0x5F, 0x5C, 0x44, 0x2B,
+  ];
+
+  static bool _guidEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static int _readU16LE(List<int> b, int off) => b[off] | (b[off + 1] << 8);
+
+  static int _readU32LE(List<int> b, int off) =>
+      b[off] | (b[off + 1] << 8) | (b[off + 2] << 16) | (b[off + 3] << 24);
+
+  static int _readU64LE(List<int> b, int off) {
+    var v = 0;
+    for (var i = 7; i >= 0; i--) {
+      v = (v << 8) | b[off + i];
+    }
+    return v;
+  }
+
+  /// Reads a WMA file's ASF (Advanced Systems Format) container — a flat
+  /// sequence of GUID-identified objects, unlike M4A's nested box tree or
+  /// AIFF's linear chunks, but sharing the same "read only the header,
+  /// never the actual sample data" shape: only the Header Object (whose
+  /// own declared size is read up front, so exactly that many bytes are
+  /// read and no more) ever comes into memory — the far larger Data
+  /// Object that follows it, holding real audio packets, is never
+  /// touched. Every field ASF stores is little-endian, unlike the
+  /// big-endian formats elsewhere in this file (AIFF, MP4 box sizes), so
+  /// this uses its own `_read*LE` helpers rather than the shared
+  /// big-endian ones.
+  ///
+  /// Walks the Header Object's child objects looking for two: the File
+  /// Properties Object (a file-wide Maximum Bitrate field, and Play
+  /// Duration — in 100-nanosecond units — as a bitrate fallback source)
+  /// and the Stream Properties Object whose own Stream Type GUID
+  /// identifies it as the audio stream (a file can also carry a video
+  /// stream's Stream Properties Object, which this skips). The audio
+  /// stream's Type-Specific Data is a `WAVEFORMATEX` structure — the
+  /// same structure WAV's own `fmt ` chunk already carries, just
+  /// embedded one level deeper here — giving real sample rate/channels/
+  /// bit depth/bits-per-sample directly, plus `nAvgBytesPerSec` as a
+  /// real encoder-declared average bitrate (preferred over File
+  /// Properties' Maximum Bitrate, which is a ceiling, not an average).
+  /// The format tag distinguishes a few well-known WMA variants; an
+  /// unrecognized tag still reports real numeric fields, just with a
+  /// generic `WMA (0x....)` label rather than guessing which codec it is.
+  static Future<AudioFormatInfo> _readWma(File file) async {
+    final raf = await file.open();
+    try {
+      final fileLength = await file.length();
+      final envelope = await raf.read(30);
+      if (envelope.length < 30 ||
+          !_guidEquals(envelope.sublist(0, 16), _asfHeaderGuid)) {
+        return const AudioFormatInfo(codec: 'WMA');
+      }
+      final headerSize = _readU64LE(envelope, 16);
+      final numObjects = _readU32LE(envelope, 24);
+      if (headerSize < 30 || headerSize > fileLength) {
+        return const AudioFormatInfo(codec: 'WMA');
+      }
+      final contentLength = headerSize - 30;
+      if (contentLength <= 0) return const AudioFormatInfo(codec: 'WMA');
+      final content = await raf.read(contentLength);
+      if (content.length < contentLength) {
+        return const AudioFormatInfo(codec: 'WMA');
+      }
+
+      int? maxBitrateBps;
+      int? durationHundredNs;
+      String? codec;
+      int? sampleRate;
+      int? channels;
+      int? bitDepth;
+      int? avgBytesPerSec;
+
+      var pos = 0;
+      var objectsSeen = 0;
+      while (pos + 24 <= content.length && objectsSeen < numObjects) {
+        final guid = content.sublist(pos, pos + 16);
+        final objSize = _readU64LE(content, pos + 16);
+        if (objSize < 24 || pos + objSize > content.length) break;
+        final objContent = content.sublist(pos + 24, pos + objSize);
+
+        if (_guidEquals(guid, _asfFilePropertiesGuid) &&
+            objContent.length >= 80) {
+          durationHundredNs = _readU64LE(objContent, 40);
+          final bitrate = _readU32LE(objContent, 76);
+          if (bitrate > 0) maxBitrateBps = bitrate;
+        } else if (_guidEquals(guid, _asfStreamPropertiesGuid) &&
+            objContent.length >= 54) {
+          final streamType = objContent.sublist(0, 16);
+          if (_guidEquals(streamType, _asfAudioMediaGuid)) {
+            final typeSpecificLen = _readU32LE(objContent, 40);
+            if (typeSpecificLen >= 16 && objContent.length >= 54 + 16) {
+              final wf = objContent.sublist(54, 54 + 16);
+              final formatTag = _readU16LE(wf, 0);
+              channels = _readU16LE(wf, 2);
+              sampleRate = _readU32LE(wf, 4);
+              avgBytesPerSec = _readU32LE(wf, 8);
+              bitDepth = _readU16LE(wf, 14);
+              codec = switch (formatTag) {
+                0x0161 => 'WMA',
+                0x0162 => 'WMA Pro',
+                0x0163 => 'WMA Lossless',
+                0x0001 => 'PCM (WMA/ASF)',
+                _ =>
+                  'WMA (0x${formatTag.toRadixString(16).padLeft(4, '0')})',
+              };
+            }
+          }
+        }
+        pos += objSize;
+        objectsSeen++;
+      }
+
+      int? bitrateKbps;
+      if (avgBytesPerSec != null && avgBytesPerSec > 0) {
+        bitrateKbps = (avgBytesPerSec * 8 / 1000).round();
+      } else if (maxBitrateBps != null && maxBitrateBps > 0) {
+        bitrateKbps = (maxBitrateBps / 1000).round();
+      } else if (durationHundredNs != null && durationHundredNs > 0) {
+        final durationSeconds = durationHundredNs / 10000000;
+        if (durationSeconds > 0) {
+          bitrateKbps = ((fileLength * 8) / durationSeconds / 1000).round();
+        }
+      }
+
+      return AudioFormatInfo(
+        codec: codec ?? 'WMA',
+        sampleRateHz: sampleRate != null && sampleRate > 0 ? sampleRate : null,
+        bitDepth: bitDepth != null && bitDepth > 0 ? bitDepth : null,
+        channels: channels != null && channels > 0 ? channels : null,
+        bitrateKbps: bitrateKbps,
+      );
+    } finally {
+      await raf.close();
+    }
   }
 
   static const _mpeg1Layer3Bitrates = [

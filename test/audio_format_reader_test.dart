@@ -957,6 +957,291 @@ void main() {
     });
   });
 
+  // ASF (WMA's container) GUIDs, written as their literal on-disk
+  // mixed-endian byte sequence — independently of the reader's own
+  // constants, not copy-pasted from them, so a mistake in the reader's
+  // own GUID bytes wouldn't silently pass.
+  const asfHeaderGuid = [
+    0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, //
+    0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C,
+  ];
+  const asfFilePropertiesGuid = [
+    0xA1, 0xDC, 0xAB, 0x8C, 0x47, 0xA9, 0xCF, 0x11, //
+    0x8E, 0xE4, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65,
+  ];
+  const asfStreamPropertiesGuid = [
+    0x91, 0x07, 0xDC, 0xB7, 0xB7, 0xA9, 0xCF, 0x11, //
+    0x8E, 0xE6, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65,
+  ];
+  const asfAudioMediaGuid = [
+    0x40, 0x9E, 0x69, 0xF8, 0x4D, 0x5B, 0xCF, 0x11, //
+    0xA8, 0xFD, 0x00, 0x80, 0x5F, 0x5C, 0x44, 0x2B,
+  ];
+  // A GUID not used by any real ASF object — for a video Stream
+  // Properties Object's Stream Type, proving the reader skips it.
+  const asfVideoMediaGuid = [
+    0x9A, 0x0F, 0x63, 0xBC, 0x08, 0xC0, 0xCF, 0x11, //
+    0x98, 0xBB, 0x00, 0x80, 0x5F, 0x5C, 0x44, 0x2B,
+  ];
+
+  List<int> u32le(int value) => [
+        value & 0xFF,
+        (value >> 8) & 0xFF,
+        (value >> 16) & 0xFF,
+        (value >> 24) & 0xFF,
+      ];
+
+  List<int> u64le(int value) {
+    final bytes = <int>[];
+    for (var i = 0; i < 8; i++) {
+      bytes.add((value >> (8 * i)) & 0xFF);
+    }
+    return bytes;
+  }
+
+  List<int> u16le(int value) => [value & 0xFF, (value >> 8) & 0xFF];
+
+  /// Wraps [content] in a real ASF object: a 16-byte GUID + an 8-byte
+  /// little-endian size (the object's own header plus [content]).
+  List<int> asfObject(List<int> guid, List<int> content) {
+    final size = 24 + content.length;
+    return <int>[...guid, ...u64le(size), ...content];
+  }
+
+  /// Builds a real File Properties Object — [durationHundredNs] (Play
+  /// Duration, 100-nanosecond units) and [maxBitrateBps] (Maximum
+  /// Bitrate) at their real fixed offsets, everything before them
+  /// zeroed since the reader doesn't read those fields.
+  List<int> buildFilePropertiesObject({
+    required int durationHundredNs,
+    required int maxBitrateBps,
+  }) {
+    final content = <int>[
+      ...List.filled(16, 0), // File ID
+      ...List.filled(8, 0), // File Size
+      ...List.filled(8, 0), // Creation Date
+      ...List.filled(8, 0), // Data Packets Count
+      ...u64le(durationHundredNs), // Play Duration
+      ...List.filled(8, 0), // Send Duration
+      ...List.filled(8, 0), // Preroll
+      ...List.filled(4, 0), // Flags
+      ...List.filled(4, 0), // Minimum Data Packet Size
+      ...List.filled(4, 0), // Maximum Data Packet Size
+      ...u32le(maxBitrateBps), // Maximum Bitrate
+    ];
+    return asfObject(asfFilePropertiesGuid, content);
+  }
+
+  /// Builds a real audio Stream Properties Object wrapping a real
+  /// `WAVEFORMATEX` structure — the same structure WAV's own `fmt `
+  /// chunk carries, just embedded one level deeper here.
+  List<int> buildAudioStreamPropertiesObject({
+    required int formatTag,
+    required int channels,
+    required int sampleRate,
+    required int avgBytesPerSec,
+    required int bitsPerSample,
+  }) {
+    final waveFormatEx = <int>[
+      ...u16le(formatTag),
+      ...u16le(channels),
+      ...u32le(sampleRate),
+      ...u32le(avgBytesPerSec),
+      ...u16le(0), // nBlockAlign — unused by the reader
+      ...u16le(bitsPerSample),
+    ];
+    final content = <int>[
+      ...asfAudioMediaGuid, // Stream Type
+      ...List.filled(16, 0), // Error Correction Type
+      ...List.filled(8, 0), // Time Offset
+      ...u32le(waveFormatEx.length), // Type-Specific Data Length
+      ...u32le(0), // Error Correction Data Length
+      ...u16le(0), // Flags
+      ...List.filled(4, 0), // Reserved
+      ...waveFormatEx,
+    ];
+    return asfObject(asfStreamPropertiesGuid, content);
+  }
+
+  /// Builds a minimal but real video Stream Properties Object (Stream
+  /// Type = a non-audio GUID) — used to prove the reader skips a video
+  /// stream rather than misreading its type-specific data as audio.
+  List<int> buildVideoStreamPropertiesObject() {
+    final content = <int>[
+      ...asfVideoMediaGuid,
+      ...List.filled(16, 0),
+      ...List.filled(8, 0),
+      ...u32le(0),
+      ...u32le(0),
+      ...u16le(0),
+      ...List.filled(4, 0),
+    ];
+    return asfObject(asfStreamPropertiesGuid, content);
+  }
+
+  /// Assembles a minimal but real ASF file: a Header Object (real GUID +
+  /// size + object count) wrapping whatever [childObjects] are given,
+  /// followed by a dummy Data Object — enough real structure for
+  /// `AudioFormatReader._readWma` to walk exactly the way a real ASF
+  /// file's header would, without every other object (Content
+  /// Description, Codec List, ...) a real file also carries but this
+  /// reader never reads.
+  List<int> buildWmaFile(List<List<int>> childObjects) {
+    final childBytes = childObjects.expand((o) => o).toList();
+    final headerSize = 30 + childBytes.length;
+    final header = <int>[
+      ...asfHeaderGuid,
+      ...u64le(headerSize),
+      ...u32le(childObjects.length),
+      0, 0, // Reserved1, Reserved2
+      ...childBytes,
+    ];
+    // A dummy Data Object — never read by the reader, just present the
+    // way a real file's would be.
+    final dataObject = asfObject(
+      const [
+        0x36, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, //
+        0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C,
+      ],
+      List.filled(16, 0),
+    );
+    return <int>[...header, ...dataObject];
+  }
+
+  group('WMA/ASF (item 22)', () {
+    test('reads real sample rate/channels/bit depth from a WAVEFORMATEX '
+        'Stream Properties Object, and the encoder-declared average '
+        'bitrate over Maximum Bitrate', () async {
+      final bytes = buildWmaFile([
+        buildFilePropertiesObject(
+          durationHundredNs: 100000000, // 10 seconds
+          maxBitrateBps: 64000, // deliberately different from the real avg
+        ),
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0161, // WMA
+          channels: 2,
+          sampleRate: 44100,
+          avgBytesPerSec: 16000, // -> 128 kbps, should win over 64 kbps
+          bitsPerSample: 16,
+        ),
+      ]);
+      final file = writeFile('song.wma', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'WMA');
+      expect(info.sampleRateHz, 44100);
+      expect(info.channels, 2);
+      expect(info.bitDepth, 16);
+      expect(info.bitrateKbps, 128);
+    });
+
+    test('labels WMA Pro and WMA Lossless by their real format tags',
+        () async {
+      final proBytes = buildWmaFile([
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0162,
+          channels: 2,
+          sampleRate: 48000,
+          avgBytesPerSec: 0,
+          bitsPerSample: 24,
+        ),
+      ]);
+      final proFile = writeFile('pro.wma', proBytes);
+      expect((await AudioFormatReader.read(proFile.path)).codec, 'WMA Pro');
+
+      final losslessBytes = buildWmaFile([
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0163,
+          channels: 2,
+          sampleRate: 44100,
+          avgBytesPerSec: 0,
+          bitsPerSample: 16,
+        ),
+      ]);
+      final losslessFile = writeFile('lossless.wma', losslessBytes);
+      expect((await AudioFormatReader.read(losslessFile.path)).codec,
+          'WMA Lossless');
+    });
+
+    test('falls back to Maximum Bitrate when no encoder-declared average '
+        'is present', () async {
+      final bytes = buildWmaFile([
+        buildFilePropertiesObject(
+          durationHundredNs: 50000000,
+          maxBitrateBps: 96000,
+        ),
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0161,
+          channels: 1,
+          sampleRate: 22050,
+          avgBytesPerSec: 0, // absent
+          bitsPerSample: 16,
+        ),
+      ]);
+      final file = writeFile('no_avg.wma', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.channels, 1);
+      expect(info.bitrateKbps, 96);
+    });
+
+    test('falls back to a duration-derived bitrate when neither average '
+        'nor maximum bitrate fields are present', () async {
+      final bytes = buildWmaFile([
+        buildFilePropertiesObject(
+          durationHundredNs: 100000000, // exactly 10 seconds
+          maxBitrateBps: 0,
+        ),
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0161,
+          channels: 2,
+          sampleRate: 44100,
+          avgBytesPerSec: 0,
+          bitsPerSample: 16,
+        ),
+      ]);
+      final file = writeFile('duration_fallback.wma', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      final expectedBitrate = ((bytes.length * 8) / 10 / 1000).round();
+      expect(info.bitrateKbps, expectedBitrate);
+    });
+
+    test('skips a video Stream Properties Object and still finds the '
+        'real audio stream', () async {
+      final bytes = buildWmaFile([
+        buildVideoStreamPropertiesObject(),
+        buildAudioStreamPropertiesObject(
+          formatTag: 0x0161,
+          channels: 2,
+          sampleRate: 48000,
+          avgBytesPerSec: 24000,
+          bitsPerSample: 16,
+        ),
+      ]);
+      final file = writeFile('with_video.wma', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'WMA');
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 2);
+    });
+
+    test('degrades to a label-only fallback for a non-ASF file with a '
+        '.wma extension', () async {
+      final file = writeFile('fake.wma', List.filled(50, 0));
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'WMA');
+      expect(info.sampleRateHz, isNull);
+    });
+  });
+
   group('unsupported/unknown formats', () {
     test('still labels the codec by extension for formats without a full '
         'header parser', () async {
