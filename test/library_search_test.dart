@@ -10,6 +10,8 @@ BaseTrack _track({
   List<String> genres = const [],
   int? year,
   String? mood,
+  double? bpm,
+  String? codec,
 }) =>
     BaseTrack(
       id: id,
@@ -21,6 +23,8 @@ BaseTrack _track({
       genres: genres,
       year: year,
       mood: mood,
+      bpm: bpm,
+      codec: codec,
     );
 
 void main() {
@@ -130,11 +134,11 @@ void main() {
 
     test('an unrecognized field prefix falls back to free text instead '
         'of matching nothing', () {
-      // "format:flac" isn't a supported field yet — must not silently
+      // "bitrate:1000" isn't a supported field yet — must not silently
       // exclude every track just because of the unknown prefix.
-      final result = filterTracks(tracks, 'format:flac');
+      final result = filterTracks(tracks, 'bitrate:1000');
       expect(result, isEmpty); // no track's title/artist/album/genre
-      // contains the literal text "format:flac", which is the correct
+      // contains the literal text "bitrate:1000", which is the correct
       // free-text fallback behavior, not a crash or a `known field`
       // exception.
     });
@@ -239,6 +243,99 @@ void main() {
         filterTracks(mixed, 'rating:>=4 bohemian', ratingOf: mixedRatingOf)
             .map((t) => t.id),
         ['match'],
+      );
+    });
+  });
+
+  group('filterTracks — bpm field', () {
+    final tracks = [
+      _track(id: '1', bpm: 120),
+      _track(id: '2', bpm: 140),
+      _track(id: '3'), // no bpm at all
+    ];
+
+    test('exact match', () {
+      expect(filterTracks(tracks, 'bpm:120').map((t) => t.id), ['1']);
+    });
+
+    test('a track with no bpm data never matches', () {
+      expect(filterTracks(tracks, 'bpm:>=0').map((t) => t.id).toSet(),
+          {'1', '2'});
+    });
+
+    test('inclusive range, same convention as year:', () {
+      expect(
+        filterTracks(tracks, 'bpm:100..130').map((t) => t.id),
+        ['1'],
+      );
+    });
+
+    test('comparison operators', () {
+      expect(filterTracks(tracks, 'bpm:>=130').map((t) => t.id), ['2']);
+      expect(filterTracks(tracks, 'bpm:<=130').map((t) => t.id), ['1']);
+      expect(filterTracks(tracks, 'bpm:>120').map((t) => t.id), ['2']);
+      expect(filterTracks(tracks, 'bpm:<140').map((t) => t.id), ['1']);
+    });
+
+    test('an unparseable bpm value matches nothing rather than throwing',
+        () {
+      expect(filterTracks(tracks, 'bpm:fast'), isEmpty);
+    });
+  });
+
+  group('filterTracks — format field', () {
+    final tracks = [
+      _track(id: '1', codec: 'FLAC'),
+      _track(id: '2', codec: 'MP3'),
+      _track(id: '3'), // no codec at all
+    ];
+
+    test('exact, case-insensitive codec match', () {
+      expect(filterTracks(tracks, 'format:flac').map((t) => t.id), ['1']);
+      expect(filterTracks(tracks, 'format:FLAC').map((t) => t.id), ['1']);
+    });
+
+    test('is not a substring match — "format:mp" must not match "MP3"',
+        () {
+      expect(filterTracks(tracks, 'format:mp'), isEmpty);
+    });
+
+    test('a track with no codec data never matches', () {
+      expect(filterTracks(tracks, 'format:flac').map((t) => t.id),
+          isNot(contains('3')));
+    });
+  });
+
+  group('filterTracks — favorite field', () {
+    final tracks = [_track(id: '1'), _track(id: '2')];
+    bool favoriteOf(String id) => id == '1';
+
+    test('favorite:true matches only favorited tracks', () {
+      expect(
+        filterTracks(tracks, 'favorite:true', favoriteOf: favoriteOf)
+            .map((t) => t.id),
+        ['1'],
+      );
+    });
+
+    test('favorite:false matches only non-favorited tracks', () {
+      expect(
+        filterTracks(tracks, 'favorite:false', favoriteOf: favoriteOf)
+            .map((t) => t.id),
+        ['2'],
+      );
+    });
+
+    test('every favorite: term matches nothing when favoriteOf is omitted',
+        () {
+      expect(filterTracks(tracks, 'favorite:true'), isEmpty);
+    });
+
+    test('an unrecognized favorite value matches nothing rather than '
+        'throwing', () {
+      expect(
+        filterTracks(tracks, 'favorite:maybe', favoriteOf: favoriteOf),
+        isEmpty,
       );
     });
   });

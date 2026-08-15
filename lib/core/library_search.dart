@@ -53,30 +53,53 @@ import 'package:omnis/core/base_track.dart';
 /// rating:<1                 -> unrated only (equivalent to rating:0)
 /// ```
 ///
-/// This function stays deliberately plugin-free — [ratingOf] is an
-/// optional lookup the *caller* supplies (`library_page.dart` passes
-/// `RatingsPlugin.ratingOf`), not a dependency this function reaches out
-/// for itself. Every `rating:` term matches nothing when [ratingOf] is
-/// omitted, the same "don't silently ignore a field the caller didn't
-/// wire up" stance [_SearchTerm.parse] already takes for an unknown
-/// field name.
+/// `bpm:`/`format:` read straight off `BaseTrack`'s own fields (`bpm`,
+/// `codec` — populated by `AudioAnalysisPlugin`/`AudioFormatReader`
+/// respectively), no caller-supplied lookup needed:
+///
+/// ```text
+/// format:flac              -> exact codec match, case-insensitive
+/// bpm:120                  -> exact BPM
+/// bpm:120..140              -> inclusive range
+/// bpm:>=120                 -> comparison, same operators as rating:
+/// ```
+///
+/// `favorite:` needs a caller-supplied lookup, the same shape [ratingOf]
+/// already establishes — `library_page.dart` passes `_isFavorite`
+/// (backed by `FavoritesPlugin.isFavorite`):
+///
+/// ```text
+/// favorite:true
+/// favorite:false
+/// ```
+///
+/// This function stays deliberately plugin-free — [ratingOf]/[favoriteOf]
+/// are optional lookups the *caller* supplies, not a dependency this
+/// function reaches out for itself. Every `rating:`/`favorite:` term
+/// matches nothing when its lookup is omitted, the same "don't silently
+/// ignore a field the caller didn't wire up" stance [_SearchTerm.parse]
+/// already takes for an unknown field name.
 ///
 /// Deliberately not yet supported (documented gaps, not oversights):
-/// `bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:` — each
-/// depends on a feature or data source that doesn't exist yet (audio
-/// analysis results being searchable, format/bitrate metadata, lyrics
-/// text, duplicate detection).
+/// `bitrate:`/`lyrics:`/`missing:`/`duplicate:` — each depends on a
+/// feature or data source that doesn't exist yet as a per-track
+/// queryable value (bitrate metadata is on `BaseTrack` but genuinely
+/// unbounded/continuous rather than a handful of discrete labels like
+/// `format:`, lyrics text isn't indexed, duplicate detection is a
+/// library-wide computation not a per-track field).
 List<BaseTrack> filterTracks(
   List<BaseTrack> tracks,
   String query, {
   int Function(String trackId)? ratingOf,
+  bool Function(String trackId)? favoriteOf,
 }) {
   final trimmed = query.trim();
   if (trimmed.isEmpty) return tracks;
 
   final terms = _tokenize(trimmed).map(_SearchTerm.parse).toList();
   return tracks
-      .where((track) => terms.every((term) => term.matches(track, ratingOf)))
+      .where((track) =>
+          terms.every((term) => term.matches(track, ratingOf, favoriteOf)))
       .toList();
 }
 
@@ -136,6 +159,9 @@ class _SearchTerm {
       'mood',
       'year',
       'rating',
+      'bpm',
+      'format',
+      'favorite',
     };
     // An unrecognized "field:" prefix (or a bare word that happens to
     // contain a colon, e.g. a time-formatted title) is treated as plain
@@ -144,7 +170,11 @@ class _SearchTerm {
     return _SearchTerm._(field, value);
   }
 
-  bool matches(BaseTrack track, int Function(String trackId)? ratingOf) {
+  bool matches(
+    BaseTrack track,
+    int Function(String trackId)? ratingOf,
+    bool Function(String trackId)? favoriteOf,
+  ) {
     final f = field;
     if (f == null) return _matchesFreeText(track, value);
     switch (f) {
@@ -163,6 +193,13 @@ class _SearchTerm {
       case 'rating':
         if (ratingOf == null) return false;
         return _matchesRating(ratingOf(track.id), value);
+      case 'bpm':
+        return _matchesBpm(track.bpm, value);
+      case 'format':
+        return _matchesFormat(track.codec, value);
+      case 'favorite':
+        if (favoriteOf == null) return false;
+        return _matchesFavorite(favoriteOf(track.id), value);
       default:
         return false;
     }
@@ -215,5 +252,58 @@ class _SearchTerm {
     }
     final exact = int.tryParse(value);
     return exact != null && trackRating == exact;
+  }
+
+  static final _bpmComparisonPattern =
+      RegExp(r'^(>=|<=|>|<)(-?\d+(?:\.\d+)?)$');
+
+  /// `bpm:120` (exact), `bpm:120..140` (inclusive range, same convention
+  /// [_matchesYear] uses), `bpm:>=120`/`bpm:<=140`/etc. (comparisons,
+  /// same operator set [_matchesRating] uses) — a separate comparison
+  /// regex from rating's since BPM is a `double`, not an `int`.
+  static bool _matchesBpm(double? trackBpm, String value) {
+    if (trackBpm == null) return false;
+    final range = value.split('..');
+    if (range.length == 2) {
+      final start = double.tryParse(range[0]);
+      final end = double.tryParse(range[1]);
+      if (start == null || end == null) return false;
+      return trackBpm >= start && trackBpm <= end;
+    }
+    final comparison = _bpmComparisonPattern.firstMatch(value);
+    if (comparison != null) {
+      final op = comparison.group(1)!;
+      final threshold = double.parse(comparison.group(2)!);
+      return switch (op) {
+        '>=' => trackBpm >= threshold,
+        '<=' => trackBpm <= threshold,
+        '>' => trackBpm > threshold,
+        '<' => trackBpm < threshold,
+        _ => false,
+      };
+    }
+    final exact = double.tryParse(value);
+    return exact != null && trackBpm == exact;
+  }
+
+  /// `format:flac` — an exact, case-insensitive match against
+  /// `BaseTrack.codec` (a short, discrete label like `"FLAC"`/`"MP3"`,
+  /// not free text), unlike the substring matching every string field
+  /// above uses — "format:mp3" shouldn't also match an "AAC" track just
+  /// because some unrelated field happened to contain "mp3" as a
+  /// substring, and codec labels are categorical, not prose.
+  static bool _matchesFormat(String? codec, String value) =>
+      codec != null && codec.toLowerCase() == value.toLowerCase();
+
+  /// `favorite:true`/`favorite:false` (also accepts `yes`/`no`/`1`/`0`,
+  /// the same forgiving spirit [_tokenize]'s unterminated-quote handling
+  /// already has). An unrecognized value matches nothing rather than
+  /// throwing — same "a bad query finds nothing, not a crash" contract
+  /// every other value parser in this file already has.
+  static bool _matchesFavorite(bool isFavorite, String value) {
+    final v = value.toLowerCase();
+    if (v == 'true' || v == 'yes' || v == '1') return isFavorite;
+    if (v == 'false' || v == 'no' || v == '0') return !isFavorite;
+    return false;
   }
 }
