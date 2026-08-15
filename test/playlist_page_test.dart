@@ -11,8 +11,11 @@ import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/playlist_page.dart';
+import 'package:omnis_plugins/smart_playlist_plugin.dart';
+import 'package:omnis_plugins/smart_playlist_rule.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
@@ -31,6 +34,9 @@ class _FakeEngine implements AudioEngine {
   final _trackController = StreamController<BaseTrack?>.broadcast();
   final _queueController = StreamController<List<BaseTrack>>.broadcast();
 
+  List<BaseTrack>? lastQueue;
+  bool playCalled = false;
+
   @override
   Stream<BaseTrack?> get trackStream => _trackController.stream;
 
@@ -42,6 +48,14 @@ class _FakeEngine implements AudioEngine {
 
   @override
   BaseTrack? get currentTrack => null;
+
+  @override
+  Future<void> setQueue(List<BaseTrack> tracks, {int startIndex = 0}) async {
+    lastQueue = tracks;
+  }
+
+  @override
+  Future<void> play() async => playCalled = true;
 
   @override
   noSuchMethod(Invocation invocation) =>
@@ -74,15 +88,20 @@ void main() {
         (await Directory.systemTemp.createTemp('omnis_playlist_page_test'))
             .path;
     PathProviderPlatform.instance = _FakePathProvider(tempDir);
+    SharedPreferences.setMockInitialValues({});
     await LibraryStore.instance.clear();
     await PlaylistStore.instance.save([]);
     await PlaylistFolderStore.instance.save(PlaylistFolderData.empty);
     LibraryRepository.instance.resetForTesting();
   });
 
-  Future<void> pumpPage(WidgetTester tester) async {
+  Future<void> pumpPage(WidgetTester tester,
+      {PluginManager? pluginManager, AudioEngine? engine}) async {
     await tester.pumpWidget(MaterialApp(
-      home: PlaylistPage(engine: _FakeEngine(), pluginManager: PluginManager()),
+      home: PlaylistPage(
+        engine: engine ?? _FakeEngine(),
+        pluginManager: pluginManager ?? PluginManager(),
+      ),
     ));
     await _settle(tester);
   }
@@ -302,6 +321,126 @@ void main() {
 
         final saved = await PlaylistFolderStore.instance.load();
         expect(saved.assignments, isEmpty);
+      });
+    });
+  });
+
+  group('Smart playlists on the Playlists page (item 42)', () {
+    testWidgets(
+        'no section appears when the Smart Playlists plugin is not '
+        'registered', (tester) async {
+      await tester.runAsync(() async {
+        final manager = PluginManager();
+        await pumpPage(tester, pluginManager: manager);
+
+        expect(find.text('Smart playlists'), findsNothing);
+      });
+    });
+
+    testWidgets(
+        'shows an empty-state message when the plugin is registered but '
+        'has no saved rules', (tester) async {
+      await tester.runAsync(() async {
+        final manager = PluginManager();
+        manager.register(SmartPlaylistPlugin());
+        await pumpPage(tester, pluginManager: manager);
+
+        expect(find.text('Smart playlists'), findsOneWidget);
+        expect(find.textContaining('No smart playlists yet'), findsOneWidget);
+      });
+    });
+
+    testWidgets('lists a saved rule by name with its match-type/condition '
+        'summary', (tester) async {
+      await tester.runAsync(() async {
+        final plugin = SmartPlaylistPlugin();
+        await plugin.saveRule(const SmartPlaylistRule(
+          id: 'r1',
+          name: 'Rock Favorites',
+          matchType: RuleMatchType.all,
+          conditions: [
+            RuleCondition(
+                field: RuleField.genre,
+                operator: RuleOperator.equals,
+                value: 'rock'),
+          ],
+        ));
+        final manager = PluginManager();
+        manager.register(plugin);
+        await pumpPage(tester, pluginManager: manager);
+
+        expect(find.text('Rock Favorites'), findsOneWidget);
+        expect(find.text('ALL of 1 condition'), findsOneWidget);
+      });
+    });
+
+    testWidgets(
+        'tapping a rule builds its queue from the current library and '
+        'plays it', (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance.save([
+          BaseTrack(
+            id: 't1',
+            title: 'Song',
+            artists: const ['Artist'],
+            album: 'Album',
+            duration: 180,
+            genres: const ['rock'],
+            type: TrackType.local,
+          ),
+        ]);
+        LibraryRepository.instance.resetForTesting();
+
+        final plugin = SmartPlaylistPlugin();
+        await plugin.saveRule(const SmartPlaylistRule(
+          id: 'r1',
+          name: 'Rock Favorites',
+          matchType: RuleMatchType.all,
+          conditions: [
+            RuleCondition(
+                field: RuleField.genre,
+                operator: RuleOperator.equals,
+                value: 'rock'),
+          ],
+        ));
+        final manager = PluginManager();
+        manager.register(plugin);
+        final engine = _FakeEngine();
+        await pumpPage(tester, pluginManager: manager, engine: engine);
+
+        await tester.tap(find.text('Rock Favorites'));
+        await _settle(tester);
+
+        expect(engine.lastQueue?.map((t) => t.id), ['t1']);
+        expect(engine.playCalled, isTrue);
+      });
+    });
+
+    testWidgets('deleting a rule removes it from the list and from the '
+        'plugin\'s own persistence', (tester) async {
+      await tester.runAsync(() async {
+        final plugin = SmartPlaylistPlugin();
+        await plugin.saveRule(const SmartPlaylistRule(
+          id: 'r1',
+          name: 'Rock Favorites',
+          matchType: RuleMatchType.all,
+          conditions: [
+            RuleCondition(
+                field: RuleField.genre,
+                operator: RuleOperator.equals,
+                value: 'rock'),
+          ],
+        ));
+        final manager = PluginManager();
+        manager.register(plugin);
+        await pumpPage(tester, pluginManager: manager);
+        expect(find.text('Rock Favorites'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Delete'));
+        await _settle(tester);
+
+        expect(find.text('Rock Favorites'), findsNothing);
+        expect(plugin.savedRules, isEmpty);
       });
     });
   });

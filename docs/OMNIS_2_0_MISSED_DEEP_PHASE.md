@@ -977,13 +977,16 @@ Saved rules are named, persisted (per-entry-defensively-decoded JSON,
 same convention as every other store in this app), and their membership
 is recomputed fresh against the live library every time they're played
 — not a fixed snapshot of track ids the way `PlaylistStore`'s ordinary
-playlists are. Reachable only from `SmartPlaylistPlugin`'s own settings
-page (create, play, delete) — **still missing**: no rule editing after
-creation (delete and recreate is the only path), no surfacing on the
-main Playlists page itself, no persistence as a real `PlaylistStore`
-entry a user could otherwise manage, no import/export, and the builder
-UI's string-field operator choice is narrower than the model
-(`contains` only, though `equals` works if constructed directly).
+playlists are. Rule editing after creation closed 2026-08-14 (an Edit
+button repopulates the create form and saves in place, reusing the
+rule's existing id) and surfacing on the main Playlists page closed
+2026-08-15 (a new "Smart playlists" section there, play/delete per
+rule, a "Manage" link deep-linking to the plugin's own settings page
+for create/edit rather than a second builder UI) — **still missing**:
+no persistence as a real `PlaylistStore` entry a user could otherwise
+manage, no import/export, and the builder UI's string-field operator
+choice is narrower than the model (`contains` only, though `equals`
+works if constructed directly).
 
 **43. AI** — Partial (closed 2026-08-13, was genuine 0%). The spec
 calls this "a major optional ecosystem" (§21) and names eight distinct

@@ -17,6 +17,9 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis_plugins/smart_playlist_plugin.dart';
+import 'package:omnis_plugins/smart_playlist_rule.dart';
+import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/queue_history_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
@@ -68,6 +71,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   FavoritesPlugin? get _favorites =>
       widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+
+  SmartPlaylistPlugin? get _smartPlaylists =>
+      widget.pluginManager.bundled<SmartPlaylistPlugin>(onlyEnabled: true);
 
   /// Looked up by interface, not by concrete plugin type — whatever is
   /// currently registered as `IPlayHistoryProvider` (today, always
@@ -608,6 +614,48 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _snack('Saved "$trimmed".');
   }
 
+  /// Builds [rule]'s membership fresh against the current library and
+  /// plays it — the same `buildQueueForRule` + `setQueue` + `play`
+  /// sequence `SmartPlaylistPlugin`'s own settings page already uses for
+  /// its "play" action, just reached from here too now.
+  Future<void> _playSmartPlaylist(
+      SmartPlaylistPlugin plugin, SmartPlaylistRule rule) async {
+    final queue = plugin.buildQueueForRule(_libraryTracks, rule.id);
+    if (queue.isEmpty) {
+      _snack('"${rule.name}" has no matching tracks right now.');
+      return;
+    }
+    await widget.engine.setQueue(queue);
+    await widget.engine.play();
+  }
+
+  Future<void> _deleteSmartPlaylist(
+      SmartPlaylistPlugin plugin, String ruleId) async {
+    await plugin.deleteRule(ruleId);
+    if (mounted) setState(() {});
+  }
+
+  /// Deep-links to the plugin's own settings page for create/edit —
+  /// deliberately not a second rule builder duplicated on this page.
+  /// Refreshes on return since a rule may have been added/edited/
+  /// deleted there.
+  Future<void> _manageSmartPlaylists() async {
+    final managed = widget.pluginManager.byId('smart_playlist');
+    if (managed == null) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => PluginSettingsPage(
+        pluginManager: widget.pluginManager,
+        plugin: managed,
+      ),
+    ));
+    if (mounted) setState(() {});
+  }
+
+  String _smartPlaylistSubtitle(SmartPlaylistRule rule) {
+    final count = rule.conditions.length;
+    return '${rule.matchType.name.toUpperCase()} of $count condition${count == 1 ? '' : 's'}';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -633,6 +681,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final scrobble = _playHistory;
     final recentCount = scrobble?.recentlyPlayed().length ?? 0;
     final mostPlayedCount = scrobble?.mostPlayedIds().length ?? 0;
+    final smartPlaylistPlugin = _smartPlaylists;
+    final smartRules = smartPlaylistPlugin?.savedRules ?? const <SmartPlaylistRule>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -705,6 +755,46 @@ class _PlaylistPageState extends State<PlaylistPage> {
               onTap: () => setState(() => _openSmart = _SmartList.mostPlayed),
             ),
           ),
+          if (smartPlaylistPlugin != null) ...[
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Smart playlists', style: theme.textTheme.titleMedium),
+                TextButton(
+                  onPressed: _manageSmartPlaylists,
+                  child: const Text('Manage'),
+                ),
+              ],
+            ),
+            if (smartRules.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'No smart playlists yet — create one in Smart Playlists '
+                  'settings.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              )
+            else
+              for (final rule in smartRules)
+                Card(
+                  child: ListTile(
+                    leading: const CircleAvatar(child: Icon(Icons.auto_awesome)),
+                    title: Text(rule.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(_smartPlaylistSubtitle(rule)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: 'Delete',
+                      onPressed: () =>
+                          _deleteSmartPlaylist(smartPlaylistPlugin, rule.id),
+                    ),
+                    onTap: () =>
+                        _playSmartPlaylist(smartPlaylistPlugin, rule),
+                  ),
+                ),
+          ],
           const SizedBox(height: 16),
           Text('Your playlists', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
