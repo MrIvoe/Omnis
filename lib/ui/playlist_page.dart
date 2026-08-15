@@ -30,6 +30,14 @@ import 'package:omnis/ui/widgets/track_artwork.dart';
 /// Musicolet's "top rated"/most-played lists.
 enum _SmartList { queue, favorites, recent, mostPlayed }
 
+/// A distinct type (not `PopupMenuButton<String>`, same as every
+/// rename/move/export/delete menu on this page) deliberately — existing
+/// widget tests locate a playlist row's own menu via
+/// `find.byType(PopupMenuButton<String>).last`, which would silently
+/// start resolving to this AppBar menu instead once it existed, since
+/// both share the same generic type otherwise.
+enum _ImportFormat { m3u, pls }
+
 /// Playlists screen.
 ///
 /// Previously this tab only ever showed the live playback queue — there
@@ -166,6 +174,29 @@ class _PlaylistPageState extends State<PlaylistPage> {
             '(${result.skippedCount} skipped — not in your local library).');
   }
 
+  /// Same shape as [_exportPlaylist], PLS instead of M3U8 — item 13's
+  /// "XSPF/PLS import/export" gap, PLS half.
+  Future<void> _exportPlaylistPls(Playlist playlist) async {
+    final result = PlaylistStore.instance.exportPLS(playlist, _libraryTracks);
+    final bytes = Uint8List.fromList(utf8.encode(result.content));
+    final safeName = playlist.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export playlist',
+      fileName: '$safeName.pls',
+      type: FileType.custom,
+      allowedExtensions: ['pls'],
+      bytes: bytes,
+    );
+    if (path == null) return;
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      await File(path).writeAsBytes(bytes);
+    }
+    _snack(result.skippedCount == 0
+        ? 'Exported ${result.writtenCount} tracks.'
+        : 'Exported ${result.writtenCount} tracks '
+            '(${result.skippedCount} skipped — not in your local library).');
+  }
+
   /// Imports an M3U/M3U8 file, matching its entries against the current
   /// library, and adds the result as a new playlist.
   Future<void> _importM3U() async {
@@ -215,6 +246,65 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
     final result = PlaylistStore.instance
         .importM3U(content, _libraryTracks, name: trimmed);
+    setState(() {
+      _playlists = [..._playlists, result.playlist];
+    });
+    await _savePlaylists();
+    _snack(result.skippedCount == 0
+        ? 'Imported ${result.matchedCount} tracks.'
+        : 'Imported ${result.matchedCount} tracks '
+            '(${result.skippedCount} not found in your library).');
+  }
+
+  /// Same shape as [_importM3U], PLS instead of M3U/M3U8 — item 13's
+  /// "XSPF/PLS import/export" gap, PLS half.
+  Future<void> _importPLS() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pls'],
+      withData: true,
+    );
+    final file = picked?.files.single;
+    if (file == null) return;
+
+    String? content;
+    if (file.bytes != null) {
+      content = utf8.decode(file.bytes!, allowMalformed: true);
+    } else if (file.path != null) {
+      content = await File(file.path!).readAsString();
+    }
+    if (content == null || !mounted) return;
+
+    final defaultName =
+        file.name.replaceAll(RegExp(r'\.pls$', caseSensitive: false), '');
+    final controller = TextEditingController(text: defaultName);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+
+    final result = PlaylistStore.instance
+        .importPLS(content, _libraryTracks, name: trimmed);
     setState(() {
       _playlists = [..._playlists, result.playlist];
     });
@@ -688,10 +778,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
       appBar: AppBar(
         title: const Text('Playlists'),
         actions: [
-          IconButton(
+          PopupMenuButton<_ImportFormat>(
             icon: const Icon(Icons.file_upload_outlined),
-            tooltip: 'Import M3U playlist',
-            onPressed: _importM3U,
+            tooltip: 'Import playlist',
+            onSelected: (value) {
+              if (value == _ImportFormat.m3u) _importM3U();
+              if (value == _ImportFormat.pls) _importPLS();
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                  value: _ImportFormat.m3u, child: Text('Import M3U…')),
+              PopupMenuItem(
+                  value: _ImportFormat.pls, child: Text('Import PLS…')),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),
@@ -896,12 +995,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
             if (value == 'rename') _renamePlaylist(playlist);
             if (value == 'move') _moveToFolder(playlist);
             if (value == 'export') _exportPlaylist(playlist);
+            if (value == 'export_pls') _exportPlaylistPls(playlist);
             if (value == 'delete') _deletePlaylist(playlist);
           },
           itemBuilder: (context) => const [
             PopupMenuItem(value: 'rename', child: Text('Rename')),
             PopupMenuItem(value: 'move', child: Text('Move to folder…')),
             PopupMenuItem(value: 'export', child: Text('Export as M3U')),
+            PopupMenuItem(value: 'export_pls', child: Text('Export as PLS')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
         ),
@@ -931,6 +1032,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               if (value == 'rename') _renamePlaylist(playlist);
               if (value == 'move') _moveToFolder(playlist);
               if (value == 'export') _exportPlaylist(playlist);
+              if (value == 'export_pls') _exportPlaylistPls(playlist);
               if (value == 'delete') _deletePlaylist(playlist);
             },
             itemBuilder: (context) => const [
@@ -938,6 +1040,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
               PopupMenuItem(value: 'move', child: Text('Move to folder…')),
               PopupMenuItem(
                   value: 'export', child: Text('Export as M3U')),
+              PopupMenuItem(
+                  value: 'export_pls', child: Text('Export as PLS')),
               PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
             ],
           ),

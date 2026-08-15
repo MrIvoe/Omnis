@@ -65,6 +65,44 @@ class M3UImportResult {
   });
 }
 
+/// Result of [PlaylistStore.exportPLS].
+class PLSExportResult {
+  /// The PLS file content, ready to write to disk.
+  final String content;
+
+  /// How many playlist entries were written.
+  final int writtenCount;
+
+  /// How many entries were skipped — same reasons as
+  /// [M3UExportResult.skippedCount].
+  final int skippedCount;
+
+  const PLSExportResult({
+    required this.content,
+    required this.writtenCount,
+    required this.skippedCount,
+  });
+}
+
+/// Result of [PlaylistStore.importPLS].
+class PLSImportResult {
+  /// The new playlist, built from whichever entries matched the current
+  /// library. Not yet saved — same contract as [M3UImportResult.playlist].
+  final Playlist playlist;
+
+  /// How many entries matched a track in the current library.
+  final int matchedCount;
+
+  /// How many entries didn't match.
+  final int skippedCount;
+
+  const PLSImportResult({
+    required this.playlist,
+    required this.matchedCount,
+    required this.skippedCount,
+  });
+}
+
 /// Persists named playlists to disk, the same load/save shape as
 /// `LibraryStore` — one JSON file in the app's documents directory, the
 /// caller owns the in-memory list and decides when to save.
@@ -211,6 +249,105 @@ class PlaylistStore {
       createdAt: DateTime.now(),
     );
     return M3UImportResult(
+      playlist: playlist,
+      matchedCount: trackIds.length,
+      skippedCount: skipped,
+    );
+  }
+
+  /// Matches a PLS `FileN=` entry line — the only PLS field this store
+  /// reads on import (`TitleN=`/`LengthN=` are display-only metadata a
+  /// player can regenerate from the resolved track itself, the same
+  /// reason [importM3U] only reads path lines and ignores `#EXTINF`).
+  /// Case-insensitive: real-world PLS files aren't perfectly consistent
+  /// about `File1=` vs. `file1=`. The `N` itself is never read — entries
+  /// are taken in file-line order, the same convention [importM3U]
+  /// already uses, rather than trusting `NumberOfEntries`/each line's own
+  /// index (a hand-edited or non-conforming file could have either wrong
+  /// without the entries themselves being any less readable).
+  static final _plsFileLine = RegExp(r'^File\d+\s*=\s*(.+)$', caseSensitive: false);
+
+  /// Renders [playlist] as PLS content, the same track-resolution rules
+  /// [exportM3U] uses (local tracks with a real file path only). PLS's
+  /// own format: a `[playlist]` header, `File`/`Title`/`Length` triples
+  /// numbered from 1, then `NumberOfEntries` and `Version=2` — see
+  /// http://forums.winamp.com/showthread.php?threadid=65772 (the format's
+  /// original, still-canonical spec).
+  PLSExportResult exportPLS(Playlist playlist, List<BaseTrack> tracks) {
+    final byId = {for (final t in tracks) t.id: t};
+    final entries = <BaseTrack>[];
+    var skipped = 0;
+    for (final id in playlist.trackIds) {
+      final track = byId[id];
+      if (track == null || track.type != TrackType.local || track.localPath == null) {
+        skipped++;
+        continue;
+      }
+      entries.add(track);
+    }
+    final buffer = StringBuffer('[playlist]\n');
+    for (var i = 0; i < entries.length; i++) {
+      final track = entries[i];
+      final n = i + 1;
+      final artist = track.artists.isNotEmpty ? track.artists.join(', ') : 'Unknown Artist';
+      buffer.writeln('File$n=${track.localPath}');
+      buffer.writeln('Title$n=$artist - ${track.title}');
+      buffer.writeln('Length$n=${track.duration}');
+    }
+    buffer.writeln('NumberOfEntries=${entries.length}');
+    buffer.writeln('Version=2');
+    return PLSExportResult(
+      content: buffer.toString(),
+      writtenCount: entries.length,
+      skippedCount: skipped,
+    );
+  }
+
+  /// Parses PLS [content] into a new playlist named [name] — the same
+  /// path-then-filename matching [importM3U] uses, since a PLS file
+  /// exported elsewhere commonly has paths that don't line up exactly on
+  /// this machine either. Never throws — a line that isn't a `FileN=`
+  /// entry (a `Title`/`Length`/`NumberOfEntries`/`Version` line, the
+  /// `[playlist]` header, a blank line) is simply not matched, not an
+  /// error.
+  ///
+  /// Not persisted — see [PLSImportResult.playlist]'s doc.
+  PLSImportResult importPLS(
+    String content,
+    List<BaseTrack> tracks, {
+    required String name,
+  }) {
+    final byPath = {
+      for (final t in tracks)
+        if (t.localPath != null) t.localPath!: t,
+    };
+    final byFilename = {
+      for (final t in tracks)
+        if (t.localPath != null) _basename(t.localPath!): t,
+    };
+
+    final trackIds = <String>[];
+    var skipped = 0;
+    for (final rawLine in const LineSplitter().convert(content)) {
+      final match = _plsFileLine.firstMatch(rawLine.trim());
+      if (match == null) continue;
+      final path = match.group(1)!.trim();
+      if (path.isEmpty) continue;
+      final track = byPath[path] ?? byFilename[_basename(path)];
+      if (track != null) {
+        trackIds.add(track.id);
+      } else {
+        skipped++;
+      }
+    }
+
+    final playlist = Playlist(
+      id: 'playlist_${DateTime.now().microsecondsSinceEpoch}',
+      name: name,
+      trackIds: trackIds,
+      createdAt: DateTime.now(),
+    );
+    return PLSImportResult(
       playlist: playlist,
       matchedCount: trackIds.length,
       skippedCount: skipped,

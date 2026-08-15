@@ -227,6 +227,154 @@ void main() {
     });
   });
 
+  group('PLS export/import (item 13)', () {
+    BaseTrack track(String id,
+            {String artist = 'Artist',
+            String title = 'Title',
+            bool local = true}) =>
+        BaseTrack(
+          id: id,
+          title: title,
+          artists: [artist],
+          album: 'Album',
+          duration: 200,
+          type: local ? TrackType.local : TrackType.youtube,
+          localPath: local ? '/music/${id}_file.mp3' : null,
+        );
+
+    test('exportPLS writes local tracks and skips the rest, with the '
+        'standard [playlist]/File/Title/Length/NumberOfEntries/Version '
+        'shape', () {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise'),
+        track('b', local: false),
+        track('c', artist: 'Bo', title: 'Dusk'),
+      ];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'b', 'c', 'missing'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportPLS(playlist, tracks);
+
+      expect(result.writtenCount, 2);
+      expect(result.skippedCount, 2);
+      expect(result.content, startsWith('[playlist]\n'));
+      expect(result.content, contains('File1=/music/a_file.mp3'));
+      expect(result.content, contains('Title1=Ava - Sunrise'));
+      expect(result.content, contains('Length1=200'));
+      expect(result.content, contains('File2=/music/c_file.mp3'));
+      expect(result.content, contains('Title2=Bo - Dusk'));
+      expect(result.content, contains('NumberOfEntries=2'));
+      expect(result.content, contains('Version=2'));
+      expect(result.content, isNot(contains('b_file')));
+    });
+
+    test('importPLS matches by exact path, then by filename fallback',
+        () async {
+      final tracks = [
+        track('a'), // localPath: /music/a_file.mp3
+        track('b'), // localPath: /music/b_file.mp3
+      ];
+      const content = '''
+[playlist]
+File1=/music/a_file.mp3
+Title1=Artist - Title
+Length1=200
+File2=/some/other/machine/path/b_file.mp3
+Title2=Artist - Title
+Length2=200
+File3=/does/not/exist.mp3
+Title3=Artist - Title
+Length3=200
+NumberOfEntries=3
+Version=2
+''';
+
+      final result = PlaylistStore.instance
+          .importPLS(content, tracks, name: 'Imported');
+
+      expect(result.matchedCount, 2);
+      expect(result.skippedCount, 1);
+      expect(result.playlist.name, 'Imported');
+      expect(result.playlist.trackIds, ['a', 'b']);
+    });
+
+    test('importPLS ignores Title/Length/NumberOfEntries/Version lines, '
+        'the [playlist] header, and blank lines — only File lines are '
+        'read', () async {
+      final tracks = [track('a')];
+      const content = '''
+[playlist]
+File1=/music/a_file.mp3
+Title1=Should not be read as a file
+Length1=200
+
+NumberOfEntries=1
+Version=2
+''';
+
+      final result =
+          PlaylistStore.instance.importPLS(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+      expect(result.playlist.trackIds, ['a']);
+    });
+
+    test('importPLS is case-insensitive on the File keyword — real-world '
+        'PLS files aren\'t perfectly consistent about capitalization',
+        () async {
+      final tracks = [track('a')];
+      const content = 'file1=/music/a_file.mp3\n';
+
+      final result =
+          PlaylistStore.instance.importPLS(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+    });
+
+    test('malformed lines are skipped, not fatal', () async {
+      final tracks = [track('a')];
+      const content = '''
+[playlist]
+not a valid PLS line at all
+File1=/music/a_file.mp3
+=missing key
+NumberOfEntries=1
+''';
+
+      final result =
+          PlaylistStore.instance.importPLS(content, tracks, name: 'X');
+
+      expect(result.matchedCount, 1);
+      expect(result.playlist.trackIds, ['a']);
+    });
+
+    test('a round trip through export then import recovers the same '
+        'tracks', () async {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise'),
+        track('c', artist: 'Bo', title: 'Dusk'),
+      ];
+      final original = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'c'],
+        createdAt: DateTime.now(),
+      );
+
+      final exported = PlaylistStore.instance.exportPLS(original, tracks);
+      final imported = PlaylistStore.instance
+          .importPLS(exported.content, tracks, name: 'Mix (imported)');
+
+      expect(imported.matchedCount, 2);
+      expect(imported.skippedCount, 0);
+      expect(imported.playlist.trackIds, ['a', 'c']);
+    });
+  });
+
   test('Playlist.copyWith replaces only the given fields', () {
     final playlist = Playlist(
       id: 'p1',
