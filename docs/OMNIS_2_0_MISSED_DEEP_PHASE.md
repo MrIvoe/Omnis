@@ -345,12 +345,20 @@ found this time, worth noting against AIFF's two, as a data point that
 getting the pattern right once (hand-packed independent-encoder tests,
 real header-format research) pays off on the next format.
 
-Still gaps: M4A/AAC and WMA still only get a codec label from their
-extension — full MP4-box/ASF-header parsing for those containers is
-real, separate work, deliberately not attempted here to avoid shipping
-wrong numbers (MP4's nested box structure and ASF's GUID-object layout
-both have more surface area than AIFF's single COMM chunk or Ogg's flat
-page format did). And the DSP/output half is still fully 0%:
+Still gaps (M4A closed 2026-08-14, the same day as this note's prior
+gap list): `AudioFormatReader._readM4a` now walks the real MP4 box
+tree (`moov`→`trak`→`mdia`→`minf`→`stbl`→`stsd`) to find the audio
+sample entry, reading AAC's real sample rate/channels from `esds`'s
+buried `AudioSpecificConfig` (overriding the sample entry's own
+placeholder legacy fields, a well-documented MP4 quirk) and ALAC's
+bit depth/channels/sample rate/bitrate directly from its magic-cookie
+box — see item 22's build-log entry for the full detail. A bare
+`.aac` file (an ADTS elementary stream, not an MP4 container at all)
+is still label-only, deliberately out of this scope. WMA is now the
+one remaining unparsed container — full ASF GUID-object header
+parsing is real, separate work, deliberately not attempted yet (its
+layout has more surface area than any format parsed so far, including
+M4A's box nesting). And the DSP/output half is still fully 0%:
 no source→DSP→resampling→output *chain* display, no exclusive/
 WASAPI-style output mode. Also found and left as-is (out of scope for
 this pass): `BaseTrack`'s `==`/`hashCode` compare list fields

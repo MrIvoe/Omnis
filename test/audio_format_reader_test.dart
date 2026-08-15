@@ -530,6 +530,339 @@ void main() {
     });
   });
 
+  /// Wraps [content] in an MP4 box (32-bit size + 4-char fourcc) — the
+  /// building block every other M4A helper below composes, encoding real
+  /// nesting rather than the reader's own box-walking logic run backwards.
+  List<int> mp4Box(String fourcc, List<int> content) {
+    final size = 8 + content.length;
+    return <int>[
+      (size >> 24) & 0xFF,
+      (size >> 16) & 0xFF,
+      (size >> 8) & 0xFF,
+      size & 0xFF,
+      ...fourcc.codeUnits,
+      ...content,
+    ];
+  }
+
+  List<int> u32(int value) => [
+        (value >> 24) & 0xFF,
+        (value >> 16) & 0xFF,
+        (value >> 8) & 0xFF,
+        value & 0xFF,
+      ];
+
+  List<int> u16(int value) => [(value >> 8) & 0xFF, value & 0xFF];
+
+  /// Builds a real (version 0) `mdhd` box — the fallback source for a
+  /// duration-derived bitrate when no more authoritative bitrate field
+  /// (AAC's `esds` average, ALAC's magic-cookie average) is present.
+  List<int> buildMdhd({required int timescale, required int duration}) {
+    return mp4Box('mdhd', <int>[
+      0, 0, 0, 0, // version + flags
+      0, 0, 0, 0, // creation_time
+      0, 0, 0, 0, // modification_time
+      ...u32(timescale),
+      ...u32(duration),
+      0, 0, // language
+      0, 0, // pre_defined
+    ]);
+  }
+
+  /// Builds a real `hdlr` box declaring [handlerType] (`'soun'` for
+  /// audio, `'vide'` for video) — what `AudioFormatReader._readM4a` uses
+  /// to find the real audio track among possibly several.
+  List<int> buildHdlr(String handlerType) {
+    return mp4Box('hdlr', <int>[
+      0, 0, 0, 0, // version + flags
+      0, 0, 0, 0, // pre_defined
+      ...handlerType.codeUnits,
+      ...List.filled(12, 0), // reserved
+      0, // empty name, null-terminated
+    ]);
+  }
+
+  /// Builds a real MPEG-4 `AudioSampleEntry` (version 0: the fixed
+  /// 28-byte legacy QuickTime sound-description fields, no extra
+  /// version-1 fields) with [fourcc] `mp4a` or `alac`, plus whatever
+  /// [children] boxes (an `esds` or a nested `alac` magic cookie) follow.
+  List<int> buildAudioSampleEntry(
+    String fourcc, {
+    required int legacyChannels,
+    required int legacySampleSize,
+    required int legacySampleRate,
+    List<int> children = const [],
+  }) {
+    return mp4Box(fourcc, <int>[
+      ...List.filled(6, 0), // reserved
+      0, 0, // data_reference_index
+      0, 0, // version (0 — children start right after these 28 bytes)
+      0, 0, // revision_level
+      0, 0, 0, 0, // vendor
+      ...u16(legacyChannels),
+      ...u16(legacySampleSize),
+      0, 0, // pre_defined
+      0, 0, // reserved
+      ...u32(legacySampleRate << 16),
+      ...children,
+    ]);
+  }
+
+  /// Builds a real `esds` box with a full `ES_Descriptor` →
+  /// `DecoderConfigDescriptor` → `DecoderSpecificInfo` (an
+  /// `AudioSpecificConfig` bitstream) chain — independently bit-packed,
+  /// not the reader's own decode logic run backwards. [freqIndex]/
+  /// [channelConfig] are AAC's own standard table indices (not raw Hz/
+  /// channel-count values), matching what a real encoder actually writes.
+  List<int> buildEsds({
+    required int freqIndex,
+    required int channelConfig,
+    required int avgBitrateBps,
+  }) {
+    const audioObjectType = 2; // AAC LC
+    final ascBits =
+        (audioObjectType << 11) | (freqIndex << 7) | (channelConfig << 3);
+    final asc = <int>[(ascBits >> 8) & 0xFF, ascBits & 0xFF];
+    final decoderSpecificInfo = <int>[0x05, asc.length, ...asc];
+
+    final decoderConfigContent = <int>[
+      0x40, // objectTypeIndication: AAC
+      0x15, // streamType(6)=5 (audio) | upStream(1)=0 | reserved(1)=1
+      0, 0, 0, // bufferSizeDB
+      ...u32(0), // maxBitrate (unused by the reader)
+      ...u32(avgBitrateBps),
+      ...decoderSpecificInfo,
+    ];
+    final decoderConfigDescr = <int>[
+      0x04,
+      decoderConfigContent.length,
+      ...decoderConfigContent,
+    ];
+
+    final esDescrContent = <int>[
+      0, 0, // ES_ID
+      0, // flags: no stream dependence / URL / OCR
+      ...decoderConfigDescr,
+      0x06, 1, 0x02, // minimal SLConfigDescriptor
+    ];
+    final esDescr = <int>[0x03, esDescrContent.length, ...esDescrContent];
+
+    return mp4Box('esds', <int>[0, 0, 0, 0, ...esDescr]);
+  }
+
+  /// Builds a real 24-byte `ALACSpecificConfig` "magic cookie" nested
+  /// inside an `alac` sample entry — independently of the reader's own
+  /// field offsets, unlike `esds`'s variable-length descriptors this is
+  /// a fixed layout ALAC muxers write directly.
+  List<int> buildAlacCookie({
+    required int sampleRate,
+    required int channels,
+    required int bitDepth,
+    required int avgBitrateBps,
+  }) {
+    return mp4Box('alac', <int>[
+      ...u32(4096), // frameLength
+      0, // compatibleVersion
+      bitDepth & 0xFF,
+      40, 10, 14, // pb, mb, kb — ALAC's internal Rice-coding params
+      channels & 0xFF,
+      ...u16(0), // maxRun
+      ...u32(0), // maxFrameBytes (unused by the reader)
+      ...u32(avgBitrateBps),
+      ...u32(sampleRate),
+    ]);
+  }
+
+  /// Builds a minimal but real video `trak` (just enough of `mdia`/
+  /// `hdlr` to declare a `vide` handler) — used to prove the reader
+  /// finds the *audio* track even when a video track appears first,
+  /// rather than assuming the first `trak` is always the right one.
+  List<int> buildVideoTrak() {
+    return mp4Box('trak', mp4Box('mdia', buildHdlr('vide')));
+  }
+
+  /// Assembles a minimal but real MP4 container — `ftyp` + `moov` (one
+  /// audio `trak` wrapping [sampleEntry] through real `mdia`/`mdhd`/
+  /// `hdlr`/`minf`/`stbl`/`stsd` nesting) + a dummy `mdat` — enough real
+  /// box structure for `AudioFormatReader._readM4a` to walk exactly the
+  /// way a real encoder's output would, without needing every other box
+  /// (`mvhd`, `tkhd`, ...) a real file also carries but this reader never
+  /// reads. [mdatBeforeMoov] proves the top-level scan doesn't assume
+  /// canonical box order — some muxers put `moov` after `mdat`.
+  List<int> buildM4aFile({
+    required List<int> sampleEntry,
+    int timescale = 44100,
+    int duration = 44100,
+    List<List<int>> extraTraksBeforeAudio = const [],
+    bool mdatBeforeMoov = false,
+  }) {
+    final stsd = mp4Box('stsd', <int>[
+      0, 0, 0, 0, // version + flags
+      ...u32(1), // entry_count
+      ...sampleEntry,
+    ]);
+    final minf = mp4Box('minf', mp4Box('stbl', stsd));
+    final mdia = mp4Box('mdia', <int>[
+      ...buildMdhd(timescale: timescale, duration: duration),
+      ...buildHdlr('soun'),
+      ...minf,
+    ]);
+    final audioTrak = mp4Box('trak', mdia);
+    final moov = mp4Box('moov', <int>[
+      ...extraTraksBeforeAudio.expand((t) => t),
+      ...audioTrak,
+    ]);
+    final ftyp = mp4Box(
+        'ftyp', <int>[...'M4A '.codeUnits, 0, 0, 0, 0, ...'M4A mp42isom'.codeUnits]);
+    final mdat = mp4Box('mdat', List.filled(8, 0));
+    return mdatBeforeMoov
+        ? <int>[...ftyp, ...mdat, ...moov]
+        : <int>[...ftyp, ...moov, ...mdat];
+  }
+
+  group('M4A/AAC/ALAC (item 22)', () {
+    test('reads AAC\'s real sample rate/channels from esds, overriding '
+        'the sample entry\'s placeholder legacy fields', () async {
+      final entry = buildAudioSampleEntry(
+        'mp4a',
+        legacyChannels: 2,
+        legacySampleSize: 16,
+        legacySampleRate: 44100,
+        children: buildEsds(
+          freqIndex: 3, // 48000 — deliberately different from the legacy field
+          channelConfig: 1, // mono — deliberately different from the legacy field
+          avgBitrateBps: 128000,
+        ),
+      );
+      final bytes = buildM4aFile(sampleEntry: entry);
+      final file = writeFile('song.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC (M4A)');
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 1);
+      expect(info.bitrateKbps, 128);
+      // AAC is lossy — no real fixed-width PCM bit depth to report.
+      expect(info.bitDepth, isNull);
+    });
+
+    test('falls back to the sample entry\'s legacy fields and a '
+        'duration-derived bitrate when esds is absent', () async {
+      final entry = buildAudioSampleEntry(
+        'mp4a',
+        legacyChannels: 2,
+        legacySampleSize: 16,
+        legacySampleRate: 44100,
+      );
+      final bytes = buildM4aFile(
+        sampleEntry: entry,
+        timescale: 44100,
+        duration: 44100 * 10, // exactly 10 seconds
+      );
+      final file = writeFile('no_esds.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC (M4A)');
+      expect(info.sampleRateHz, 44100);
+      expect(info.channels, 2);
+      expect(info.bitDepth, isNull);
+      final expectedBitrate = ((bytes.length * 8) / 10 / 1000).round();
+      expect(info.bitrateKbps, expectedBitrate);
+    });
+
+    test('reads ALAC\'s real bit depth/channels/sample rate/bitrate '
+        'directly from its magic cookie', () async {
+      final entry = buildAudioSampleEntry(
+        'alac',
+        legacyChannels: 2,
+        legacySampleSize: 16,
+        legacySampleRate: 44100,
+        children: buildAlacCookie(
+          sampleRate: 96000,
+          channels: 2,
+          bitDepth: 24,
+          avgBitrateBps: 900000,
+        ),
+      );
+      final bytes = buildM4aFile(sampleEntry: entry);
+      final file = writeFile('song_lossless.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'ALAC (M4A)');
+      expect(info.sampleRateHz, 96000);
+      expect(info.channels, 2);
+      expect(info.bitDepth, 24);
+      expect(info.bitrateKbps, 900);
+    });
+
+    test('finds the audio track even when a video track appears first',
+        () async {
+      final entry = buildAudioSampleEntry(
+        'mp4a',
+        legacyChannels: 1,
+        legacySampleSize: 16,
+        legacySampleRate: 22050,
+      );
+      final bytes = buildM4aFile(
+        sampleEntry: entry,
+        extraTraksBeforeAudio: [buildVideoTrak()],
+      );
+      final file = writeFile('with_video_track.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC (M4A)');
+      expect(info.sampleRateHz, 22050);
+      expect(info.channels, 1);
+    });
+
+    test('finds moov even when it appears after mdat (a streaming-'
+        'optimized layout)', () async {
+      final entry = buildAudioSampleEntry(
+        'alac',
+        legacyChannels: 2,
+        legacySampleSize: 16,
+        legacySampleRate: 44100,
+        children: buildAlacCookie(
+          sampleRate: 44100,
+          channels: 2,
+          bitDepth: 16,
+          avgBitrateBps: 700000,
+        ),
+      );
+      final bytes =
+          buildM4aFile(sampleEntry: entry, mdatBeforeMoov: true);
+      final file = writeFile('moov_after_mdat.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'ALAC (M4A)');
+      expect(info.sampleRateHz, 44100);
+      expect(info.bitDepth, 16);
+    });
+
+    test('labels an unrecognized sample-entry codec by its own fourcc',
+        () async {
+      final entry = buildAudioSampleEntry(
+        'ac-3',
+        legacyChannels: 6,
+        legacySampleSize: 16,
+        legacySampleRate: 48000,
+      );
+      final bytes = buildM4aFile(sampleEntry: entry);
+      final file = writeFile('surround.m4a', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'M4A (ac-3)');
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 6);
+    });
+  });
+
   group('MP3', () {
     test('reads sample rate/channels/CBR bitrate from a plain (non-VBR) '
         'frame header', () async {

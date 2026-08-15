@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 /// Real audio-format facts sniffed directly from a local file's own
 /// header bytes — codec/container, sample rate, bit depth, channel
@@ -22,6 +23,38 @@ class AudioFormatInfo {
   });
 
   static const unknown = AudioFormatInfo();
+}
+
+/// One immediate child box found by [AudioFormatReader._parseMp4Boxes]:
+/// its fourcc [type] plus the [start, end) content range within whatever
+/// buffer it was parsed from (already past that child's own header).
+class _Mp4Box {
+  final String type;
+  final int start;
+  final int end;
+  const _Mp4Box(this.type, this.start, this.end);
+}
+
+/// Result of [AudioFormatReader._parseEsds] — an AAC `esds` box's real,
+/// non-placeholder sample rate/channel count/average bitrate, whatever
+/// subset of them was actually present and parseable.
+class _EsdsInfo {
+  final int? sampleRate;
+  final int? channels;
+  final int? avgBitrateBps;
+  const _EsdsInfo({this.sampleRate, this.channels, this.avgBitrateBps});
+}
+
+/// Result of [AudioFormatReader._parseAlacCookie] — an ALAC magic
+/// cookie's directly-stored sample rate/channels/bit depth/average
+/// bitrate.
+class _AlacInfo {
+  final int? sampleRate;
+  final int? channels;
+  final int? bitDepth;
+  final int? avgBitrateBps;
+  const _AlacInfo(
+      {this.sampleRate, this.channels, this.bitDepth, this.avgBitrateBps});
 }
 
 /// Sniffs [AudioFormatInfo] straight from a local audio file's header —
@@ -59,7 +92,7 @@ class AudioFormatReader {
         case 'mp3':
           return await _readMp3(File(path));
         case 'm4a':
-          return const AudioFormatInfo(codec: 'AAC/ALAC (M4A)');
+          return await _readM4a(File(path));
         case 'aac':
           return const AudioFormatInfo(codec: 'AAC');
         case 'ogg':
@@ -379,6 +412,431 @@ class AudioFormatReader {
     } finally {
       await raf.close();
     }
+  }
+
+  /// Reads an M4A/MP4 container's `moov` atom to find the audio track's
+  /// real sample rate/channels/bit-depth/bitrate — an MP4 box tree, not a
+  /// linear chunk format like WAV/AIFF or a page format like Ogg, so this
+  /// walks `moov` → `trak` (the first one whose `mdia`/`hdlr` declares a
+  /// `soun` handler, tolerating a video track appearing first) → `mdia` →
+  /// `minf` → `stbl` → `stsd` → the first sample entry (`mp4a` for AAC,
+  /// `alac` for Apple Lossless, anything else reported by its own fourcc).
+  /// `moov` can appear anywhere in the file (some muxers put it after
+  /// `mdat`), so the top-level scan walks every box until it's found or
+  /// the file ends, without ever reading `mdat`'s actual audio data.
+  ///
+  /// The sample entry's own legacy fields (channel count/sample size/
+  /// sample rate, present in every `mp4a`/`alac` entry for backward
+  /// compatibility with pre-MP4 QuickTime) are read first, then
+  /// overridden with more authoritative values where they exist: AAC's
+  /// real sample rate/channel count live in `esds`'s buried
+  /// `AudioSpecificConfig` (the legacy fields are commonly just
+  /// placeholders for AAC specifically — a well-known MP4 quirk, not a
+  /// guess), and ALAC's nested `alac` magic-cookie box carries its own
+  /// authoritative bit depth (a real, meaningful field for a *lossless*
+  /// codec, unlike AAC) plus sample rate/channels/average bitrate
+  /// directly. AAC never gets a `bitDepth`, matching Ogg Vorbis/Opus's
+  /// existing stance in this reader: it's lossy, decoded at whatever
+  /// precision the decoder chooses, not a real fixed-width PCM value.
+  /// A missing/malformed `esds` or `alac` cookie falls back to the
+  /// legacy fields rather than losing everything already parsed; a
+  /// missing/zero average-bitrate field falls back to a duration-derived
+  /// estimate the same way FLAC's reader already does (`mdhd`'s
+  /// timescale/duration against the whole file size).
+  ///
+  /// A bare `.aac` file (an ADTS elementary stream, not an MP4 container
+  /// at all — a completely different frame-sync format, closer in shape
+  /// to MP3) is deliberately not handled here; that's real, separate work.
+  static Future<AudioFormatInfo> _readM4a(File file) async {
+    final raf = await file.open();
+    try {
+      final fileLength = await file.length();
+      final moovBytes = await _findTopLevelMp4Box(raf, fileLength, 'moov');
+      if (moovBytes == null) {
+        return const AudioFormatInfo(codec: 'AAC/ALAC (M4A)');
+      }
+      final moovChildren = _parseMp4Boxes(moovBytes);
+
+      _Mp4Box? audioTrak;
+      _Mp4Box? firstTrak;
+      for (final trak in moovChildren.where((b) => b.type == 'trak')) {
+        firstTrak ??= trak;
+        final trakBytes = moovBytes.sublist(trak.start, trak.end);
+        final mdia = _findMp4Box(_parseMp4Boxes(trakBytes), 'mdia');
+        if (mdia == null) continue;
+        final mdiaBytes = trakBytes.sublist(mdia.start, mdia.end);
+        final hdlr = _findMp4Box(_parseMp4Boxes(mdiaBytes), 'hdlr');
+        if (hdlr == null) continue;
+        final hdlrBytes = mdiaBytes.sublist(hdlr.start, hdlr.end);
+        if (hdlrBytes.length >= 12 &&
+            String.fromCharCodes(hdlrBytes.sublist(8, 12)) == 'soun') {
+          audioTrak = trak;
+          break;
+        }
+      }
+      final trak = audioTrak ?? firstTrak;
+      if (trak == null) return const AudioFormatInfo(codec: 'AAC/ALAC (M4A)');
+
+      final trakBytes = moovBytes.sublist(trak.start, trak.end);
+      final trakChildren = _parseMp4Boxes(trakBytes);
+      final mdiaBox = _findMp4Box(trakChildren, 'mdia');
+      if (mdiaBox == null) return const AudioFormatInfo(codec: 'AAC/ALAC (M4A)');
+      final mdiaBytes = trakBytes.sublist(mdiaBox.start, mdiaBox.end);
+      final mdiaChildren = _parseMp4Boxes(mdiaBytes);
+
+      int? timescale;
+      int? durationUnits;
+      final mdhdBox = _findMp4Box(mdiaChildren, 'mdhd');
+      if (mdhdBox != null) {
+        final mdhd = mdiaBytes.sublist(mdhdBox.start, mdhdBox.end);
+        if (mdhd.isNotEmpty && mdhd[0] == 1 && mdhd.length >= 32) {
+          timescale = _readU32(mdhd, 20);
+          durationUnits = _readU64(mdhd, 24);
+        } else if (mdhd.length >= 20) {
+          timescale = _readU32(mdhd, 12);
+          durationUnits = _readU32(mdhd, 16);
+        }
+      }
+
+      final minfBox = _findMp4Box(mdiaChildren, 'minf');
+      final stblBox = minfBox == null
+          ? null
+          : _findMp4Box(
+              _parseMp4Boxes(mdiaBytes.sublist(minfBox.start, minfBox.end)),
+              'stbl');
+      if (minfBox == null || stblBox == null) {
+        return AudioFormatInfo(
+            codec: 'AAC/ALAC (M4A)', sampleRateHz: timescale);
+      }
+      final minfBytes = mdiaBytes.sublist(minfBox.start, minfBox.end);
+      final stblBytes = minfBytes.sublist(stblBox.start, stblBox.end);
+      final stsdBox = _findMp4Box(_parseMp4Boxes(stblBytes), 'stsd');
+      if (stsdBox == null) {
+        return AudioFormatInfo(
+            codec: 'AAC/ALAC (M4A)', sampleRateHz: timescale);
+      }
+      final stsd = stblBytes.sublist(stsdBox.start, stsdBox.end);
+      if (stsd.length < 8) {
+        return AudioFormatInfo(
+            codec: 'AAC/ALAC (M4A)', sampleRateHz: timescale);
+      }
+      // FullBox header(4) + entry_count(4), then the sample entries.
+      final entriesBuf = stsd.sublist(8);
+      final sampleEntries = _parseMp4Boxes(entriesBuf);
+      if (sampleEntries.isEmpty) {
+        return AudioFormatInfo(
+            codec: 'AAC/ALAC (M4A)', sampleRateHz: timescale);
+      }
+      final entry = sampleEntries.first;
+      final entryType = entry.type;
+      final entryContent = entriesBuf.sublist(entry.start, entry.end);
+
+      final codec = switch (entryType) {
+        'mp4a' => 'AAC (M4A)',
+        'alac' => 'ALAC (M4A)',
+        _ => 'M4A ($entryType)',
+      };
+
+      int? channels;
+      int? sampleRate;
+      int? bitDepth;
+      int? bitrateBps;
+
+      if (entryContent.length >= 28) {
+        final legacyChannels = _readU16(entryContent, 16);
+        final legacySampleSize = _readU16(entryContent, 18);
+        final legacySampleRate = _readU32(entryContent, 24) >> 16;
+        channels = legacyChannels > 0 ? legacyChannels : null;
+        bitDepth = legacySampleSize > 0 ? legacySampleSize : null;
+        sampleRate = legacySampleRate > 0 ? legacySampleRate : null;
+        // AAC is lossy — decoded at whatever precision the decoder
+        // chooses, so the legacy sample-size field (a compatibility
+        // placeholder, usually 16) isn't a real number to report.
+        if (entryType == 'mp4a') bitDepth = null;
+
+        // version 0's children start right after the fixed 28-byte
+        // legacy fields; version 1 (rare for audio, common for some
+        // uncompressed variants) inserts 16 more bytes first. Version 2
+        // uses a different, larger layout not handled here — falls back
+        // to the legacy fields above rather than misreading children.
+        final version = _readU16(entryContent, 8);
+        final childrenStart =
+            version == 1 ? 44 : (version == 0 ? 28 : null);
+        if (childrenStart != null && entryContent.length > childrenStart) {
+          try {
+            final childBuf = entryContent.sublist(childrenStart);
+            final children = _parseMp4Boxes(childBuf);
+            if (entryType == 'mp4a') {
+              final esds = _findMp4Box(children, 'esds');
+              if (esds != null) {
+                final parsed =
+                    _parseEsds(childBuf.sublist(esds.start, esds.end));
+                if (parsed != null) {
+                  sampleRate = parsed.sampleRate ?? sampleRate;
+                  channels = parsed.channels ?? channels;
+                  bitrateBps = parsed.avgBitrateBps;
+                }
+              }
+            } else if (entryType == 'alac') {
+              final alac = _findMp4Box(children, 'alac');
+              if (alac != null) {
+                final parsed =
+                    _parseAlacCookie(childBuf.sublist(alac.start, alac.end));
+                if (parsed != null) {
+                  sampleRate = parsed.sampleRate ?? sampleRate;
+                  channels = parsed.channels ?? channels;
+                  bitDepth = parsed.bitDepth ?? bitDepth;
+                  bitrateBps = parsed.avgBitrateBps;
+                }
+              }
+            }
+          } catch (_) {
+            // Malformed nested box: keep the legacy-field values already
+            // read above rather than losing them too.
+          }
+        }
+      }
+
+      int? bitrateKbps = bitrateBps != null && bitrateBps > 0
+          ? (bitrateBps / 1000).round()
+          : null;
+      if (bitrateKbps == null &&
+          timescale != null &&
+          timescale > 0 &&
+          durationUnits != null &&
+          durationUnits > 0) {
+        final durationSeconds = durationUnits / timescale;
+        if (durationSeconds > 0) {
+          bitrateKbps = ((fileLength * 8) / durationSeconds / 1000).round();
+        }
+      }
+
+      return AudioFormatInfo(
+        codec: codec,
+        sampleRateHz: sampleRate,
+        bitDepth: bitDepth,
+        channels: channels,
+        bitrateKbps: bitrateKbps,
+      );
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// Scans top-level MP4 boxes from the start of the file until [type] is
+  /// found (or the file ends), returning just that box's content bytes
+  /// without ever reading past it — in particular, never reading `mdat`'s
+  /// actual audio-sample data, which can be the overwhelming majority of
+  /// the file. Handles the 64-bit box-size extension (`size == 1`,
+  /// followed by an 8-byte real size) since a large `mdat` earlier in the
+  /// file can legitimately need one, even though `moov` itself almost
+  /// never does.
+  static Future<Uint8List?> _findTopLevelMp4Box(
+      RandomAccessFile raf, int fileLength, String type) async {
+    var pos = 0;
+    while (pos + 8 <= fileLength) {
+      await raf.setPosition(pos);
+      final header = await raf.read(8);
+      if (header.length < 8) break;
+      var size = _readU32(header, 0);
+      final boxType = String.fromCharCodes(header.sublist(4, 8));
+      var headerSize = 8;
+      if (size == 1) {
+        final ext = await raf.read(8);
+        if (ext.length < 8) break;
+        size = _readU64(ext, 0);
+        headerSize = 16;
+      } else if (size == 0) {
+        size = fileLength - pos;
+      }
+      if (size < headerSize) break;
+      if (boxType == type) {
+        final contentSize = size - headerSize;
+        if (contentSize <= 0) return Uint8List(0);
+        await raf.setPosition(pos + headerSize);
+        return await raf.read(contentSize);
+      }
+      pos += size;
+    }
+    return null;
+  }
+
+  /// Parses a byte buffer that is itself the *content* of some parent MP4
+  /// box (i.e. already past that parent's own size+type header) into its
+  /// immediate child boxes — [_Mp4Box.start]/[_Mp4Box.end] are content
+  /// offsets within [bytes], each excluding that child's own header, so
+  /// they're ready to hand straight to this same function again one level
+  /// deeper. Stops (rather than throwing) at the first malformed or
+  /// truncated box, returning whatever real children were found before it.
+  static List<_Mp4Box> _parseMp4Boxes(List<int> bytes) {
+    final boxes = <_Mp4Box>[];
+    var pos = 0;
+    while (pos + 8 <= bytes.length) {
+      var size = _readU32(bytes, pos);
+      final type = String.fromCharCodes(bytes.sublist(pos + 4, pos + 8));
+      var headerSize = 8;
+      if (size == 1) {
+        if (pos + 16 > bytes.length) break;
+        size = _readU64(bytes, pos + 8);
+        headerSize = 16;
+      } else if (size == 0) {
+        size = bytes.length - pos;
+      }
+      if (size < headerSize) break;
+      final contentEnd = pos + size;
+      if (contentEnd > bytes.length) break;
+      boxes.add(_Mp4Box(type, pos + headerSize, contentEnd));
+      pos += size;
+    }
+    return boxes;
+  }
+
+  static _Mp4Box? _findMp4Box(List<_Mp4Box> boxes, String type) {
+    for (final box in boxes) {
+      if (box.type == type) return box;
+    }
+    return null;
+  }
+
+  static int _readU16(List<int> b, int off) => (b[off] << 8) | b[off + 1];
+
+  static int _readU32(List<int> b, int off) =>
+      (b[off] << 24) | (b[off + 1] << 16) | (b[off + 2] << 8) | b[off + 3];
+
+  static int _readU64(List<int> b, int off) {
+    var v = 0;
+    for (var i = 0; i < 8; i++) {
+      v = (v << 8) | b[off + i];
+    }
+    return v;
+  }
+
+  static const _aacSampleRates = [
+    96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
+    16000, 12000, 11025, 8000, 7350,
+  ];
+
+  /// Parses an `esds` box's content (already past its own size+type
+  /// header) down through the MPEG-4 descriptor chain — `ES_Descriptor`
+  /// → `DecoderConfigDescriptor` (real average bitrate lives here) →
+  /// `DecoderSpecificInfo` (an `AudioSpecificConfig` bitstream, read with
+  /// an MSB-first bit reader since it's not byte-aligned: 5-bit object
+  /// type, 4-bit sampling-frequency index — or an explicit 24-bit value
+  /// when the index is the escape value `0xF` — then a 4-bit channel
+  /// configuration). Each descriptor's length is itself a variable-length
+  /// base-128 encoding (continuation bit `0x80`), not a fixed field.
+  /// Returns whatever was successfully parsed even if a later piece (most
+  /// often `DecoderSpecificInfo`, which not every `esds` bothers writing)
+  /// is missing or malformed, rather than an all-or-nothing result.
+  static _EsdsInfo? _parseEsds(List<int> content) {
+    if (content.length < 5) return null;
+    var pos = 4; // FullBox version(1) + flags(3)
+
+    int readDescLen() {
+      var len = 0;
+      for (var i = 0; i < 4; i++) {
+        if (pos >= content.length) throw const FormatException('esds');
+        final b = content[pos++];
+        len = (len << 7) | (b & 0x7F);
+        if (b & 0x80 == 0) break;
+      }
+      return len;
+    }
+
+    if (pos >= content.length || content[pos] != 0x03) return null;
+    pos++; // ES_DescrTag
+    readDescLen();
+    pos += 2; // ES_ID
+    if (pos >= content.length) return null;
+    final flags = content[pos++];
+    if (flags & 0x80 != 0) pos += 2; // streamDependenceFlag
+    if (flags & 0x40 != 0) {
+      if (pos >= content.length) return null;
+      final urlLen = content[pos++];
+      pos += urlLen;
+    }
+    if (flags & 0x20 != 0) pos += 2; // OCR stream
+
+    if (pos >= content.length || content[pos] != 0x04) return null;
+    pos++; // DecoderConfigDescrTag
+    readDescLen();
+    pos += 1; // objectTypeIndication
+    pos += 1; // streamType/upStream/reserved
+    pos += 3; // bufferSizeDB
+    if (pos + 8 > content.length) return null;
+    pos += 4; // maxBitrate
+    final avgBitrate = _readU32(content, pos);
+    pos += 4;
+    final bitrateResult =
+        _EsdsInfo(avgBitrateBps: avgBitrate > 0 ? avgBitrate : null);
+
+    if (pos >= content.length || content[pos] != 0x05) return bitrateResult;
+    pos++; // DecoderSpecificInfoTag
+    final dsiLen = readDescLen();
+    if (dsiLen < 2 || pos + dsiLen > content.length) return bitrateResult;
+    final asc = content.sublist(pos, pos + dsiLen);
+
+    var bitPos = 0;
+    int readBits(int n) {
+      var v = 0;
+      for (var i = 0; i < n; i++) {
+        final byteIndex = bitPos ~/ 8;
+        if (byteIndex >= asc.length) throw const FormatException('asc');
+        final bitIndex = 7 - (bitPos % 8);
+        v = (v << 1) | ((asc[byteIndex] >> bitIndex) & 1);
+        bitPos++;
+      }
+      return v;
+    }
+
+    try {
+      final audioObjectType = readBits(5);
+      if (audioObjectType == 31) readBits(6); // extended type, unused here
+      final freqIndex = readBits(4);
+      int? sampleRate;
+      if (freqIndex == 0xF) {
+        sampleRate = readBits(24);
+      } else if (freqIndex < _aacSampleRates.length) {
+        sampleRate = _aacSampleRates[freqIndex];
+      }
+      final channelConfig = readBits(4);
+      int? channels;
+      if (channelConfig >= 1 && channelConfig <= 6) {
+        channels = channelConfig;
+      } else if (channelConfig == 7) {
+        channels = 8;
+      }
+      return _EsdsInfo(
+        sampleRate: sampleRate,
+        channels: channels,
+        avgBitrateBps: bitrateResult.avgBitrateBps,
+      );
+    } catch (_) {
+      return bitrateResult;
+    }
+  }
+
+  /// Parses an `ALACSpecificConfig` "magic cookie" (a 24-byte fixed
+  /// layout, unlike `esds`'s variable-length descriptors) nested inside
+  /// an `alac` sample entry: `frameLength`(4), `compatibleVersion`(1),
+  /// `bitDepth`(1), `pb`/`mb`/`kb`(1 each, ALAC's internal Rice-coding
+  /// parameters — not needed here), `numChannels`(1), `maxRun`(2),
+  /// `maxFrameBytes`(4), `avgBitRate`(4), `sampleRate`(4). Every field
+  /// this reader actually surfaces — bit depth, channels, sample rate,
+  /// bitrate — is stored directly and exactly, unlike AAC's `esds`: ALAC
+  /// is lossless, so there's no lossy-encoder-hint ambiguity to navigate.
+  static _AlacInfo? _parseAlacCookie(List<int> content) {
+    if (content.length < 24) return null;
+    final bitDepth = content[5];
+    final channels = content[9];
+    final avgBitRate = _readU32(content, 16);
+    final sampleRate = _readU32(content, 20);
+    return _AlacInfo(
+      sampleRate: sampleRate > 0 ? sampleRate : null,
+      channels: channels > 0 ? channels : null,
+      bitDepth: bitDepth > 0 ? bitDepth : null,
+      avgBitrateBps: avgBitRate > 0 ? avgBitRate : null,
+    );
   }
 
   static const _mpeg1Layer3Bitrates = [
