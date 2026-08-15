@@ -73,33 +73,56 @@ import 'package:omnis/core/base_track.dart';
 /// favorite:false
 /// ```
 ///
-/// This function stays deliberately plugin-free — [ratingOf]/[favoriteOf]
-/// are optional lookups the *caller* supplies, not a dependency this
-/// function reaches out for itself. Every `rating:`/`favorite:` term
-/// matches nothing when its lookup is omitted, the same "don't silently
-/// ignore a field the caller didn't wire up" stance [_SearchTerm.parse]
-/// already takes for an unknown field name.
+/// `bitrate:` reads straight off `BaseTrack.bitrateKbps` (populated by
+/// `AudioFormatReader`, same as `format:`) — exact/range/comparison,
+/// identical shape to `bpm:`:
+///
+/// ```text
+/// bitrate:320
+/// bitrate:>=1000            -> lossless-range territory
+/// bitrate:128..320
+/// ```
+///
+/// `lyrics:` needs a caller-supplied lookup — unlike [ratingOf]/
+/// [favoriteOf] (keyed by track id, since `RatingsPlugin`/
+/// `FavoritesPlugin` only ever need an id), [hasLyrics] takes the whole
+/// [BaseTrack], matching `LyricsPlugin.hasLyrics(BaseTrack)`'s own real
+/// signature exactly — `library_page.dart` passes it straight through:
+///
+/// ```text
+/// lyrics:true
+/// lyrics:false
+/// ```
+///
+/// This function stays deliberately plugin-free — [ratingOf]/
+/// [favoriteOf]/[hasLyrics] are optional lookups the *caller* supplies,
+/// not a dependency this function reaches out for itself. Every
+/// `rating:`/`favorite:`/`lyrics:` term matches nothing when its lookup
+/// is omitted, the same "don't silently ignore a field the caller
+/// didn't wire up" stance [_SearchTerm.parse] already takes for an
+/// unknown field name.
 ///
 /// Deliberately not yet supported (documented gaps, not oversights):
-/// `bitrate:`/`lyrics:`/`missing:`/`duplicate:` — each depends on a
-/// feature or data source that doesn't exist yet as a per-track
-/// queryable value (bitrate metadata is on `BaseTrack` but genuinely
-/// unbounded/continuous rather than a handful of discrete labels like
-/// `format:`, lyrics text isn't indexed, duplicate detection is a
-/// library-wide computation not a per-track field).
+/// `missing:`/`duplicate:` — both need a multi-value sub-field
+/// (`missing:artwork`/`missing:year`/...), a genuinely different shape
+/// from every boolean/numeric/string qualifier above, and duplicate
+/// detection specifically is a library-wide computation
+/// (`findDuplicateTracks`-style), not a per-track lookup any of the
+/// existing qualifier shapes can express.
 List<BaseTrack> filterTracks(
   List<BaseTrack> tracks,
   String query, {
   int Function(String trackId)? ratingOf,
   bool Function(String trackId)? favoriteOf,
+  bool Function(BaseTrack track)? hasLyrics,
 }) {
   final trimmed = query.trim();
   if (trimmed.isEmpty) return tracks;
 
   final terms = _tokenize(trimmed).map(_SearchTerm.parse).toList();
   return tracks
-      .where((track) =>
-          terms.every((term) => term.matches(track, ratingOf, favoriteOf)))
+      .where((track) => terms
+          .every((term) => term.matches(track, ratingOf, favoriteOf, hasLyrics)))
       .toList();
 }
 
@@ -162,6 +185,8 @@ class _SearchTerm {
       'bpm',
       'format',
       'favorite',
+      'bitrate',
+      'lyrics',
     };
     // An unrecognized "field:" prefix (or a bare word that happens to
     // contain a colon, e.g. a time-formatted title) is treated as plain
@@ -174,6 +199,7 @@ class _SearchTerm {
     BaseTrack track,
     int Function(String trackId)? ratingOf,
     bool Function(String trackId)? favoriteOf,
+    bool Function(BaseTrack track)? hasLyrics,
   ) {
     final f = field;
     if (f == null) return _matchesFreeText(track, value);
@@ -199,7 +225,12 @@ class _SearchTerm {
         return _matchesFormat(track.codec, value);
       case 'favorite':
         if (favoriteOf == null) return false;
-        return _matchesFavorite(favoriteOf(track.id), value);
+        return _matchesBoolean(favoriteOf(track.id), value);
+      case 'bitrate':
+        return _matchesBitrate(track.bitrateKbps, value);
+      case 'lyrics':
+        if (hasLyrics == null) return false;
+        return _matchesBoolean(hasLyrics(track), value);
       default:
         return false;
     }
@@ -295,15 +326,47 @@ class _SearchTerm {
   static bool _matchesFormat(String? codec, String value) =>
       codec != null && codec.toLowerCase() == value.toLowerCase();
 
-  /// `favorite:true`/`favorite:false` (also accepts `yes`/`no`/`1`/`0`,
-  /// the same forgiving spirit [_tokenize]'s unterminated-quote handling
-  /// already has). An unrecognized value matches nothing rather than
-  /// throwing — same "a bad query finds nothing, not a crash" contract
-  /// every other value parser in this file already has.
-  static bool _matchesFavorite(bool isFavorite, String value) {
+  /// Shared by `favorite:`/`lyrics:` — `true`/`false` (also accepts
+  /// `yes`/`no`/`1`/`0`, the same forgiving spirit [_tokenize]'s
+  /// unterminated-quote handling already has). An unrecognized value
+  /// matches nothing rather than throwing — same "a bad query finds
+  /// nothing, not a crash" contract every other value parser in this
+  /// file already has.
+  static bool _matchesBoolean(bool actual, String value) {
     final v = value.toLowerCase();
-    if (v == 'true' || v == 'yes' || v == '1') return isFavorite;
-    if (v == 'false' || v == 'no' || v == '0') return !isFavorite;
+    if (v == 'true' || v == 'yes' || v == '1') return actual;
+    if (v == 'false' || v == 'no' || v == '0') return !actual;
     return false;
+  }
+
+  static final _bitrateComparisonPattern = RegExp(r'^(>=|<=|>|<)(-?\d+)$');
+
+  /// `bitrate:320` (exact), `bitrate:128..320` (inclusive range),
+  /// `bitrate:>=1000`/etc. (comparisons) — same shape as [_matchesRating]
+  /// (both are `int`-valued), a separate pattern purely so this qualifier
+  /// isn't coupled to rating's regex if the two ever need to diverge.
+  static bool _matchesBitrate(int? trackBitrate, String value) {
+    if (trackBitrate == null) return false;
+    final range = value.split('..');
+    if (range.length == 2) {
+      final start = int.tryParse(range[0]);
+      final end = int.tryParse(range[1]);
+      if (start == null || end == null) return false;
+      return trackBitrate >= start && trackBitrate <= end;
+    }
+    final comparison = _bitrateComparisonPattern.firstMatch(value);
+    if (comparison != null) {
+      final op = comparison.group(1)!;
+      final threshold = int.parse(comparison.group(2)!);
+      return switch (op) {
+        '>=' => trackBitrate >= threshold,
+        '<=' => trackBitrate <= threshold,
+        '>' => trackBitrate > threshold,
+        '<' => trackBitrate < threshold,
+        _ => false,
+      };
+    }
+    final exact = int.tryParse(value);
+    return exact != null && trackBitrate == exact;
   }
 }

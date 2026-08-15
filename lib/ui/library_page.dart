@@ -16,6 +16,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis_plugins/lyrics_plugin.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
@@ -258,7 +259,11 @@ class _LibraryPageState extends State<LibraryPage> {
         _searchQuery,
         ratingOf: _ratingOf,
         favoriteOf: _isFavorite,
+        hasLyrics: _lyricsPlugin?.hasLyrics,
       );
+
+  LyricsPlugin? get _lyricsPlugin =>
+      widget.pluginManager.bundled<LyricsPlugin>(onlyEnabled: true);
 
   /// Track ids currently selected for a bulk action (delete duplicates,
   /// delete short files, ...). Selection mode is active whenever this is

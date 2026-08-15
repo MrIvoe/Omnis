@@ -12,6 +12,7 @@ BaseTrack _track({
   String? mood,
   double? bpm,
   String? codec,
+  int? bitrateKbps,
 }) =>
     BaseTrack(
       id: id,
@@ -25,6 +26,7 @@ BaseTrack _track({
       mood: mood,
       bpm: bpm,
       codec: codec,
+      bitrateKbps: bitrateKbps,
     );
 
 void main() {
@@ -134,11 +136,11 @@ void main() {
 
     test('an unrecognized field prefix falls back to free text instead '
         'of matching nothing', () {
-      // "bitrate:1000" isn't a supported field yet — must not silently
+      // "missing:artwork" isn't a supported field yet — must not silently
       // exclude every track just because of the unknown prefix.
-      final result = filterTracks(tracks, 'bitrate:1000');
+      final result = filterTracks(tracks, 'missing:artwork');
       expect(result, isEmpty); // no track's title/artist/album/genre
-      // contains the literal text "bitrate:1000", which is the correct
+      // contains the literal text "missing:artwork", which is the correct
       // free-text fallback behavior, not a crash or a `known field`
       // exception.
     });
@@ -337,6 +339,66 @@ void main() {
         filterTracks(tracks, 'favorite:maybe', favoriteOf: favoriteOf),
         isEmpty,
       );
+    });
+  });
+
+  group('filterTracks — bitrate field', () {
+    final tracks = [
+      _track(id: '1', bitrateKbps: 320),
+      _track(id: '2', bitrateKbps: 1411),
+      _track(id: '3'), // no bitrate at all
+    ];
+
+    test('exact match', () {
+      expect(filterTracks(tracks, 'bitrate:320').map((t) => t.id), ['1']);
+    });
+
+    test('inclusive range, same convention as bpm:/year:', () {
+      expect(
+        filterTracks(tracks, 'bitrate:200..500').map((t) => t.id),
+        ['1'],
+      );
+    });
+
+    test('comparison operators, e.g. finding lossless-range tracks', () {
+      expect(filterTracks(tracks, 'bitrate:>=1000').map((t) => t.id), ['2']);
+      expect(filterTracks(tracks, 'bitrate:<1000').map((t) => t.id), ['1']);
+    });
+
+    test('a track with no bitrate data never matches', () {
+      expect(filterTracks(tracks, 'bitrate:>=0').map((t) => t.id).toSet(),
+          {'1', '2'});
+    });
+
+    test('an unparseable bitrate value matches nothing rather than '
+        'throwing', () {
+      expect(filterTracks(tracks, 'bitrate:huge'), isEmpty);
+    });
+  });
+
+  group('filterTracks — lyrics field', () {
+    final tracks = [_track(id: '1'), _track(id: '2')];
+    bool hasLyrics(BaseTrack track) => track.id == '1';
+
+    test('lyrics:true matches only tracks with lyrics', () {
+      expect(
+        filterTracks(tracks, 'lyrics:true', hasLyrics: hasLyrics)
+            .map((t) => t.id),
+        ['1'],
+      );
+    });
+
+    test('lyrics:false matches only tracks without lyrics', () {
+      expect(
+        filterTracks(tracks, 'lyrics:false', hasLyrics: hasLyrics)
+            .map((t) => t.id),
+        ['2'],
+      );
+    });
+
+    test('every lyrics: term matches nothing when hasLyrics is omitted',
+        () {
+      expect(filterTracks(tracks, 'lyrics:true'), isEmpty);
     });
   });
 
