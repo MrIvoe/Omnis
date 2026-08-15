@@ -9,7 +9,9 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/radio_page.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/radio_plugin.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Spies on setQueue/play — same noSuchMethod-throws-if-unstubbed pattern
 /// home_dashboard_page_test.dart's own `_FakeEngine` uses.
@@ -56,6 +58,10 @@ Map<String, dynamic> _station(String uuid, String name) => {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   testWidgets('shows a disabled message when the Radio plugin is not '
       'registered', (tester) async {
@@ -164,5 +170,100 @@ void main() {
     expect(engine.lastQueue?[1].title, 'Beta FM');
     expect(engine.lastQueue?[1].type, TrackType.radio);
     expect(engine.playCalled, isTrue);
+  });
+
+  group('favoriting a station (item 41)', () {
+    testWidgets(
+        'tapping the favorite icon marks a station favorited and fills '
+        'the heart', (tester) async {
+      final client = MockClient((req) async {
+        return http.Response(
+          jsonEncode([_station('a', 'Alpha FM'), _station('b', 'Beta FM')]),
+          200,
+        );
+      });
+      final manager = PluginManager();
+      manager.register(RadioPlugin(client: client));
+      manager.register(FavoritesPlugin());
+
+      await tester.pumpWidget(MaterialApp(
+        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byIcon(Icons.favorite_border), findsNWidgets(2));
+      expect(find.byIcon(Icons.favorite), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.favorite_border).first);
+      await tester.pump();
+
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+      expect(
+        manager.bundled<FavoritesPlugin>()!.isFavorite('radio:a'),
+        isTrue,
+      );
+    });
+
+    testWidgets('tapping the favorite icon again un-favorites the station',
+        (tester) async {
+      final client = MockClient((req) async {
+        return http.Response(
+          jsonEncode([_station('a', 'Alpha FM')]),
+          200,
+        );
+      });
+      final manager = PluginManager();
+      manager.register(RadioPlugin(client: client));
+      manager.register(FavoritesPlugin());
+
+      await tester.pumpWidget(MaterialApp(
+        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pump();
+      expect(
+        manager.bundled<FavoritesPlugin>()!.isFavorite('radio:a'),
+        isTrue,
+      );
+
+      await tester.tap(find.byIcon(Icons.favorite));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.favorite), findsNothing);
+      expect(
+        manager.bundled<FavoritesPlugin>()!.isFavorite('radio:a'),
+        isFalse,
+      );
+    });
+
+    testWidgets(
+        'tapping the favorite icon with the Favorites plugin disabled '
+        'shows a message instead of crashing', (tester) async {
+      final client = MockClient((req) async {
+        return http.Response(jsonEncode([_station('a', 'Alpha FM')]), 200);
+      });
+      final manager = PluginManager();
+      manager.register(RadioPlugin(client: client));
+      // Favorites deliberately not registered — same shape as it being
+      // disabled in Settings, since `bundled` only ever sees registered
+      // plugins.
+
+      await tester.pumpWidget(MaterialApp(
+        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      ));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pump();
+
+      expect(find.text('The Favorites plugin is disabled in Settings.'),
+          findsOneWidget);
+    });
   });
 }

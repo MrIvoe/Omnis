@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/radio_plugin.dart';
 
 /// Internet Radio tab: search and browse live streaming stations via
@@ -36,6 +38,25 @@ class _RadioPageState extends State<RadioPage> {
 
   RadioPlugin? get _plugin =>
       widget.pluginManager.bundled<RadioPlugin>(onlyEnabled: true);
+
+  FavoritesPlugin? get _favoritesPlugin =>
+      widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+
+  bool _isFavorite(String stationId) =>
+      _favoritesPlugin?.isFavorite(stationId) ?? false;
+
+  Future<void> _toggleFavorite(String stationId) async {
+    final plugin = _favoritesPlugin;
+    if (plugin == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('The Favorites plugin is disabled in Settings.'),
+      ));
+      return;
+    }
+    OmnisHaptics.selectionClick();
+    await plugin.toggleFavorite(stationId);
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
@@ -176,10 +197,30 @@ class _RadioPageState extends State<RadioPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: isPlaying
-                                ? const Icon(Icons.graphic_eq,
-                                    color: Colors.deepPurple)
-                                : const Icon(Icons.play_circle_outline),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    _isFavorite(station.id)
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                  ),
+                                  color: _isFavorite(station.id)
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                  tooltip: _isFavorite(station.id)
+                                      ? 'Remove from favorites'
+                                      : 'Add to favorites',
+                                  onPressed: () =>
+                                      _toggleFavorite(station.id),
+                                ),
+                                isPlaying
+                                    ? const Icon(Icons.graphic_eq,
+                                        color: Colors.deepPurple)
+                                    : const Icon(Icons.play_circle_outline),
+                              ],
+                            ),
                             onTap: () => _play(index),
                           );
                         },

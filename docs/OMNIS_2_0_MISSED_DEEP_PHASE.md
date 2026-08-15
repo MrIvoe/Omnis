@@ -901,10 +901,17 @@ wrapped so a corrupted snapshot skips just that entry rather than
 breaking the whole load. 6 new tests, including a widget test that
 deliberately never calls `LibraryStore.save()` at all, so it can't
 accidentally pass via the old library-join path instead of proving the
-new snapshot fallback. No favorites integration for stations exists
-yet — genuinely still open, and a separate, larger piece of work than
-the history fix: `radio_page.dart` has no favorite-toggle UI for a
-station at all today, not just a data-model gap the way history's was.
+new snapshot fallback. Favorites integration closed 2026-08-14 too:
+`radio_page.dart` now has a real per-station heart-icon toggle backed
+by the same `FavoritesPlugin` every other track already uses. What's
+still genuinely open is narrower than before: the Playlists page's
+aggregate "Favorites" smart list only searches the scanned library, so
+a favorited-but-unscanned station is correctly marked favorite but
+still invisible in that one aggregate view — the same "recorded but
+not surfaced" shape as the history gap this section already describes,
+left unfixed here since `FavoritesPlugin` would need its own real
+snapshot-storage addition (it only persists ids today) to close it
+honestly, which is real, separate work.
 
 **42. Smart playlists** — Partial (the rule-engine gap closed
 2026-08-14). `SmartPlaylistPlugin` is still, as before, a flat,
