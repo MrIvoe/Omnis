@@ -47,7 +47,12 @@ class _RadioPageState extends State<RadioPage> {
   bool _isFavorite(String stationId) =>
       _favoritesPlugin?.isFavorite(stationId) ?? false;
 
-  Future<void> _toggleFavorite(String stationId) async {
+  /// [station] is passed through to [FavoritesPlugin.toggleFavorite] so a
+  /// newly-favorited station gets a real snapshot captured (a station is
+  /// never part of the scanned local library, so without one it would be
+  /// genuinely favorited but invisible in the Playlists page's aggregate
+  /// "Favorites" list).
+  Future<void> _toggleFavorite(BaseTrack station) async {
     final plugin = _favoritesPlugin;
     if (plugin == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -56,7 +61,7 @@ class _RadioPageState extends State<RadioPage> {
       return;
     }
     OmnisHaptics.selectionClick();
-    await plugin.toggleFavorite(stationId);
+    await plugin.toggleFavorite(station.id, track: station);
     if (mounted) setState(() {});
   }
 
@@ -331,7 +336,7 @@ class _RadioPageState extends State<RadioPage> {
             tooltip: _isFavorite(station.id)
                 ? 'Remove from favorites'
                 : 'Add to favorites',
-            onPressed: () => _toggleFavorite(station.id),
+            onPressed: () => _toggleFavorite(station),
           ),
           isPlaying
               ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
@@ -369,7 +374,7 @@ class _RadioPageState extends State<RadioPage> {
                 : null,
             tooltip:
                 _isFavorite(custom.id) ? 'Remove from favorites' : 'Add to favorites',
-            onPressed: () => _toggleFavorite(custom.id),
+            onPressed: () => _toggleFavorite(custom.toTrack()),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),

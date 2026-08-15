@@ -677,7 +677,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget _buildIndex() {
     final theme = Theme.of(context);
     final queue = widget.engine.queue;
-    final favorites = _favorites?.favoritesFrom(_libraryTracks) ?? const [];
+    final favorites = _favorites?.favoritesWithSnapshots(_libraryTracks) ?? const [];
     final scrobble = _playHistory;
     final recentCount = scrobble?.recentlyPlayed().length ?? 0;
     final mostPlayedCount = scrobble?.mostPlayedIds().length ?? 0;
@@ -990,7 +990,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
       _SmartList.favorites => (
           'Favorites',
-          _favorites?.favoritesFrom(_libraryTracks) ?? const <BaseTrack>[],
+          _favorites?.favoritesWithSnapshots(_libraryTracks) ?? const <BaseTrack>[],
           <String, String>{},
         ),
       _SmartList.recent => (

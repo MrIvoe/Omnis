@@ -126,7 +126,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
 
     final favorites = widget.pluginManager
             .bundled<FavoritesPlugin>(onlyEnabled: true)
-            ?.favoritesFrom(library) ??
+            ?.favoritesWithSnapshots(library) ??
         const <BaseTrack>[];
 
     if (!mounted) return;
