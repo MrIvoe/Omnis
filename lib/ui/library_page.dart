@@ -13,6 +13,7 @@ import 'package:omnis/core/library_search.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
@@ -408,6 +409,23 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _addToQueue(BaseTrack track) async {
     await widget.engine.addTrack(track);
     _toast('Added "${track.title}" to queue');
+  }
+
+  /// Item 40/§39's "Similar Track" recommendation — real BPM/key/mood/
+  /// genre distance via [findSimilarTracks], not a placeholder. A track
+  /// with no comparable analysis/enrichment data yet yields an empty
+  /// result, so this tells the user to run "Analyze audio"/"Look up
+  /// metadata" first rather than silently queueing an arbitrary shuffle.
+  Future<void> _playSimilar(BaseTrack track) async {
+    final similar = findSimilarTracks(track, _tracks);
+    if (similar.isEmpty) {
+      _toast('Not enough BPM/key/mood/genre data yet for "${track.title}" — '
+          'try "Analyze audio" or "Look up metadata" first.');
+      return;
+    }
+    final queue = [track, ...similar];
+    await widget.engine.setQueue(queue, startIndex: 0);
+    await widget.engine.playAt(0);
   }
 
   void _toast(String message) {
@@ -2272,6 +2290,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           onSelected: (value) {
                             if (value == 'play_next') _playNext(track);
                             if (value == 'add_to_queue') _addToQueue(track);
+                            if (value == 'play_similar') _playSimilar(track);
                             if (value == 'edit_tags') _editTags(track);
                             if (value == 'add_to_playlist') {
                               _addToPlaylist({track.id});
@@ -2290,6 +2309,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             PopupMenuItem(
                               value: 'add_to_queue',
                               child: Text('Add to queue'),
+                            ),
+                            PopupMenuItem(
+                              value: 'play_similar',
+                              child: Text('Play similar'),
                             ),
                             PopupMenuItem(
                               value: 'edit_tags',
