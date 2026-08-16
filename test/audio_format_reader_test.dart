@@ -957,6 +957,183 @@ void main() {
     });
   });
 
+  /// Builds one real, spec-correct ADTS frame header (+ a zero-filled
+  /// payload of [payloadLength] bytes) — the exact bit layout
+  /// `AudioFormatReader._readAdts` decodes, built independently here
+  /// (packing, not unpacking). [freqIndex]/[channelConfig] are the raw
+  /// 4-bit/3-bit field values (e.g. `4` -> 44100Hz per the MPEG-4
+  /// sampling-frequency table, `2` -> stereo). `bufferFullness` is set
+  /// to the common `0x7FF` ("unknown"/VBR) placeholder — parsed but
+  /// never surfaced by the reader, so its exact value doesn't matter
+  /// here.
+  List<int> buildAdtsFrame({
+    required int freqIndex,
+    required int channelConfig,
+    int profile = 1, // AAC LC
+    int numRawDataBlocks = 1,
+    int payloadLength = 50,
+    bool protectionAbsent = true,
+  }) {
+    const bufferFullness = 0x7FF;
+    final headerLength = protectionAbsent ? 7 : 9;
+    final frameLength = headerLength + payloadLength;
+    final bytes = List<int>.filled(frameLength, 0);
+    bytes[0] = 0xFF;
+    bytes[1] = 0xF0 | (protectionAbsent ? 1 : 0);
+    bytes[2] = ((profile & 0x3) << 6) |
+        ((freqIndex & 0xF) << 2) |
+        ((channelConfig >> 2) & 0x1);
+    bytes[3] = ((channelConfig & 0x3) << 6) | ((frameLength >> 11) & 0x3);
+    bytes[4] = (frameLength >> 3) & 0xFF;
+    bytes[5] = ((frameLength & 0x7) << 5) | ((bufferFullness >> 6) & 0x1F);
+    bytes[6] = ((bufferFullness & 0x3F) << 2) | ((numRawDataBlocks - 1) & 0x3);
+    return bytes;
+  }
+
+  group('ADTS AAC (item 22)', () {
+    test('reads real sample rate/channels from a single ADTS frame',
+        () async {
+      final bytes = buildAdtsFrame(freqIndex: 4, channelConfig: 2); // 44100Hz, stereo
+      final file = writeFile('song.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC (ADTS)');
+      expect(info.sampleRateHz, 44100);
+      expect(info.channels, 2);
+    });
+
+    test('a mono frame (channelConfig 1) reports 1 channel', () async {
+      final bytes = buildAdtsFrame(freqIndex: 3, channelConfig: 1); // 48000Hz, mono
+      final file = writeFile('mono.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.sampleRateHz, 48000);
+      expect(info.channels, 1);
+    });
+
+    test('channelConfig 7 reports 8 channels (7.1)', () async {
+      final bytes = buildAdtsFrame(freqIndex: 4, channelConfig: 7);
+      final file = writeFile('surround.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.channels, 8);
+    });
+
+    test('reports "AAC (ADTS, CRC)" when protection_absent is 0', () async {
+      final bytes =
+          buildAdtsFrame(freqIndex: 4, channelConfig: 2, protectionAbsent: false);
+      final file = writeFile('crc.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC (ADTS, CRC)');
+      expect(info.sampleRateHz, 44100);
+    });
+
+    test('computes a real average bitrate across consecutive frames in '
+        'the sampled window', () async {
+      const frameCount = 10;
+      const payloadLength = 100;
+      final frame = buildAdtsFrame(
+        freqIndex: 4, // 44100Hz
+        channelConfig: 2,
+        payloadLength: payloadLength,
+      );
+      final bytes = <int>[for (var i = 0; i < frameCount; i++) ...frame];
+      final file = writeFile('cbr.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      final totalBytes = frame.length * frameCount;
+      const totalSamples = 1024 * frameCount;
+      const durationSeconds = totalSamples / 44100;
+      final expectedBitrate =
+          ((totalBytes * 8) / durationSeconds / 1000).round();
+      expect(info.bitrateKbps, expectedBitrate);
+    });
+
+    test('numRawDataBlocks > 1 contributes extra samples to the bitrate '
+        'average', () async {
+      final frame = buildAdtsFrame(
+        freqIndex: 4,
+        channelConfig: 2,
+        numRawDataBlocks: 2, // 2 raw AAC frames bundled in this ADTS frame
+        payloadLength: 100,
+      );
+      final bytes = <int>[...frame, ...frame];
+      final file = writeFile('multiblock.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      // 2 frames * 2 raw data blocks each * 1024 samples/block.
+      const totalSamples = 1024 * 2 * 2;
+      const durationSeconds = totalSamples / 44100;
+      final expectedBitrate =
+          ((frame.length * 2 * 8) / durationSeconds / 1000).round();
+      expect(info.bitrateKbps, expectedBitrate);
+    });
+
+    test('a truncated trailing frame is excluded from the bitrate '
+        'average rather than under/over-counted', () async {
+      final frame = buildAdtsFrame(
+        freqIndex: 4,
+        channelConfig: 2,
+        payloadLength: 100,
+      );
+      // Two full frames, then a third frame's header claiming a
+      // frameLength that runs past the end of the file.
+      final truncated = frame.sublist(0, 20);
+      final bytes = <int>[...frame, ...frame, ...truncated];
+      final file = writeFile('truncated.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      // Only the 2 full frames should count.
+      final totalBytes = frame.length * 2;
+      const totalSamples = 1024 * 2;
+      const durationSeconds = totalSamples / 44100;
+      final expectedBitrate =
+          ((totalBytes * 8) / durationSeconds / 1000).round();
+      expect(info.bitrateKbps, expectedBitrate);
+      expect(info.sampleRateHz, 44100);
+    });
+
+    test('a reserved sampling-frequency index (13) is not reported as a '
+        'real sample rate — falls back to the plain AAC label', () async {
+      final bytes = buildAdtsFrame(freqIndex: 13, channelConfig: 2);
+      final file = writeFile('reserved.aac', bytes);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC');
+      expect(info.sampleRateHz, isNull);
+    });
+
+    test('a file with no valid ADTS sync at all degrades to the plain '
+        'AAC fallback, not a crash', () async {
+      final file = writeFile('garbage.aac', List.filled(64, 0x00));
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC');
+      expect(info.sampleRateHz, isNull);
+      expect(info.channels, isNull);
+      expect(info.bitrateKbps, isNull);
+    });
+
+    test('an empty file degrades to the plain AAC fallback, not a crash',
+        () async {
+      final file = writeFile('empty.aac', const []);
+
+      final info = await AudioFormatReader.read(file.path);
+
+      expect(info.codec, 'AAC');
+    });
+  });
+
   // ASF (WMA's container) GUIDs, written as their literal on-disk
   // mixed-endian byte sequence — independently of the reader's own
   // constants, not copy-pasted from them, so a mistake in the reader's

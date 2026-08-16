@@ -69,9 +69,9 @@ class _AlacInfo {
 /// average for AAC/WMA — Ogg deliberately doesn't get one: Vorbis's
 /// header "nominal bitrate" is an explicitly non-binding encoder hint,
 /// not a real number, and Opus's header carries no bitrate field at
-/// all). A bare `.aac` file (an ADTS elementary stream, not a container
-/// format at all) is the one remaining recognized extension left
-/// label-only — deliberately out of scope, see `_readM4a`'s doc comment.
+/// all). A bare `.aac` file (an ADTS elementary stream, not an MP4
+/// container — see `_readAdts`) is parsed too, for real sample rate/
+/// channels and a windowed-average bitrate.
 class AudioFormatReader {
   const AudioFormatReader._();
 
@@ -94,7 +94,7 @@ class AudioFormatReader {
         case 'm4a':
           return await _readM4a(File(path));
         case 'aac':
-          return const AudioFormatInfo(codec: 'AAC');
+          return await _readAdts(File(path));
         case 'ogg':
         case 'oga':
         case 'opus':
@@ -446,7 +446,7 @@ class AudioFormatReader {
   ///
   /// A bare `.aac` file (an ADTS elementary stream, not an MP4 container
   /// at all — a completely different frame-sync format, closer in shape
-  /// to MP3) is deliberately not handled here; that's real, separate work.
+  /// to MP3) is handled separately by `_readAdts`, not here.
   static Future<AudioFormatInfo> _readM4a(File file) async {
     final raf = await file.open();
     try {
@@ -1134,5 +1134,100 @@ class AudioFormatReader {
     final durationSeconds = totalFrames * samplesPerFrame / sampleRate;
     if (durationSeconds <= 0) return null;
     return ((fileLength * 8) / durationSeconds / 1000).round();
+  }
+
+  /// Reads a bare `.aac` file — an ADTS (Audio Data Transport Stream)
+  /// elementary stream, a linear sequence of self-describing frames with
+  /// no container at all, closer in shape to MP3's own frame-sync search
+  /// above than to M4A's box tree. Each frame's fixed 7-byte header (a
+  /// 2-byte CRC follows when `protection_absent` is 0, but every field
+  /// read here lives in the first 7 bytes regardless) carries the same
+  /// sampling-frequency-index/channel-configuration encoding `_parseEsds`
+  /// already reads out of a raw `AudioSpecificConfig` — reuses
+  /// [_aacSampleRates] rather than a second copy of that table.
+  ///
+  /// There is no file-wide duration/bitrate field anywhere in ADTS (no
+  /// `Xing`-style tag convention the way MP3 has one) — the same
+  /// "sample a bounded window rather than read the entire file" shape
+  /// `_readMp3`'s own 64KB scan already uses is applied here too: every
+  /// consecutive frame found within that window is summed (real frame
+  /// byte sizes, real sample counts via each frame's own
+  /// `number_of_raw_data_blocks` × 1024 samples/block) into a real,
+  /// honestly-computed average for that window — not necessarily the
+  /// whole file's true average for a heavily front-loaded VBR stream,
+  /// but a genuine derived number, not a guess.
+  static Future<AudioFormatInfo> _readAdts(File file) async {
+    final raf = await file.open();
+    try {
+      final fileLength = await file.length();
+      final windowSize = fileLength < 64 * 1024 ? fileLength : 64 * 1024;
+      final window = await raf.read(windowSize);
+
+      for (var i = 0; i + 7 <= window.length; i++) {
+        if (window[i] != 0xFF || (window[i + 1] & 0xF0) != 0xF0) continue;
+        final b1 = window[i + 1];
+        final b2 = window[i + 2];
+        final b3 = window[i + 3];
+
+        final protectionAbsent = b1 & 0x1;
+        final freqIndex = (b2 >> 2) & 0xF;
+        final channelConfig = ((b2 & 0x1) << 2) | ((b3 >> 6) & 0x3);
+
+        int? sampleRate;
+        if (freqIndex < _aacSampleRates.length) {
+          sampleRate = _aacSampleRates[freqIndex];
+        }
+        // A reserved/invalid frequency index means this sync-byte match
+        // wasn't really an ADTS header (false-positive 0xFFF bit pattern
+        // inside otherwise-unrelated bytes) — keep scanning rather than
+        // reporting a nonsensical result.
+        if (sampleRate == null) continue;
+
+        int? channels;
+        if (channelConfig >= 1 && channelConfig <= 6) {
+          channels = channelConfig;
+        } else if (channelConfig == 7) {
+          channels = 8;
+        }
+
+        var totalBytes = 0;
+        var totalSamples = 0;
+        var pos = i;
+        while (pos + 7 <= window.length) {
+          if (window[pos] != 0xFF || (window[pos + 1] & 0xF0) != 0xF0) break;
+          final fb3 = window[pos + 3];
+          final fb4 = window[pos + 4];
+          final fb5 = window[pos + 5];
+          final frameLength =
+              ((fb3 & 0x3) << 11) | (fb4 << 3) | ((fb5 >> 5) & 0x7);
+          // A real ADTS frame is at least 7 bytes (its own header);
+          // anything shorter, or one this window doesn't fully contain,
+          // ends the average-bitrate sum here rather than corrupting it.
+          if (frameLength < 7 || pos + frameLength > window.length) break;
+          final numRawBlocks = (window[pos + 6] & 0x3) + 1;
+          totalBytes += frameLength;
+          totalSamples += 1024 * numRawBlocks;
+          pos += frameLength;
+        }
+
+        int? bitrateKbps;
+        if (totalSamples > 0) {
+          final durationSeconds = totalSamples / sampleRate;
+          if (durationSeconds > 0) {
+            bitrateKbps = ((totalBytes * 8) / durationSeconds / 1000).round();
+          }
+        }
+
+        return AudioFormatInfo(
+          codec: protectionAbsent == 1 ? 'AAC (ADTS)' : 'AAC (ADTS, CRC)',
+          sampleRateHz: sampleRate,
+          channels: channels,
+          bitrateKbps: bitrateKbps,
+        );
+      }
+      return const AudioFormatInfo(codec: 'AAC');
+    } finally {
+      await raf.close();
+    }
   }
 }

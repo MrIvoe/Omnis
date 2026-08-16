@@ -227,10 +227,19 @@ void main() {
           LibraryCleanupAnalyzer.analyze(tracks).corruptFiles, isEmpty);
     });
 
-    test('a bare .aac file (deliberately unparsed) is never flagged as '
-        'corrupt', () {
+    test('a bare .aac file with no codec is flagged as corrupt, now that '
+        'AudioFormatReader parses ADTS for real', () {
       final tracks = [
         track(id: '1', localPath: '/music/song.aac', codec: null),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).corruptFiles,
+          hasLength(1));
+    });
+
+    test('a successfully-parsed .aac (ADTS) track is never flagged', () {
+      final tracks = [
+        track(id: '1', localPath: '/music/song.aac', codec: 'AAC (ADTS)'),
       ];
 
       expect(

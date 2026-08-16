@@ -133,7 +133,7 @@ const _fullyParsedExtensions = {
   'flac', 'wav', 'mp3', //
   'aiff', 'aif', 'aifc',
   'ogg', 'oga', 'opus',
-  'm4a',
+  'm4a', 'aac',
   'wma',
 };
 
@@ -320,7 +320,10 @@ class LibraryCleanupAnalyzer {
   /// already applies. `AAC/ALAC (M4A)` is deliberately excluded: it's a
   /// container, not a codec, and can hold either lossy AAC or lossless
   /// ALAC — flagging it either way would be a guess, not a finding.
-  static const _lossyCodecs = {'MP3', 'Ogg', 'Ogg Vorbis', 'Opus', 'WMA', 'AAC'};
+  static const _lossyCodecs = {
+    'MP3', 'Ogg', 'Ogg Vorbis', 'Opus', 'WMA', 'AAC', //
+    'AAC (ADTS)', 'AAC (ADTS, CRC)',
+  };
 
   /// A local track encoded in a known-lossy format below
   /// [lowQualityBitrateThresholdKbps] — spec §9's "Low-quality files"

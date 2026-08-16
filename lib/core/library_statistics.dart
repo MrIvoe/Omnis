@@ -59,7 +59,10 @@ class LibraryStatistics {
   });
 
   static const _losslessCodecs = {'FLAC', 'WAV'};
-  static const _lossyCodecs = {'MP3', 'Ogg', 'Ogg Vorbis', 'Opus', 'WMA', 'AAC'};
+  static const _lossyCodecs = {
+    'MP3', 'Ogg', 'Ogg Vorbis', 'Opus', 'WMA', 'AAC', //
+    'AAC (ADTS)', 'AAC (ADTS, CRC)',
+  };
 
   static LibraryStatistics compute(List<BaseTrack> tracks) {
     if (tracks.isEmpty) {
