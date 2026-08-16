@@ -7,11 +7,15 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/home_widget_service.dart';
+import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/playback_diagnostics.dart';
+import 'package:omnis/core/playback_schedule.dart';
+import 'package:omnis/core/playback_scheduler.dart';
 import 'package:omnis/core/playback_state.dart';
 import 'package:omnis/core/playback_watchdog.dart';
+import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_history_store.dart';
@@ -74,6 +78,20 @@ class MainCore {
   /// long time, which is exactly the case a power-loss/OS-kill needs
   /// covered too.
   Timer? _journalTimer;
+
+  /// Ticks once a minute to check for a due [PlaybackSchedule] —
+  /// MusicBee comparison §43's scheduling gap. Runs at the same
+  /// granularity a schedule's own [PlaybackSchedule.minuteOfDay]
+  /// resolution supports; the actual due/dedup decision is pure logic
+  /// in [PlaybackScheduler.dueSchedules], this timer is just the clock.
+  Timer? _scheduleTimer;
+
+  /// In-memory only, deliberately not persisted — an app restart simply
+  /// re-allows every schedule to fire again today, which is harmless
+  /// (worst case: one schedule replays once more the same day after a
+  /// restart) and far simpler than a store field that would need its
+  /// own migration/reset story.
+  final Map<String, DateTime> _scheduleLastFiredAt = {};
 
   /// Constructor.
   MainCore()
@@ -201,6 +219,13 @@ class MainCore {
       RecoveryJournal.instance.save(_audioEngine.captureState());
     });
 
+    // MusicBee comparison §43's scheduling gap. A no-op tick whenever
+    // there are no saved schedules — see [_checkPlaybackSchedules].
+    _scheduleTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      // ignore: unawaited_futures
+      _checkPlaybackSchedules();
+    });
+
     // Mirror track/play-state into the Android home-screen widget. Core,
     // not plugin-dependent — same reasoning as PlayHistoryStore/
     // RecoveryJournal above.
@@ -234,12 +259,59 @@ class MainCore {
     debugPrint('Omnis Core initialized successfully');
   }
 
+  /// Checks whether any saved [PlaybackSchedule] is due right now — the
+  /// [_scheduleTimer]'s once-a-minute callback. A due schedule with a
+  /// [PlaybackSchedule.playlistId] resolves that playlist against the
+  /// current library and replaces the queue with it; one with no
+  /// playlist just resumes whatever's already queued. Never throws — a
+  /// scheduling failure must never crash the app, the same "denial
+  /// degrades" contract every other best-effort background task in this
+  /// file already follows.
+  Future<void> _checkPlaybackSchedules() async {
+    try {
+      final schedules = await PlaybackScheduleStore.instance.load();
+      if (schedules.isEmpty) return;
+      final now = DateTime.now();
+      final due = PlaybackScheduler.dueSchedules(
+          schedules, now, _scheduleLastFiredAt);
+      for (final schedule in due) {
+        _scheduleLastFiredAt[schedule.id] = now;
+        final playlistId = schedule.playlistId;
+        if (playlistId != null) {
+          final playlists = await PlaylistStore.instance.load();
+          Playlist? playlist;
+          for (final p in playlists) {
+            if (p.id == playlistId) {
+              playlist = p;
+              break;
+            }
+          }
+          if (playlist != null) {
+            final library = await LibraryRepository.instance.load();
+            final byId = {for (final t in library) t.id: t};
+            final tracks = [
+              for (final id in playlist.trackIds)
+                if (byId[id] != null) byId[id]!
+            ];
+            if (tracks.isNotEmpty) {
+              await _audioEngine.setQueue(tracks);
+            }
+          }
+        }
+        await _audioEngine.play();
+      }
+    } catch (e) {
+      // Best-effort; a scheduling failure must never crash the app.
+    }
+  }
+
   /// Dispose the core engine.
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
     debugPrint('Disposing Omnis Core...');
     _journalTimer?.cancel();
+    _scheduleTimer?.cancel();
     await _positionSub?.cancel();
     await _durationSub?.cancel();
     await _playerStateSub?.cancel();

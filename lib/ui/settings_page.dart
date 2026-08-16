@@ -11,6 +11,7 @@ import 'package:omnis/ui/settings/backup_settings_page.dart';
 import 'package:omnis/ui/settings/controls_settings_page.dart';
 import 'package:omnis/ui/settings/keyboard_settings_page.dart';
 import 'package:omnis/ui/settings/library_settings_page.dart';
+import 'package:omnis/ui/settings/playback_schedule_page.dart';
 import 'package:omnis/ui/settings/playback_settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/omnis_spacing.dart';
@@ -128,6 +129,11 @@ class _SettingsPageState extends State<SettingsPage> {
   void _openBackup(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const BackupSettingsPage(),
+      ));
+
+  void _openPlaybackSchedule(BuildContext context) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const PlaybackSchedulePage(),
       ));
 
   /// The individual settings a search can match, each pointing back at
@@ -370,6 +376,11 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Backup',
             categoryIcon: Icons.backup_outlined,
             navigate: _openBackup),
+        _SearchableSetting(
+            title: 'Scheduled Playback',
+            category: 'Scheduled Playback',
+            categoryIcon: Icons.schedule_outlined,
+            navigate: _openPlaybackSchedule),
       ];
 
   @override
@@ -477,6 +488,13 @@ class _SettingsPageState extends State<SettingsPage> {
               title: 'Backup',
               subtitle: 'Save or restore your library, playlists, and history',
               onTap: () => _openBackup(context),
+            ),
+            _CategoryCard(
+              icon: Icons.schedule_outlined,
+              title: 'Scheduled Playback',
+              subtitle: 'Start playback automatically at a set time, on '
+                  'chosen days',
+              onTap: () => _openPlaybackSchedule(context),
             ),
             OmnisSpacing.gapSm,
             // A generic extension point: any plugin can inject something
