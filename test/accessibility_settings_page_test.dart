@@ -54,4 +54,43 @@ void main() {
 
     expect(find.text('High contrast'), findsOneWidget);
   });
+
+  testWidgets('Text size slider renders and defaults to the persisted '
+      '100%', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: AccessibilitySettingsPage(),
+    ));
+    await tester.pump();
+
+    expect(find.text('Text size'), findsOneWidget);
+    final slider = tester.widget<Slider>(find.byType(Slider));
+    expect(slider.value, 1.0);
+  });
+
+  testWidgets('dragging the text size slider persists a new '
+      'textScaleFactor', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: AccessibilitySettingsPage(),
+    ));
+    await tester.pump();
+
+    final slider = find.byType(Slider);
+    // Drag to the far right end — the max (1.5) is unambiguous
+    // regardless of the slider's exact pixel width, unlike a partial
+    // drag whose landed value would depend on layout specifics.
+    await tester.drag(slider, const Offset(500, 0));
+    await tester.pump();
+
+    expect(AppSettings.instance.textScaleFactor, 1.5);
+  });
+
+  testWidgets('opening with highlightField: "text_size" scrolls to and '
+      'flashes that row without throwing', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: AccessibilitySettingsPage(highlightField: 'text_size'),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Text size'), findsOneWidget);
+  });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/text_scale.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
 /// Accessibility: motion sensitivity and input, surfaced as its own
@@ -27,6 +28,7 @@ class _AccessibilitySettingsPageState
   final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
     for (final field in [
       'high_contrast',
+      'text_size',
       'reduce_motion',
       'reduce_transparency',
       'haptic_feedback',
@@ -61,6 +63,35 @@ class _AccessibilitySettingsPageState
               value: settings.highContrastEnabled,
               onChanged: (value) =>
                   setState(() => settings.highContrastEnabled = value),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['text_size'],
+            child: ListTile(
+              title: const Text('Text size'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'App-wide, distinct from the lyrics view\'s own size',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  Slider(
+                    value: clampTextScale(settings.textScaleFactor),
+                    min: 0.85,
+                    max: 1.5,
+                    divisions: 13,
+                    label:
+                        '${(settings.textScaleFactor * 100).round()}%',
+                    onChanged: (value) =>
+                        setState(() => settings.textScaleFactor = value),
+                  ),
+                  Text(
+                    'The quick brown fox jumps over the lazy dog.',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

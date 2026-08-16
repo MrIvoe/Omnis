@@ -200,6 +200,13 @@ class _SettingsPageState extends State<SettingsPage> {
             navigate: (c) =>
                 _openAccessibility(c, highlightField: 'high_contrast')),
         _SearchableSetting(
+            title: 'Text size',
+            category: 'Accessibility',
+            categoryIcon: Icons.accessibility_new_outlined,
+            highlightField: 'text_size',
+            navigate: (c) =>
+                _openAccessibility(c, highlightField: 'text_size')),
+        _SearchableSetting(
             title: 'Haptic feedback',
             category: 'Accessibility',
             categoryIcon: Icons.accessibility_new_outlined,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnis/core/text_scale.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // `RepeatMode` moved to `omnis_plugin_api` (see that package's
@@ -46,6 +47,7 @@ class AppSettings extends ChangeNotifier {
   static const _themePresetKey = 'app_theme_preset';
   static const _accentColorKey = 'app_accent_color';
   static const _albumArtScaleKey = 'app_album_art_scale';
+  static const _textScaleFactorKey = 'app_text_scale_factor';
   static const _showAlbumArtKey = 'app_show_album_art';
   static const _showLyricsKey = 'app_show_lyrics';
   static const _karaokeModeKey = 'app_karaoke_mode';
@@ -198,6 +200,24 @@ class AppSettings extends ChangeNotifier {
   set albumArtScale(double scale) {
     _ensurePrefs();
     _prefs!.setDouble(_albumArtScaleKey, scale.clamp(0.7, 1.4));
+    notifyListeners();
+  }
+
+  /// App-wide UI text scale — spec §58's "app-wide text scaling" gap
+  /// (item 48): distinct from [lyricsTextSize] (scoped to just the
+  /// lyrics view) and a declarative theme's own fixed
+  /// `ThemeManifest.textScale` (an imported theme *author*'s choice,
+  /// not a user preference). Defaults to `1.0` — no change from
+  /// whatever the platform would otherwise render. Applied via
+  /// `MaterialApp.builder` in `main.dart` using [clampTextScale] to
+  /// keep the persisted value itself in the same safe range even if
+  /// something else wrote to this key directly.
+  double get textScaleFactor =>
+      _prefs?.getDouble(_textScaleFactorKey) ?? 1.0;
+
+  set textScaleFactor(double value) {
+    _ensurePrefs();
+    _prefs!.setDouble(_textScaleFactorKey, clampTextScale(value));
     notifyListeners();
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/text_scale.dart';
 import 'package:omnis/l10n/generated/app_localizations.dart';
 import 'package:omnis/ui/home_page.dart';
 import 'package:omnis/ui/onboarding/onboarding_page.dart';
@@ -113,6 +114,19 @@ class _OmnisAppState extends State<OmnisApp> {
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: settings.themeMode,
+      // App-wide text scaling (spec §58/item 48) — overrides whatever
+      // the platform reports with the user's own chosen factor, the
+      // same "intercept via MediaQuery" mechanism Flutter itself uses
+      // for OS-level text scaling, just user-controlled instead of
+      // OS-controlled. `clampTextScale` keeps this safe even if the
+      // persisted value somehow ended up outside the intended range.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler:
+              TextScaler.linear(clampTextScale(settings.textScaleFactor)),
+        ),
+        child: child!,
+      ),
       // Scaffolding only for now (English-only, see l10n.yaml/lib/l10n/) —
       // wired through the new Settings search and onboarding screens,
       // not retrofitted across the rest of the app yet.

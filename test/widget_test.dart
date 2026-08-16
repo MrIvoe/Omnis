@@ -102,6 +102,22 @@ void main() {
     expect(AppSettings.instance.highContrastEnabled, isTrue);
   });
 
+  test('AppSettings persists textScaleFactor, default 1.0, clamped on '
+      'write', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.textScaleFactor, 1.0);
+
+    AppSettings.instance.textScaleFactor = 1.2;
+    expect(AppSettings.instance.textScaleFactor, 1.2);
+
+    // Out-of-range writes clamp rather than persisting a value the UI
+    // (a bounded Slider) could never itself produce.
+    AppSettings.instance.textScaleFactor = 5.0;
+    expect(AppSettings.instance.textScaleFactor, 1.5);
+  });
+
   // Kept last in this file deliberately: OmnisTheme.build pulls in
   // google_fonts (via OmnisTypography.build), which kicks off a
   // fire-and-forget real font-fetch Future that always fails under
