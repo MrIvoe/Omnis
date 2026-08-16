@@ -102,13 +102,29 @@ import 'package:omnis/core/base_track.dart';
 /// didn't wire up" stance [_SearchTerm.parse] already takes for an
 /// unknown field name.
 ///
-/// Deliberately not yet supported (documented gaps, not oversights):
-/// `missing:`/`duplicate:` — both need a multi-value sub-field
-/// (`missing:artwork`/`missing:year`/...), a genuinely different shape
-/// from every boolean/numeric/string qualifier above, and duplicate
-/// detection specifically is a library-wide computation
-/// (`findDuplicateTracks`-style), not a per-track lookup any of the
-/// existing qualifier shapes can express.
+/// `missing:` is a multi-value sub-field — a genuinely different shape
+/// from every boolean/numeric/string qualifier above, matching a track
+/// missing one specific kind of data rather than testing a value:
+///
+/// ```text
+/// missing:artwork          -> no cover art at all
+/// missing:year              -> no release year
+/// missing:bpm                -> no BPM (not yet analyzed)
+/// missing:genre              -> no genre tags at all
+/// ```
+///
+/// `duplicate:` is also multi-value, and unlike every qualifier above
+/// it's a library-wide computation, not a per-track lookup — mirrors
+/// `LibraryCleanupAnalyzer`'s own title+primary-artist (track) and
+/// album+primary-artist (album) grouping exactly, just returning
+/// matching track ids instead of grouped lists (that analyzer's own
+/// grouping helpers are private, so this is an independent but
+/// identically-shaped implementation, not a cross-file reuse):
+///
+/// ```text
+/// duplicate:track            -> part of a title+artist duplicate group
+/// duplicate:album            -> part of an album+artist duplicate group
+/// ```
 List<BaseTrack> filterTracks(
   List<BaseTrack> tracks,
   String query, {
@@ -120,10 +136,79 @@ List<BaseTrack> filterTracks(
   if (trimmed.isEmpty) return tracks;
 
   final terms = _tokenize(trimmed).map(_SearchTerm.parse).toList();
+  // Computed lazily — a library-wide O(n) grouping pass, so only pay
+  // for it when a query actually asks for duplicate:track/album.
+  final needsDuplicateTracks = terms.any(
+      (t) => t.field == 'duplicate' && t.value.toLowerCase() == 'track');
+  final needsDuplicateAlbums = terms.any(
+      (t) => t.field == 'duplicate' && t.value.toLowerCase() == 'album');
+  final duplicateTrackIds =
+      needsDuplicateTracks ? _duplicateTrackIds(tracks) : const <String>{};
+  final duplicateAlbumTrackIds = needsDuplicateAlbums
+      ? _duplicateAlbumTrackIds(tracks)
+      : const <String>{};
+
   return tracks
-      .where((track) => terms
-          .every((term) => term.matches(track, ratingOf, favoriteOf, hasLyrics)))
+      .where((track) => terms.every((term) => term.matches(
+            track,
+            ratingOf,
+            favoriteOf,
+            hasLyrics,
+            duplicateTrackIds,
+            duplicateAlbumTrackIds,
+          )))
       .toList();
+}
+
+String _normalizeKey(String s) =>
+    s.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+/// Track ids that are part of a title+primary-artist duplicate group —
+/// the same matching `LibraryCleanupAnalyzer._duplicateTracks` uses,
+/// reimplemented here rather than imported since that method returns
+/// grouped tracks (for a report UI to drill into), not a flat id set
+/// (what a per-track search predicate needs).
+Set<String> _duplicateTrackIds(List<BaseTrack> tracks) {
+  final groups = <String, List<BaseTrack>>{};
+  for (final t in tracks) {
+    final artist = t.artists.isNotEmpty ? t.artists.first : '';
+    final key = '${_normalizeKey(t.title)}|${_normalizeKey(artist)}';
+    groups.putIfAbsent(key, () => []).add(t);
+  }
+  final ids = <String>{};
+  for (final group in groups.values) {
+    if (group.length > 1) ids.addAll(group.map((t) => t.id));
+  }
+  return ids;
+}
+
+/// Track ids belonging to an album+primary-artist duplicate group — the
+/// same two-tier (raw-variant, then normalized) grouping
+/// `LibraryCleanupAnalyzer._duplicateAlbums` uses, so two genuinely
+/// different artists' same-named albums are never conflated.
+Set<String> _duplicateAlbumTrackIds(List<BaseTrack> tracks) {
+  final byRawVariant = <String, List<BaseTrack>>{};
+  for (final t in tracks) {
+    final album = t.album.trim();
+    if (album.isEmpty) continue;
+    final artist = t.artists.isNotEmpty ? t.artists.first.trim() : '';
+    byRawVariant.putIfAbsent('$album|$artist', () => []).add(t);
+  }
+  final byNormalizedKey = <String, Set<String>>{};
+  for (final rawKey in byRawVariant.keys) {
+    final parts = rawKey.split('|');
+    final normalizedKey =
+        '${_normalizeKey(parts[0])}|${_normalizeKey(parts.length > 1 ? parts[1] : '')}';
+    byNormalizedKey.putIfAbsent(normalizedKey, () => {}).add(rawKey);
+  }
+  final ids = <String>{};
+  byNormalizedKey.forEach((normalizedKey, rawVariants) {
+    if (rawVariants.length < 2) return;
+    for (final rawKey in rawVariants) {
+      ids.addAll(byRawVariant[rawKey]!.map((t) => t.id));
+    }
+  });
+  return ids;
 }
 
 /// Splits [query] into terms on whitespace, the same as a plain
@@ -187,6 +272,8 @@ class _SearchTerm {
       'favorite',
       'bitrate',
       'lyrics',
+      'missing',
+      'duplicate',
     };
     // An unrecognized "field:" prefix (or a bare word that happens to
     // contain a colon, e.g. a time-formatted title) is treated as plain
@@ -200,6 +287,8 @@ class _SearchTerm {
     int Function(String trackId)? ratingOf,
     bool Function(String trackId)? favoriteOf,
     bool Function(BaseTrack track)? hasLyrics,
+    Set<String> duplicateTrackIds,
+    Set<String> duplicateAlbumTrackIds,
   ) {
     final f = field;
     if (f == null) return _matchesFreeText(track, value);
@@ -231,6 +320,48 @@ class _SearchTerm {
       case 'lyrics':
         if (hasLyrics == null) return false;
         return _matchesBoolean(hasLyrics(track), value);
+      case 'missing':
+        return _matchesMissing(track, value);
+      case 'duplicate':
+        return _matchesDuplicate(
+            track, value, duplicateTrackIds, duplicateAlbumTrackIds);
+      default:
+        return false;
+    }
+  }
+
+  /// `missing:artwork`/`missing:year`/`missing:bpm`/`missing:genre` — an
+  /// unrecognized sub-field matches nothing, same "a bad query finds
+  /// nothing, not a crash" contract every other qualifier in this file
+  /// already has.
+  static bool _matchesMissing(BaseTrack track, String value) {
+    switch (value.toLowerCase()) {
+      case 'artwork':
+        return track.coverArt == null || track.coverArt!.trim().isEmpty;
+      case 'year':
+        return track.year == null;
+      case 'bpm':
+        return track.bpm == null;
+      case 'genre':
+        return track.genres.isEmpty;
+      default:
+        return false;
+    }
+  }
+
+  /// `duplicate:track`/`duplicate:album` — membership in the two sets
+  /// [filterTracks] precomputes once per call, not per term.
+  static bool _matchesDuplicate(
+    BaseTrack track,
+    String value,
+    Set<String> duplicateTrackIds,
+    Set<String> duplicateAlbumTrackIds,
+  ) {
+    switch (value.toLowerCase()) {
+      case 'track':
+        return duplicateTrackIds.contains(track.id);
+      case 'album':
+        return duplicateAlbumTrackIds.contains(track.id);
       default:
         return false;
     }

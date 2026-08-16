@@ -13,6 +13,7 @@ BaseTrack _track({
   double? bpm,
   String? codec,
   int? bitrateKbps,
+  String? coverArt,
 }) =>
     BaseTrack(
       id: id,
@@ -27,6 +28,7 @@ BaseTrack _track({
       bpm: bpm,
       codec: codec,
       bitrateKbps: bitrateKbps,
+      coverArt: coverArt,
     );
 
 void main() {
@@ -136,11 +138,11 @@ void main() {
 
     test('an unrecognized field prefix falls back to free text instead '
         'of matching nothing', () {
-      // "missing:artwork" isn't a supported field yet — must not silently
+      // "wishlist:someday" isn't a supported field — must not silently
       // exclude every track just because of the unknown prefix.
-      final result = filterTracks(tracks, 'missing:artwork');
+      final result = filterTracks(tracks, 'wishlist:someday');
       expect(result, isEmpty); // no track's title/artist/album/genre
-      // contains the literal text "missing:artwork", which is the correct
+      // contains the literal text "wishlist:someday", which is the correct
       // free-text fallback behavior, not a crash or a `known field`
       // exception.
     });
@@ -492,6 +494,151 @@ void main() {
             .map((t) => t.id),
         ['gnr'],
       );
+    });
+  });
+
+  group('filterTracks — missing field (item 10, spec §15)', () {
+    test('missing:artwork matches a track with no cover art at all', () {
+      final tracks = [
+        _track(id: '1', coverArt: null),
+        _track(id: '2', coverArt: ''),
+        _track(id: '3', coverArt: 'file://cover.jpg'),
+      ];
+      expect(
+        filterTracks(tracks, 'missing:artwork').map((t) => t.id).toSet(),
+        {'1', '2'},
+      );
+    });
+
+    test('missing:year matches a track with no release year', () {
+      final tracks = [_track(id: '1', year: null), _track(id: '2', year: 1999)];
+      expect(filterTracks(tracks, 'missing:year').map((t) => t.id), ['1']);
+    });
+
+    test('missing:bpm matches a track that has not been BPM-analyzed', () {
+      final tracks = [_track(id: '1', bpm: null), _track(id: '2', bpm: 120)];
+      expect(filterTracks(tracks, 'missing:bpm').map((t) => t.id), ['1']);
+    });
+
+    test('missing:genre matches a track with no genre tags', () {
+      final tracks = [
+        _track(id: '1', genres: const []),
+        _track(id: '2', genres: const ['Rock']),
+      ];
+      expect(filterTracks(tracks, 'missing:genre').map((t) => t.id), ['1']);
+    });
+
+    test('an unrecognized missing: sub-field matches nothing rather than '
+        'throwing', () {
+      final tracks = [_track(id: '1', coverArt: null)];
+      expect(
+        () => filterTracks(tracks, 'missing:bogus'),
+        returnsNormally,
+      );
+      expect(filterTracks(tracks, 'missing:bogus'), isEmpty);
+    });
+
+    test('missing: composes with other terms via AND, same as every other '
+        'field', () {
+      final tracks = [
+        _track(id: 'match', title: 'Bohemian Rhapsody', year: null),
+        _track(id: 'has-year', title: 'Bohemian Rhapsody', year: 1975),
+        _track(id: 'wrong-title', title: 'Somebody to Love', year: null),
+      ];
+      expect(
+        filterTracks(tracks, 'missing:year bohemian').map((t) => t.id),
+        ['match'],
+      );
+    });
+  });
+
+  group('filterTracks — duplicate field (item 10, spec §15)', () {
+    test('duplicate:track matches tracks sharing title+primary artist', () {
+      final tracks = [
+        _track(id: '1', title: 'Yesterday', artists: ['The Beatles']),
+        _track(id: '2', title: 'yesterday', artists: ['the beatles']),
+        _track(id: '3', title: 'Yesterday', artists: ['Someone Else']),
+        _track(id: '4', title: 'Unique Song', artists: ['The Beatles']),
+      ];
+      expect(
+        filterTracks(tracks, 'duplicate:track').map((t) => t.id).toSet(),
+        {'1', '2'},
+      );
+    });
+
+    test('a track whose title+artist appears only once never matches '
+        'duplicate:track', () {
+      final tracks = [
+        _track(id: '1', title: 'A', artists: ['X']),
+        _track(id: '2', title: 'B', artists: ['Y']),
+      ];
+      expect(filterTracks(tracks, 'duplicate:track'), isEmpty);
+    });
+
+    test('duplicate:album matches tracks sharing album+primary artist', () {
+      final tracks = [
+        _track(id: '1', album: 'Greatest Hits', artists: ['Queen']),
+        _track(id: '2', album: 'greatest hits', artists: ['queen']),
+        _track(id: '3', album: 'Greatest Hits', artists: ['Someone Else']),
+        _track(id: '4', album: 'Unique Album', artists: ['Queen']),
+      ];
+      expect(
+        filterTracks(tracks, 'duplicate:album').map((t) => t.id).toSet(),
+        {'1', '2'},
+      );
+    });
+
+    test('a track with a blank album never matches duplicate:album, even '
+        'if another track also has a blank album', () {
+      final tracks = [
+        _track(id: '1', album: '', artists: ['X']),
+        _track(id: '2', album: '', artists: ['X']),
+      ];
+      expect(filterTracks(tracks, 'duplicate:album'), isEmpty);
+    });
+
+    test('an unrecognized duplicate: sub-field matches nothing rather than '
+        'throwing', () {
+      final tracks = [
+        _track(id: '1', title: 'A', artists: ['X']),
+        _track(id: '2', title: 'A', artists: ['X']),
+      ];
+      expect(
+        () => filterTracks(tracks, 'duplicate:bogus'),
+        returnsNormally,
+      );
+      expect(filterTracks(tracks, 'duplicate:bogus'), isEmpty);
+    });
+
+    test('duplicate:track composes with other terms via AND, same as every '
+        'other field', () {
+      final tracks = [
+        _track(id: '1', title: 'Yesterday', artists: ['The Beatles'],
+            genres: ['Rock']),
+        _track(id: '2', title: 'Yesterday', artists: ['The Beatles'],
+            genres: ['Pop']),
+      ];
+      expect(
+        filterTracks(tracks, 'duplicate:track rock').map((t) => t.id),
+        ['1'],
+      );
+    });
+
+    test('duplicate:track and duplicate:album are independent groupings',
+        () {
+      // Same title+artist (duplicate track) but different albums, so
+      // neither track should match duplicate:album.
+      final tracks = [
+        _track(id: '1', title: 'Yesterday', artists: ['The Beatles'],
+            album: 'Help!'),
+        _track(id: '2', title: 'Yesterday', artists: ['The Beatles'],
+            album: '1'),
+      ];
+      expect(
+        filterTracks(tracks, 'duplicate:track').map((t) => t.id).toSet(),
+        {'1', '2'},
+      );
+      expect(filterTracks(tracks, 'duplicate:album'), isEmpty);
     });
   });
 }
