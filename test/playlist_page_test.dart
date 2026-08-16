@@ -10,6 +10,7 @@ import 'package:omnis/core/library_store.dart';
 import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_rule.dart';
@@ -37,6 +38,12 @@ class _FakeEngine implements AudioEngine {
   List<BaseTrack>? lastQueue;
   bool playCalled = false;
 
+  /// Backs `queue`/`currentIndex` for the queue-reordering tests — a
+  /// plain field a test can set directly before pumping, defaulting to
+  /// empty/-1 so every pre-existing (non-queue) test is unaffected.
+  List<BaseTrack> fakeQueue = const [];
+  int fakeCurrentIndex = -1;
+
   @override
   Stream<BaseTrack?> get trackStream => _trackController.stream;
 
@@ -44,10 +51,16 @@ class _FakeEngine implements AudioEngine {
   Stream<List<BaseTrack>> get queueStream => _queueController.stream;
 
   @override
-  List<BaseTrack> get queue => const [];
+  List<BaseTrack> get queue => fakeQueue;
 
   @override
-  BaseTrack? get currentTrack => null;
+  int get currentIndex => fakeCurrentIndex;
+
+  @override
+  BaseTrack? get currentTrack =>
+      (fakeCurrentIndex >= 0 && fakeCurrentIndex < fakeQueue.length)
+          ? fakeQueue[fakeCurrentIndex]
+          : null;
 
   @override
   Future<void> setQueue(List<BaseTrack> tracks, {int startIndex = 0}) async {
@@ -56,6 +69,37 @@ class _FakeEngine implements AudioEngine {
 
   @override
   Future<void> play() async => playCalled = true;
+
+  @override
+  Future<void> playAt(int index) async {
+    if (index < 0 || index >= fakeQueue.length) return;
+    fakeCurrentIndex = index;
+  }
+
+  @override
+  Future<void> removeTrack(int index) async {
+    if (index < 0 || index >= fakeQueue.length) return;
+    final wasCurrent = index == fakeCurrentIndex;
+    fakeQueue = List.of(fakeQueue)..removeAt(index);
+    if (fakeCurrentIndex > index) {
+      fakeCurrentIndex--;
+    } else if (wasCurrent && fakeCurrentIndex >= fakeQueue.length) {
+      fakeCurrentIndex = fakeQueue.length - 1;
+    }
+  }
+
+  @override
+  Future<void> moveTrack(int from, int to) async {
+    final (newQueue, newCurrentIndex) =
+        QueueOperations.reorder(fakeQueue, fakeCurrentIndex, from, to);
+    fakeQueue = newQueue;
+    fakeCurrentIndex = newCurrentIndex;
+  }
+
+  @override
+  Future<void> shuffleRemaining() async {
+    fakeQueue = QueueOperations.shuffledRemaining(fakeQueue, fakeCurrentIndex);
+  }
 
   @override
   noSuchMethod(Invocation invocation) =>
@@ -441,6 +485,153 @@ void main() {
 
         expect(find.text('Rock Favorites'), findsNothing);
         expect(plugin.savedRules, isEmpty);
+      });
+    });
+  });
+
+  group('Queue actions (item 2)', () {
+    BaseTrack track(String id) => BaseTrack(
+          id: id,
+          title: 'Song $id',
+          artists: const ['Artist'],
+          album: 'Album',
+          duration: 180,
+          type: TrackType.local,
+        );
+
+    testWidgets('the queue-actions menu offers all four actions',
+        (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b')]
+          ..fakeCurrentIndex = 0;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Queue actions'));
+        await _settle(tester);
+
+        expect(find.text('Save as snapshot'), findsOneWidget);
+        expect(find.text('Save as playlist'), findsOneWidget);
+        expect(find.text('Remove duplicates'), findsOneWidget);
+        expect(find.text('Clear played'), findsOneWidget);
+        expect(find.text('Shuffle remaining'), findsOneWidget);
+      });
+    });
+
+    testWidgets('"Remove duplicates" drops the later occurrence and keeps '
+        'the currently-playing track', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('a')]
+          ..fakeCurrentIndex = 0;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Queue actions'));
+        await _settle(tester);
+        await tester.tap(find.text('Remove duplicates'));
+        await _settle(tester);
+
+        expect(engine.queue.map((t) => t.id), ['a', 'b']);
+      });
+    });
+
+    testWidgets('"Clear played" removes everything before the current '
+        'track', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('c')]
+          ..fakeCurrentIndex = 2;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Queue actions'));
+        await _settle(tester);
+        await tester.tap(find.text('Clear played'));
+        await _settle(tester);
+
+        expect(engine.queue.map((t) => t.id), ['c']);
+      });
+    });
+
+    testWidgets('"Save as playlist" persists the live queue as a real '
+        'Playlist via PlaylistStore', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()..fakeQueue = [track('a'), track('b')];
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Queue actions'));
+        await _settle(tester);
+        await tester.tap(find.text('Save as playlist'));
+        await _settle(tester);
+        await tester.enterText(find.byType(TextField), 'From Queue');
+        await tester.tap(find.text('Save'));
+        await _settle(tester);
+
+        final saved = await PlaylistStore.instance.load();
+        expect(saved.single.name, 'From Queue');
+        expect(saved.single.trackIds, ['a', 'b']);
+      });
+    });
+
+    testWidgets('"Shuffle remaining" leaves the current track\'s position '
+        'and identity untouched', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('c')]
+          ..fakeCurrentIndex = 0;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Queue actions'));
+        await _settle(tester);
+        await tester.tap(find.text('Shuffle remaining'));
+        await _settle(tester);
+
+        expect(engine.queue.first.id, 'a');
+        expect(engine.queue.map((t) => t.id).toSet(), {'a', 'b', 'c'});
+      });
+    });
+
+    testWidgets('"Move to top" on a non-first track reorders the live '
+        'queue via AudioEngine.moveTrack', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('c')]
+          ..fakeCurrentIndex = 0;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+        await tester.tap(find.byTooltip('Move to top').last);
+        await _settle(tester);
+
+        expect(engine.queue.map((t) => t.id).first, isNot('a'));
+        expect(engine.queue.map((t) => t.id).toSet(), {'a', 'b', 'c'});
+      });
+    });
+
+    testWidgets('the currently-playing track has no "Move to top" action, '
+        'since it is meaningless at any real position other than the '
+        'front', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b')]
+          ..fakeCurrentIndex = 0;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+
+        expect(find.byTooltip('Move to top'), findsOneWidget,
+            reason: 'only the second (non-front) track gets the action');
       });
     });
   });

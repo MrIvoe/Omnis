@@ -11,6 +11,7 @@ import 'package:omnis/core/home_widget_track_source.dart';
 import 'package:omnis/core/playback_engine.dart';
 import 'package:omnis/core/playback_os_integration.dart';
 import 'package:omnis/core/playback_state.dart';
+import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis_plugin_api/hardware_eq_band.dart';
 
 // `HardwareEqBand` moved to `omnis_plugin_api` (see that package's
@@ -586,6 +587,45 @@ class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
       // Removing the playing track starts its replacement from the top;
       // removing any other track must not disturb the current position.
       initialPosition: wasCurrent ? Duration.zero : position,
+    );
+  }
+
+  /// Moves the track at [from] to [to] (same `(oldIndex, newIndex)`
+  /// convention as `ReorderableListView.onReorder`), preserving playback
+  /// position and the identity of whatever's currently playing — only
+  /// its index may change. Index math itself lives in the pure, unit-
+  /// tested `QueueOperations.reorder`.
+  Future<void> moveTrack(int from, int to) async {
+    if (from < 0 || from >= _queue.length || to < 0 || to > _queue.length) {
+      return;
+    }
+    final position = _player.position;
+    final (newQueue, newCurrentIndex) =
+        QueueOperations.reorder(_queue, _currentIndex, from, to);
+    _queue
+      ..clear()
+      ..addAll(newQueue);
+    _currentIndex = newCurrentIndex;
+    _emitQueue();
+    await _rebuildQueueSource(
+      initialQueueIndex: _currentIndex < 0 ? 0 : _currentIndex,
+      initialPosition: position,
+    );
+  }
+
+  /// Shuffles every track after the current one, leaving what's already
+  /// played and what's currently playing untouched. Index math lives in
+  /// the pure, unit-tested `QueueOperations.shuffledRemaining`.
+  Future<void> shuffleRemaining() async {
+    final position = _player.position;
+    final newQueue = QueueOperations.shuffledRemaining(_queue, _currentIndex);
+    _queue
+      ..clear()
+      ..addAll(newQueue);
+    _emitQueue();
+    await _rebuildQueueSource(
+      initialQueueIndex: _currentIndex < 0 ? 0 : _currentIndex,
+      initialPosition: position,
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:omnis/core/base_track.dart';
 
 /// Pure index-selection logic for queue cleanup actions ("Remove
@@ -44,5 +46,62 @@ class QueueOperations {
     if (currentIndex <= 0) return const [];
     final end = currentIndex > queue.length ? queue.length : currentIndex;
     return List<int>.generate(end, (i) => end - 1 - i);
+  }
+
+  /// Moves the track at [from] to [to], using the same `(oldIndex,
+  /// newIndex)` convention Flutter's `ReorderableListView.onReorder`
+  /// hands callers directly — [to] is the target index as if [from]
+  /// hadn't been removed yet, so moving an item one slot later (`to ==
+  /// from + 1`) is correctly a no-op rather than a same-position
+  /// round-trip.
+  ///
+  /// Returns the reordered queue and [currentIndex]'s new position —
+  /// the currently-playing track's identity never changes, only where
+  /// it now sits, so callers can rebuild the audio source around the
+  /// returned index without interrupting playback.
+  static (List<BaseTrack>, int) reorder(
+    List<BaseTrack> queue,
+    int currentIndex,
+    int from,
+    int to,
+  ) {
+    if (from < 0 ||
+        from >= queue.length ||
+        to < 0 ||
+        to > queue.length) {
+      return (List<BaseTrack>.of(queue), currentIndex);
+    }
+    final insertAt = from < to ? to - 1 : to;
+    if (insertAt == from) {
+      return (List<BaseTrack>.of(queue), currentIndex);
+    }
+
+    final newQueue = List<BaseTrack>.of(queue);
+    final track = newQueue.removeAt(from);
+    newQueue.insert(insertAt, track);
+
+    final int newCurrentIndex;
+    if (currentIndex == from) {
+      newCurrentIndex = insertAt;
+    } else {
+      final shifted = currentIndex > from ? currentIndex - 1 : currentIndex;
+      newCurrentIndex = shifted >= insertAt ? shifted + 1 : shifted;
+    }
+    return (newQueue, newCurrentIndex);
+  }
+
+  /// Shuffles everything after [currentIndex], leaving the current track
+  /// and everything already played untouched. With no current track
+  /// (`currentIndex < 0`), shuffles the whole queue.
+  static List<BaseTrack> shuffledRemaining(
+    List<BaseTrack> queue,
+    int currentIndex, {
+    math.Random? random,
+  }) {
+    final splitAt = currentIndex < 0 ? 0 : currentIndex + 1;
+    if (splitAt >= queue.length) return List<BaseTrack>.of(queue);
+    final head = queue.sublist(0, splitAt);
+    final tail = queue.sublist(splitAt).toList()..shuffle(random);
+    return [...head, ...tail];
   }
 }

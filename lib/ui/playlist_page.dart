@@ -871,6 +871,37 @@ class _PlaylistPageState extends State<PlaylistPage> {
         '${indices.length == 1 ? '' : 's'}.');
   }
 
+  /// Drag-reorders the live queue — same `(oldIndex, newIndex)` handoff
+  /// [_reorderPlaylist] already uses for a saved playlist, except
+  /// [AudioEngine.moveTrack] does its own Flutter-convention index
+  /// adjustment internally (via `QueueOperations.reorder`), so unlike
+  /// [_reorderPlaylist] the raw values are passed straight through here.
+  Future<void> _reorderQueue(int oldIndex, int newIndex) async {
+    OmnisHaptics.selectionClick();
+    await widget.engine.moveTrack(oldIndex, newIndex);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  /// Shuffles everything after the currently-playing track, leaving
+  /// what's already played and what's playing now untouched.
+  Future<void> _shuffleRemainingQueue() async {
+    await widget.engine.shuffleRemaining();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  /// Moves a queue track to the very front, ahead of everything else.
+  /// Whatever's currently playing keeps playing uninterrupted — only its
+  /// index may change, never its identity — since `AudioEngine.moveTrack`
+  /// reorders in place rather than restarting playback.
+  Future<void> _moveQueueTrackToTop(int index) async {
+    if (index <= 0) return;
+    await widget.engine.moveTrack(index, 0);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   /// Builds [rule]'s membership fresh against the current library and
   /// plays it — the same `buildQueueForRule` + `setQueue` + `play`
   /// sequence `SmartPlaylistPlugin`'s own settings page already uses for
@@ -1295,6 +1326,63 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
     };
 
+    final isQueue = kind == _SmartList.queue;
+
+    Widget buildTile(BuildContext context, int index) {
+      final track = tracks[index];
+      final isCurrent = widget.engine.currentTrack?.id == track.id;
+      return Dismissible(
+        key: ValueKey('${kind.name}:${track.id}:$index'),
+        direction: isQueue ? DismissDirection.endToStart : DismissDirection.none,
+        background: const ColoredBox(
+          color: Colors.transparent,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Icon(Icons.delete),
+            ),
+          ),
+        ),
+        onDismissed: isQueue ? (_) => widget.engine.removeTrack(index) : null,
+        child: ListTile(
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: TrackArtwork(
+                track: track, width: 44, height: 44, iconSize: 20),
+          ),
+          title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(subtitles[track.id] ?? track.artists.join(', '),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          selected: isCurrent,
+          trailing: !isQueue
+              ? (isCurrent
+                  ? Icon(Icons.graphic_eq, color: theme.colorScheme.primary)
+                  : null)
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isCurrent)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Icon(Icons.graphic_eq,
+                            color: theme.colorScheme.primary),
+                      ),
+                    if (index > 0)
+                      IconButton(
+                        icon: const Icon(Icons.vertical_align_top),
+                        tooltip: 'Move to top',
+                        onPressed: () => _moveQueueTrackToTop(index),
+                      ),
+                  ],
+                ),
+          onTap: () => isQueue
+              ? widget.engine.playAt(index)
+              : _playAll(tracks, startIndex: index),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -1303,7 +1391,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
         title: Text(title),
         actions: [
-          if (kind == _SmartList.queue)
+          if (isQueue)
             PopupMenuButton<String>(
               tooltip: 'Queue actions',
               enabled: tracks.isNotEmpty,
@@ -1317,6 +1405,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     _removeDuplicatesFromQueue();
                   case 'clear_played':
                     _clearPlayedFromQueue();
+                  case 'shuffle_remaining':
+                    _shuffleRemainingQueue();
                 }
               },
               itemBuilder: (context) => const [
@@ -1330,6 +1420,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     child: Text('Remove duplicates')),
                 PopupMenuItem(
                     value: 'clear_played', child: Text('Clear played')),
+                PopupMenuItem(
+                    value: 'shuffle_remaining',
+                    child: Text('Shuffle remaining')),
               ],
             ),
           IconButton(
@@ -1343,53 +1436,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
           ? Center(
               child:
                   Text('Nothing here yet.', style: theme.textTheme.bodyMedium))
-          : ListView.builder(
-              padding: const EdgeInsets.all(8),
-              itemCount: tracks.length,
-              itemBuilder: (context, index) {
-                final track = tracks[index];
-                final isCurrent = widget.engine.currentTrack?.id == track.id;
-                return Dismissible(
-                  key: ValueKey('${kind.name}:${track.id}:$index'),
-                  direction: kind == _SmartList.queue
-                      ? DismissDirection.endToStart
-                      : DismissDirection.none,
-                  background: const ColoredBox(
-                    color: Colors.transparent,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: EdgeInsets.only(right: 16),
-                        child: Icon(Icons.delete),
-                      ),
-                    ),
-                  ),
-                  onDismissed: kind == _SmartList.queue
-                      ? (_) => widget.engine.removeTrack(index)
-                      : null,
-                  child: ListTile(
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: TrackArtwork(
-                          track: track, width: 44, height: 44, iconSize: 20),
-                    ),
-                    title: Text(track.title,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(
-                        subtitles[track.id] ?? track.artists.join(', '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    selected: isCurrent,
-                    trailing: isCurrent
-                        ? Icon(Icons.graphic_eq, color: theme.colorScheme.primary)
-                        : null,
-                    onTap: () => kind == _SmartList.queue
-                        ? widget.engine.playAt(index)
-                        : _playAll(tracks, startIndex: index),
-                  ),
-                );
-              },
-            ),
+          : isQueue
+              ? ReorderableListView.builder(
+                  padding: const EdgeInsets.all(8),
+                  itemCount: tracks.length,
+                  onReorder: _reorderQueue,
+                  itemBuilder: buildTile,
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(8),
+                  itemCount: tracks.length,
+                  itemBuilder: buildTile,
+                ),
     );
   }
 }
