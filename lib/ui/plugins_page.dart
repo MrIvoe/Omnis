@@ -5,8 +5,10 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/plugin_catalog.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/plugin_health_summary.dart';
 import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/ui/plugin_health_page.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 
@@ -216,28 +218,6 @@ class _PluginsPageState extends State<PluginsPage> {
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
     }
-  }
-
-  /// Item 28's "no per-plugin retry/reset action" — a `disable()`+
-  /// `enable()` cycle for whichever plugin a health record names, then
-  /// clears that plugin's health history so the dashboard reflects its
-  /// fresh state. Looks the plugin up by id rather than requiring the
-  /// caller to already hold a `ManagedPlugin` reference, since a health
-  /// record only carries the id/name, not the plugin object itself.
-  Future<void> _resetPlugin(String pluginId) async {
-    final plugin = widget.pluginManager.byId(pluginId);
-    if (plugin == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Can\'t reset — plugin "$pluginId" is no longer installed.'),
-      ));
-      return;
-    }
-    await widget.pluginManager.resetPlugin(plugin);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Reset ${plugin.name}.'),
-    ));
   }
 
   Future<void> _updatePlugin(ManagedPlugin plugin) async {
@@ -691,41 +671,51 @@ class _PluginsPageState extends State<PluginsPage> {
           const SizedBox(height: 24),
 
           // --- Health dashboard ---
-          Row(
-            children: [
-              Text('Plugin Health', style: theme.textTheme.titleMedium),
-              const Spacer(),
-              if (_health.isNotEmpty)
-                TextButton(
-                  onPressed: widget.sandbox.clearHealth,
-                  child: const Text('Dismiss all'),
-                ),
-            ],
-          ),
+          // Item 28's "no dedicated health-center page" gap: this used
+          // to render every raw failure record inline, one card per
+          // failure. Now it's just a summary — the real detail (one
+          // card per plugin, expandable raw records, Reset) lives on
+          // PluginHealthPage, the same "link out rather than keep
+          // growing inline" shape library_page.dart already uses for
+          // its own statistics/cleanup-report pages.
+          Text('Plugin Health', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          if (_health.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No plugin failures. The Core is healthy.'),
-              ),
-            )
-          else
-            ..._health.map((rec) => Card(
-                  color:
-                      theme.colorScheme.errorContainer.withValues(alpha: 0.5),
-                  child: ListTile(
-                    leading: Icon(Icons.report, color: theme.colorScheme.error),
-                    title: Text('${rec.pluginName} · ${rec.hook}'),
-                    subtitle: Text(
-                        '${rec.reason}\n${rec.message}\n${rec.timestamp.toLocal()}'),
-                    isThreeLine: true,
-                    trailing: TextButton(
-                      onPressed: () => _resetPlugin(rec.pluginId),
-                      child: const Text('Reset'),
-                    ),
+          Builder(builder: (context) {
+            final summaries = summarizeHealth(_health);
+            if (summaries.isEmpty) {
+              return const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No plugin failures. The Core is healthy.'),
+                ),
+              );
+            }
+            final anyCritical = summaries
+                .any((s) => s.severity == PluginHealthSeverity.critical);
+            return Card(
+              color: theme.colorScheme.errorContainer
+                  .withValues(alpha: anyCritical ? 1.0 : 0.5),
+              child: ListTile(
+                leading: Icon(
+                  anyCritical ? Icons.error : Icons.report,
+                  color: theme.colorScheme.error,
+                ),
+                title: Text(
+                  '${summaries.length} plugin'
+                  '${summaries.length == 1 ? '' : 's'} with failures',
+                ),
+                subtitle: const Text(
+                    'Tap to view details and reset affected plugins.'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PluginHealthPage(
+                    pluginManager: widget.pluginManager,
+                    sandbox: widget.sandbox,
                   ),
                 )),
+              ),
+            );
+          }),
         ],
       ),
     );

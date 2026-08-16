@@ -290,15 +290,37 @@ dynamic createPlugin(dynamic api) {
     });
   });
 
-  group('Plugin Health dashboard — per-record Reset (item 28)', () {
-    testWidgets('a health record shows a Reset button; tapping it resets '
-        "the named plugin (a real disable()+enable() cycle) and clears "
-        "that record", (tester) async {
+  group('Plugin Health dashboard summary + dedicated page link (item 28)',
+      () {
+    // The detailed per-record Reset/expand/dismiss flow now lives on
+    // PluginHealthPage — see test/plugin_health_page_test.dart. What's
+    // tested here is just this page's own shrunk-to-a-summary section:
+    // a real failure/health count and a working link into that page.
+    testWidgets('with no failures, the summary card reads "healthy" and '
+        'has no link', (tester) async {
+      final manager = PluginManager();
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: manager.sandbox),
+      ));
+      await tester.pump();
+
+      await tester.dragUntilVisible(
+        find.text('Plugin Health'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+
+      expect(find.text('No plugin failures. The Core is healthy.'),
+          findsOneWidget);
+    });
+
+    testWidgets('a real sandboxed failure shows a summary count, and '
+        'tapping it opens PluginHealthPage', (tester) async {
       final manager = PluginManager();
       final plugin = _RecordingPlugin();
       manager.register(plugin);
       await manager.initializeAll();
-      expect(plugin.calls, ['initialize']);
 
       // A real recorded failure, the same way a genuine sandboxed crash
       // produces one — not a hand-built PluginHealthRecord.
@@ -317,67 +339,26 @@ dynamic createPlugin(dynamic api) {
 
       // The health dashboard sits below the catalog/installer/installed-
       // plugins sections — past the default test viewport's ListView
-      // sliver cache extent, so its children (including "Reset") aren't
-      // mounted, and thus not findable, until actually scrolled into
-      // view. Same `dragUntilVisible` pattern `settings_page_test.dart`
-      // already established for the same underlying cause.
+      // sliver cache extent, so its children aren't mounted, and thus
+      // not findable, until actually scrolled into view. Same
+      // `dragUntilVisible` pattern `settings_page_test.dart` already
+      // established for the same underlying cause.
       await tester.dragUntilVisible(
-        find.text('Reset'),
+        find.text('1 plugin with failures'),
         find.byType(ListView),
         const Offset(0, -300),
       );
+      expect(find.text('1 plugin with failures'), findsOneWidget);
 
-      expect(find.text('Reset'), findsOneWidget);
+      await tester.tap(find.text('1 plugin with failures'));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Reset'));
-      await tester.pump();
-
-      expect(plugin.calls, ['initialize', 'disable', 'enable']);
-      expect(manager.sandbox.healthRecords, isEmpty);
-      await tester.dragUntilVisible(
-        find.text('No plugin failures. The Core is healthy.'),
-        find.byType(ListView),
-        const Offset(0, -300),
-      );
-      expect(find.text('No plugin failures. The Core is healthy.'),
-          findsOneWidget);
-    });
-
-    testWidgets('resetting a plugin that has since been uninstalled shows '
-        'a clear message instead of crashing', (tester) async {
-      final manager = PluginManager();
-      final plugin = _RecordingPlugin();
-      manager.register(plugin);
-      await manager.initializeAll();
-
-      await manager.sandbox.run(
-        pluginId: 'recording',
-        pluginName: 'Recording Plugin',
-        hook: 'onTrackStart',
-        operation: () => throw StateError('boom'),
-      );
-
-      await tester.pumpWidget(MaterialApp(
-        home: PluginsPage(pluginManager: manager, sandbox: manager.sandbox),
-      ));
-      await tester.pump();
-
-      // Simulate the plugin having vanished between the health record
-      // being created and the user tapping Reset — the record still
-      // names 'recording', but the manager no longer has it registered.
-      await manager.uninstallPlugin(manager.byId('recording')!);
-      await tester.pump();
-
-      await tester.dragUntilVisible(
-        find.text('Reset'),
-        find.byType(ListView),
-        const Offset(0, -300),
-      );
-
-      await tester.tap(find.text('Reset'));
-      await tester.pump();
-
-      expect(find.textContaining('no longer installed'), findsOneWidget);
+      // PluginsPage's own AppBar is titled "Plugins" — a distinct
+      // "Plugin Health" AppBar only exists on the pushed page, so this
+      // is the specific proof navigation actually happened (both pages
+      // stay mounted in the Navigator stack, so a bare find.text on
+      // shared strings like "Recording Plugin" would match on both).
+      expect(find.widgetWithText(AppBar, 'Plugin Health'), findsOneWidget);
     });
   });
 

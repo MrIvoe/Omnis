@@ -77,7 +77,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 25 | Plugin lifecycle | ✅ Real sandboxing, health tracking, deterministic init ordering |
 | 26 | Dependency resolution | 🟡 Bundled-plugin ordering solid; missing external dependencies now offer a real one-tap Install when the catalog has them — no further named gaps |
 | 27 | Permissions | ✅ Manifest permissions map to real `dart_eval` grants, shown before any plugin code runs |
-| 28 | Plugin health | 🟡 Reactive health records + live UI + per-plugin retry/reset; partial coverage |
+| 28 | Plugin health | 🟡 Reactive health records, per-plugin retry/reset, and now a real dedicated health-center page; no heartbeat for a silently-hung plugin |
 | 29 | Plugin updates | 🟡 Real update detection plus automatic/background checking; built from a genuine 0% start |
 | 30 | Marketplace/catalog | ✅ Real permission-confirmation install flow against a fetched `catalog.json` |
 

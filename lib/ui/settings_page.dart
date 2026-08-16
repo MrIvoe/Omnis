@@ -3,6 +3,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
+import 'package:omnis/ui/plugin_health_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/plugins_page.dart';
 import 'package:omnis/ui/settings/accessibility_settings_page.dart';
@@ -134,6 +135,14 @@ class _SettingsPageState extends State<SettingsPage> {
   void _openPlaybackSchedule(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const PlaybackSchedulePage(),
+      ));
+
+  void _openPluginHealth(BuildContext context) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PluginHealthPage(
+          pluginManager: widget.pluginManager,
+          sandbox: widget.sandbox,
+        ),
       ));
 
   /// The individual settings a search can match, each pointing back at
@@ -395,6 +404,11 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Scheduled Playback',
             categoryIcon: Icons.schedule_outlined,
             navigate: _openPlaybackSchedule),
+        _SearchableSetting(
+            title: 'Plugin health',
+            category: 'Plugins',
+            categoryIcon: Icons.extension_outlined,
+            navigate: _openPluginHealth),
       ];
 
   @override
