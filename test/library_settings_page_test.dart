@@ -49,4 +49,60 @@ void main() {
 
     expect(find.text('Watch folder for changes'), findsOneWidget);
   });
+
+  group('item 5, scheduled scan', () {
+    testWidgets(
+        'Scheduled scan toggle renders, defaults off, and hides the '
+        'frequency/last-run rows until enabled', (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: LibrarySettingsPage(),
+      ));
+      await tester.pump();
+
+      expect(find.text('Scheduled scan'), findsOneWidget);
+      final tileBefore = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, 'Scheduled scan'));
+      expect(tileBefore.value, isFalse);
+      expect(find.text('Scan frequency'), findsNothing);
+      expect(find.text('Last scheduled scan'), findsNothing);
+
+      await tester.tap(find.text('Scheduled scan'));
+      await tester.pump();
+
+      expect(AppSettings.instance.autoScanEnabled, isTrue);
+      expect(find.text('Scan frequency'), findsOneWidget);
+      final lastRun = tester.widget<ListTile>(
+          find.widgetWithText(ListTile, 'Last scheduled scan'));
+      expect((lastRun.subtitle as Text).data, 'Never yet');
+    });
+
+    testWidgets('changing scan frequency persists the chosen interval',
+        (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: LibrarySettingsPage(),
+      ));
+      await tester.pump();
+      await tester.tap(find.text('Scheduled scan'));
+      await tester.pump();
+
+      expect(AppSettings.instance.autoScanIntervalHours, 6);
+
+      await tester.tap(find.byType(DropdownButton<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Daily').last);
+      await tester.pumpAndSettle();
+
+      expect(AppSettings.instance.autoScanIntervalHours, 24);
+    });
+
+    testWidgets('opening with highlightField: "auto_scan" scrolls to and '
+        'flashes that row without throwing', (tester) async {
+      await tester.pumpWidget(const MaterialApp(
+        home: LibrarySettingsPage(highlightField: 'auto_scan'),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Scheduled scan'), findsOneWidget);
+    });
+  });
 }

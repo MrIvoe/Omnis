@@ -9,6 +9,7 @@ import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/library_repository.dart';
+import 'package:omnis/core/library_scan_scheduler.dart';
 import 'package:omnis/core/library_watcher.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/permissions.dart';
@@ -244,9 +245,16 @@ class MainCore {
 
     // MusicBee comparison §43's scheduling gap. A no-op tick whenever
     // there are no saved schedules — see [_checkPlaybackSchedules].
+    // Reuses the same once-a-minute tick for item 5's scheduled-scan
+    // check (see [_maybeRunScheduledScan]) rather than adding a second
+    // Timer — [LibraryScanScheduler.isDue] itself gates how often that
+    // one actually does anything, so a per-minute check costs nothing
+    // between due scans.
     _scheduleTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       // ignore: unawaited_futures
       _checkPlaybackSchedules();
+      // ignore: unawaited_futures
+      _maybeRunScheduledScan();
     });
 
     // Mirror track/play-state into the Android home-screen widget. Core,
@@ -290,6 +298,14 @@ class MainCore {
     // own doc for the full gating logic (opt-in, desktop-only, dedicated
     // folder required).
     _maybeStartLibraryWatcher();
+
+    // Item 5's "no scheduled scans" gap — a no-op unless the user has
+    // opted in (AppSettings.autoScanEnabled defaults false) and one is
+    // actually due. Fire-and-forget, same "never block boot" contract
+    // as the backup/update-check calls above; also reached every
+    // minute thereafter via [_scheduleTimer].
+    // ignore: unawaited_futures
+    _maybeRunScheduledScan();
 
     debugPrint('Omnis Core initialized successfully');
   }
@@ -365,41 +381,78 @@ class MainCore {
 
     _libraryWatcher = LibraryWatcher(
       onSettled: () async {
-        // Mirrors library_page.dart's own "_pickAndAdd" merge exactly
-        // (minus its UI-specific bits — no `setState`, no in-progress
-        // spinner): a fresh scan only ever reports *local* files, so
-        // naively replacing the whole library with its result would
-        // silently drop every non-local track (Spotify/YouTube/radio/
-        // ...). Keep every still-valid existing track, add only what's
-        // genuinely new, and prune a local track whose file is now gone.
         final current = LibraryRepository.instance.tracks;
         final scanned =
             await MediaScanner.instance.scanLibrary(knownTracks: current);
         if (scanned.isEmpty) return;
-
-        final existingIds = current.map((t) => t.id).toSet();
-        final newTracks = scanned
-            .where((t) => !existingIds.contains(t.id))
-            .map((t) => t.dateAdded == null
-                ? t.copyWith(dateAdded: DateTime.now())
-                : t)
-            .toList();
-        final stillPresent = current.where((t) {
-          if (t.type != TrackType.local || t.localPath == null) return true;
-          return File(t.localPath!).existsSync();
-        }).toList();
-        // Only a genuine addition or removal is worth a write — a
-        // watcher-triggered rescan that finds nothing new and nothing
-        // gone (e.g. a file merely touched/re-saved with the same
-        // path) shouldn't churn the library store for no reason.
-        if (newTracks.isEmpty && stillPresent.length == current.length) {
-          return;
-        }
-        await LibraryRepository.instance
-            .save([...stillPresent, ...newTracks]);
+        await _mergeScanIntoLibrary(current, scanned);
       },
     );
     _libraryWatcher!.start(folder);
+  }
+
+  /// Mirrors `library_page.dart`'s own "_pickAndAdd" merge exactly
+  /// (minus its UI-specific bits — no `setState`, no in-progress
+  /// spinner): a fresh scan only ever reports *local* files, so
+  /// naively replacing the whole library with its result would
+  /// silently drop every non-local track (Spotify/YouTube/radio/...).
+  /// Keep every still-valid existing track, add only what's genuinely
+  /// new ([newTracksFromScan], pure/tested), and prune a local track
+  /// whose file is now gone (needs real file-existence I/O, so it stays
+  /// here rather than in that pure function). Shared by both
+  /// [_maybeStartLibraryWatcher]'s onSettled callback and
+  /// [_maybeRunScheduledScan] — the two real triggers for a rescan
+  /// being applied to the persisted library.
+  Future<void> _mergeScanIntoLibrary(
+    List<BaseTrack> current,
+    List<BaseTrack> scanned,
+  ) async {
+    final newTracks = newTracksFromScan(current, scanned);
+    final stillPresent = current.where((t) {
+      if (t.type != TrackType.local || t.localPath == null) return true;
+      return File(t.localPath!).existsSync();
+    }).toList();
+    // Only a genuine addition or removal is worth a write — a rescan
+    // that finds nothing new and nothing gone (e.g. a file merely
+    // touched/re-saved with the same path) shouldn't churn the library
+    // store for no reason.
+    if (newTracks.isEmpty && stillPresent.length == current.length) {
+      return;
+    }
+    await LibraryRepository.instance.save([...stillPresent, ...newTracks]);
+  }
+
+  /// Item 5's "no scheduled scans" gap — a no-op unless the user has
+  /// opted in ([AppSettings.autoScanEnabled] defaults false) and one is
+  /// actually due. Unlike [_maybeStartLibraryWatcher] (desktop-only,
+  /// needs a real `Directory.watch`), this works on every platform:
+  /// `MediaScanner.scanLibrary` already branches to the right source
+  /// (MediaStore on Android, filesystem walk elsewhere) and already
+  /// no-ops when [LibrarySource.none] is selected, so there's no extra
+  /// platform/source gating to duplicate here. Never throws — a
+  /// scheduling failure must never crash the app, the same "denial
+  /// degrades" contract every other best-effort background task in
+  /// this file already follows.
+  Future<void> _maybeRunScheduledScan() async {
+    final settings = AppSettings.instance;
+    if (!settings.autoScanEnabled) return;
+    if (!LibraryScanScheduler.isDue(
+      settings.lastAutoScanAt,
+      Duration(hours: settings.autoScanIntervalHours),
+      DateTime.now(),
+    )) {
+      return;
+    }
+    try {
+      final current = LibraryRepository.instance.tracks;
+      final scanned =
+          await MediaScanner.instance.scanLibrary(knownTracks: current);
+      settings.lastAutoScanAt = DateTime.now();
+      if (scanned.isEmpty) return;
+      await _mergeScanIntoLibrary(current, scanned);
+    } catch (_) {
+      // Swallow — the next scheduled tick (or manual rescan) tries again.
+    }
   }
 
   /// Dispose the core engine.

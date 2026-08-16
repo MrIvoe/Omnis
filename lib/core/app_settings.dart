@@ -103,6 +103,9 @@ class AppSettings extends ChangeNotifier {
       'app_auto_update_check_interval_days';
   static const _lastPluginUpdateCheckAtKey =
       'app_last_plugin_update_check_at';
+  static const _autoScanEnabledKey = 'app_auto_scan_enabled';
+  static const _autoScanIntervalHoursKey = 'app_auto_scan_interval_hours';
+  static const _lastAutoScanAtKey = 'app_last_auto_scan_at';
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
 
@@ -747,6 +750,53 @@ class AppSettings extends ChangeNotifier {
       _prefs!.remove(_lastPluginUpdateCheckAtKey);
     } else {
       _prefs!.setInt(_lastPluginUpdateCheckAtKey, value.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  /// Item 5's "no scheduled scans" gap — distinct from
+  /// [libraryWatcherEnabled] (live filesystem change detection while
+  /// the app is open, desktop-only) and item 50's playback scheduling:
+  /// this is a plain periodic rescan, the scan-side analogue of
+  /// [autoBackupEnabled]/[autoUpdateCheckEnabled]. Defaults to `false`,
+  /// the same opt-in stance both of those already take for unattended
+  /// background work.
+  bool get autoScanEnabled => _prefs?.getBool(_autoScanEnabledKey) ?? false;
+
+  set autoScanEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_autoScanEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// How often a scheduled scan should run, in hours. Defaults to 6 —
+  /// more frequent than [autoBackupIntervalDays]' daily-unit default
+  /// since a rescan is a read-mostly local operation (no zip written,
+  /// no network call), so there's less reason to space it out as far.
+  int get autoScanIntervalHours =>
+      _prefs?.getInt(_autoScanIntervalHoursKey) ?? 6;
+
+  set autoScanIntervalHours(int value) {
+    _ensurePrefs();
+    _prefs!.setInt(_autoScanIntervalHoursKey, value < 1 ? 1 : value);
+    notifyListeners();
+  }
+
+  /// When the last scheduled scan actually ran, or `null` if one never
+  /// has — `LibraryScanScheduler.isDue` treats `null` as due
+  /// immediately, the same "don't wait a full interval for the first
+  /// one" convention [lastAutoBackupAt] already establishes.
+  DateTime? get lastAutoScanAt {
+    final ms = _prefs?.getInt(_lastAutoScanAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  set lastAutoScanAt(DateTime? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastAutoScanAtKey);
+    } else {
+      _prefs!.setInt(_lastAutoScanAtKey, value.millisecondsSinceEpoch);
     }
     notifyListeners();
   }

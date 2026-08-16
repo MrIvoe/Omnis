@@ -28,6 +28,7 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
       'library_source',
       'library_folder',
       'library_watcher',
+      'auto_scan',
       'list_density',
       'group_by_album_artist',
       'short_track_threshold',
@@ -40,6 +41,12 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
     super.initState();
     _settings = AppSettings.instance;
     scrollToAndFlashSetting(_keys[widget.highlightField]);
+  }
+
+  String get _lastAutoScanLabel {
+    final last = _settings.lastAutoScanAt;
+    if (last == null) return 'Never yet';
+    return last.toLocal().toString().split('.').first;
   }
 
   @override
@@ -108,6 +115,40 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
                   setState(() => settings.libraryWatcherEnabled = value),
             ),
           ),
+          SettingsHighlight(
+            key: _keys['auto_scan'],
+            child: SwitchListTile(
+              title: const Text('Scheduled scan'),
+              subtitle: const Text(
+                  'Periodically rescan for new/removed tracks on a timer — '
+                  'works on every platform, unlike "Watch folder for '
+                  'changes" above'),
+              value: settings.autoScanEnabled,
+              onChanged: (value) =>
+                  setState(() => settings.autoScanEnabled = value),
+            ),
+          ),
+          if (settings.autoScanEnabled) ...[
+            ListTile(
+              title: const Text('Scan frequency'),
+              trailing: DropdownButton<int>(
+                value: settings.autoScanIntervalHours,
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('Hourly')),
+                  DropdownMenuItem(value: 6, child: Text('Every 6 hours')),
+                  DropdownMenuItem(value: 24, child: Text('Daily')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => settings.autoScanIntervalHours = value);
+                },
+              ),
+            ),
+            ListTile(
+              title: const Text('Last scheduled scan'),
+              subtitle: Text(_lastAutoScanLabel),
+            ),
+          ],
           const SizedBox(height: 16),
           Text('Display', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),

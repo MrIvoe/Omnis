@@ -39,7 +39,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 2 | Queue | 🟡 Manual queue, play-next, reorder, history/snapshots, cleanup all real; smart/rule-based continuation and multiple queue sources not started |
 | 3 | Recovery | ✅ Watchdog + crash/power-loss recovery wired end-to-end |
 | 4 | Database | 🟡 Atomic writes, corruption detection, schema versioning, and scheduled backups all real; still JSON files, no indexed DB or multi-source libraries |
-| 5 | Library scanning | 🟡 Incremental rescan + desktop filesystem watcher real; no scheduled scans or fingerprint-based track identity |
+| 5 | Library scanning | 🟡 Incremental rescan, desktop filesystem watcher, and scheduled background scans all real; no fingerprint-based track identity |
 | 6 | Persistence | ✅ Crash-safe playback/library/settings persistence |
 | 7 | OS media integration | 🟡 Windows SMTC + lock-screen controls confirmed; other platforms not re-verified this session |
 | 8 | Error handling | 🟡 Decoder auto-skip, plugin sandboxing, stranded-dialog fixes done; no full failure-mode audit yet |
