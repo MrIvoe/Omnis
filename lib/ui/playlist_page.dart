@@ -15,6 +15,7 @@ import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_history_store.dart';
+import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
@@ -786,6 +787,90 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _snack('Saved "$trimmed".');
   }
 
+  /// Turns the live queue into a real persistent [Playlist] via the same
+  /// [PlaylistStore] every other playlist already uses — distinct from
+  /// [_saveQueueSnapshot], which saves to the ephemeral, history-scoped
+  /// [QueueHistoryStore] instead.
+  Future<void> _saveQueueAsPlaylist(List<BaseTrack> tracks) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save queue as playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    final playlist = Playlist(
+      id: 'playlist_${DateTime.now().microsecondsSinceEpoch}',
+      name: trimmed,
+      trackIds: tracks.map((t) => t.id).toList(),
+      createdAt: DateTime.now(),
+    );
+    setState(() => _playlists = [..._playlists, playlist]);
+    await _savePlaylists();
+    if (!mounted) return;
+    _snack('Saved "$trimmed".');
+  }
+
+  /// Removes duplicate tracks from the live queue (by id), keeping the
+  /// first occurrence of each and never disturbing whatever's currently
+  /// playing. Removes highest-index-first so earlier indices don't shift
+  /// out from under later removals.
+  Future<void> _removeDuplicatesFromQueue() async {
+    final indices = QueueOperations.duplicateIndicesToRemove(
+      widget.engine.queue,
+      currentIndex: widget.engine.currentIndex,
+    );
+    if (indices.isEmpty) {
+      _snack('No duplicates in the queue.');
+      return;
+    }
+    for (final index in indices) {
+      await widget.engine.removeTrack(index);
+    }
+    if (!mounted) return;
+    setState(() {});
+    _snack('Removed ${indices.length} duplicate'
+        '${indices.length == 1 ? '' : 's'}.');
+  }
+
+  /// Removes every track before the currently-playing one from the live
+  /// queue.
+  Future<void> _clearPlayedFromQueue() async {
+    final indices = QueueOperations.playedIndicesToRemove(
+      widget.engine.queue,
+      widget.engine.currentIndex,
+    );
+    if (indices.isEmpty) {
+      _snack('Nothing played to clear.');
+      return;
+    }
+    for (final index in indices) {
+      await widget.engine.removeTrack(index);
+    }
+    if (!mounted) return;
+    setState(() {});
+    _snack('Cleared ${indices.length} played track'
+        '${indices.length == 1 ? '' : 's'}.');
+  }
+
   /// Builds [rule]'s membership fresh against the current library and
   /// plays it — the same `buildQueueForRule` + `setQueue` + `play`
   /// sequence `SmartPlaylistPlugin`'s own settings page already uses for
@@ -1219,10 +1304,33 @@ class _PlaylistPageState extends State<PlaylistPage> {
         title: Text(title),
         actions: [
           if (kind == _SmartList.queue)
-            IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined),
-              tooltip: 'Save as snapshot',
-              onPressed: tracks.isEmpty ? null : () => _saveQueueSnapshot(tracks),
+            PopupMenuButton<String>(
+              tooltip: 'Queue actions',
+              enabled: tracks.isNotEmpty,
+              onSelected: (value) {
+                switch (value) {
+                  case 'snapshot':
+                    _saveQueueSnapshot(tracks);
+                  case 'save_playlist':
+                    _saveQueueAsPlaylist(tracks);
+                  case 'remove_duplicates':
+                    _removeDuplicatesFromQueue();
+                  case 'clear_played':
+                    _clearPlayedFromQueue();
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                    value: 'snapshot', child: Text('Save as snapshot')),
+                PopupMenuItem(
+                    value: 'save_playlist',
+                    child: Text('Save as playlist')),
+                PopupMenuItem(
+                    value: 'remove_duplicates',
+                    child: Text('Remove duplicates')),
+                PopupMenuItem(
+                    value: 'clear_played', child: Text('Clear played')),
+              ],
             ),
           IconButton(
             icon: const Icon(Icons.play_arrow),
