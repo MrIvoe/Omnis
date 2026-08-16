@@ -13,6 +13,7 @@ import 'package:omnis/core/library_search.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/tag_find_replace.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
@@ -25,6 +26,7 @@ import 'package:omnis/ui/library_cleanup_report_page.dart';
 import 'package:omnis/ui/library_statistics_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
+import 'package:omnis/ui/tag_find_replace_dialog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/artist_avatar.dart';
 import 'package:omnis/ui/widgets/library_shimmer.dart';
@@ -1783,6 +1785,115 @@ class _LibraryPageState extends State<LibraryPage> {
         'previous tags.');
   }
 
+  /// spec §12's "regex search/replace" gap (item 17) — a bulk pattern-
+  /// based tag rewrite across the currently-selected tracks. Builds the
+  /// rule via [TagFindReplaceDialog] (preview-first, no write happens
+  /// until "Apply"), then applies each affected field through the same
+  /// `TagEditorPlugin.writeTags` call every other tag-editing action on
+  /// this page already uses, and reuses [_undoAutoTagBatch] for the
+  /// "Undo" snackbar action — that method is already generic over "a
+  /// list of pre-edit track snapshots to restore," not specific to the
+  /// auto-tag batch it was written for.
+  Future<void> _findReplaceSelected() async {
+    final tagEditor = _tagEditorPlugin;
+    if (tagEditor == null) {
+      _toast('The Tag Editor plugin is disabled in Settings.');
+      return;
+    }
+    final ids = Set<String>.from(_selectedIds);
+    if (ids.isEmpty) return;
+    final candidates =
+        _tracks.where((t) => ids.contains(t.id) && t.localPath != null).toList();
+    if (candidates.isEmpty) {
+      _toast('None of the selected tracks have a local file to edit.');
+      return;
+    }
+
+    final rule = await TagFindReplaceDialog.show(context, candidates);
+    if (rule == null || !mounted) return;
+
+    final matches = previewFindReplace(candidates, rule);
+    if (matches.isEmpty) {
+      _toast('Nothing to change.');
+      return;
+    }
+
+    final byTrackId = <String, List<TagFindReplaceMatch>>{};
+    for (final match in matches) {
+      byTrackId.putIfAbsent(match.track.id, () => []).add(match);
+    }
+
+    final changedOriginals = <BaseTrack>[];
+    for (final entry in byTrackId.entries) {
+      final track = candidates.firstWhere((t) => t.id == entry.key);
+      final path = track.localPath;
+      if (path == null) continue;
+
+      String? newTitle;
+      String? newArtist;
+      String? newAlbum;
+      String? newGenre;
+      for (final match in entry.value) {
+        switch (match.field) {
+          case TagFindReplaceField.title:
+            newTitle = match.after;
+          case TagFindReplaceField.artist:
+            newArtist = match.after;
+          case TagFindReplaceField.album:
+            newAlbum = match.after;
+          case TagFindReplaceField.genre:
+            newGenre = match.after;
+        }
+      }
+
+      final ok = await tagEditor.writeTags(
+        path,
+        title: newTitle,
+        artist: newArtist,
+        album: newAlbum,
+        genre: newGenre,
+      );
+      if (!ok) continue;
+
+      changedOriginals.add(track);
+      final index = _tracks.indexWhere((t) => t.id == track.id);
+      if (index >= 0) {
+        final updated = _tracks[index].copyWith(
+          title: newTitle,
+          artists: newArtist != null
+              ? tagEditor.splitArtists(newArtist)
+              : null,
+          album: newAlbum,
+          genres: newGenre != null ? [newGenre] : null,
+        );
+        if (mounted) {
+          setState(() => _tracks[index] = updated);
+        } else {
+          _tracks[index] = updated;
+        }
+      }
+    }
+
+    await LibraryRepository.instance.save(_tracks);
+    if (!mounted) return;
+    setState(_selectedIds.clear);
+
+    if (changedOriginals.isNotEmpty) {
+      final changed = changedOriginals.length;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => _undoAutoTagBatch(changedOriginals),
+        ),
+      ));
+    } else {
+      _toast('Nothing changed.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1827,6 +1938,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   icon: const Icon(Icons.star_border),
                   tooltip: 'Rate selected',
                   onPressed: _bulkRate,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.find_replace),
+                  tooltip: 'Find & Replace tags…',
+                  onPressed: _findReplaceSelected,
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
