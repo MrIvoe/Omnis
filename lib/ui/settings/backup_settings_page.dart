@@ -3,6 +3,7 @@ import 'dart:io' show File, Platform;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/library_repository.dart';
 
@@ -21,11 +22,18 @@ class BackupSettingsPage extends StatefulWidget {
 
 class _BackupSettingsPageState extends State<BackupSettingsPage> {
   final _service = BackupService();
+  late final AppSettings _settings = AppSettings.instance;
   bool _busy = false;
 
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String get _lastAutoBackupLabel {
+    final last = _settings.lastAutoBackupAt;
+    if (last == null) return 'Never yet';
+    return last.toLocal().toString().split('.').first;
   }
 
   /// `file_picker`'s `saveFile` writes the bytes itself on Android/iOS
@@ -188,6 +196,50 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                     )
                   : const Icon(Icons.chevron_right),
               onTap: _busy ? null : _restore,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text('Automatic backups', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Runs the same backup as above on its own, on a schedule, '
+            'straight to app storage — no file picker, and it keeps the '
+            'last ${BackupService.autoBackupKeepCount} automatic backups.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Enable automatic backups'),
+                  value: _settings.autoBackupEnabled,
+                  onChanged: (value) =>
+                      setState(() => _settings.autoBackupEnabled = value),
+                ),
+                if (_settings.autoBackupEnabled) ...[
+                  ListTile(
+                    title: const Text('Frequency'),
+                    trailing: DropdownButton<int>(
+                      value: _settings.autoBackupIntervalDays,
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('Daily')),
+                        DropdownMenuItem(value: 7, child: Text('Weekly')),
+                        DropdownMenuItem(value: 30, child: Text('Monthly')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(
+                            () => _settings.autoBackupIntervalDays = value);
+                      },
+                    ),
+                  ),
+                  ListTile(
+                    title: const Text('Last automatic backup'),
+                    subtitle: Text(_lastAutoBackupLabel),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

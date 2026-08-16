@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/backup_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Builds a raw zip (not via [BackupService.createBackup]) from a
 /// name -> text-content map, for tests that need to hand
@@ -262,6 +264,102 @@ void main() {
       final untouched =
           await File('${targetDir.path}/omnis_library.json').readAsString();
       expect(untouched, contains('Do Not Lose Me'));
+    });
+  });
+
+  group('maybeRunAutomaticBackup (item 4/50)', () {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      await AppSettings.instance.initialize();
+    });
+
+    test('does nothing when auto-backup is disabled (the default)',
+        () async {
+      await service.maybeRunAutomaticBackup();
+
+      final backupsDir = Directory('${sourceDir.path}/backups');
+      expect(await backupsDir.exists(), isFalse);
+      expect(AppSettings.instance.lastAutoBackupAt, isNull);
+    });
+
+    test('writes a zip and stamps lastAutoBackupAt when enabled and due '
+        '(never run before)', () async {
+      AppSettings.instance.autoBackupEnabled = true;
+      final now = DateTime(2026, 8, 15, 12);
+
+      await service.maybeRunAutomaticBackup(now: now);
+
+      final backupsDir = Directory('${sourceDir.path}/backups');
+      expect(await backupsDir.exists(), isTrue);
+      final files = await backupsDir.list().toList();
+      expect(files, hasLength(1));
+      expect(files.single.path, endsWith('.zip'));
+      expect(AppSettings.instance.lastAutoBackupAt, now);
+    });
+
+    test('does nothing when enabled but not yet due', () async {
+      AppSettings.instance.autoBackupEnabled = true;
+      AppSettings.instance.autoBackupIntervalDays = 7;
+      final now = DateTime(2026, 8, 15);
+      AppSettings.instance.lastAutoBackupAt =
+          now.subtract(const Duration(days: 1));
+
+      await service.maybeRunAutomaticBackup(now: now);
+
+      final backupsDir = Directory('${sourceDir.path}/backups');
+      expect(await backupsDir.exists(), isFalse);
+    });
+
+    test('runs again once the interval has elapsed', () async {
+      AppSettings.instance.autoBackupEnabled = true;
+      AppSettings.instance.autoBackupIntervalDays = 7;
+      final now = DateTime(2026, 8, 15);
+      AppSettings.instance.lastAutoBackupAt =
+          now.subtract(const Duration(days: 8));
+
+      await service.maybeRunAutomaticBackup(now: now);
+
+      final backupsDir = Directory('${sourceDir.path}/backups');
+      expect(await backupsDir.exists(), isTrue);
+      expect(AppSettings.instance.lastAutoBackupAt, now);
+    });
+
+    test('prunes older automatic backups beyond the keep count', () async {
+      AppSettings.instance.autoBackupEnabled = true;
+      final backupsDir = Directory('${sourceDir.path}/backups');
+      await backupsDir.create(recursive: true);
+      // Pre-seed more files than the keep count, each with a distinct
+      // mtime so pruning has a real newest-N ordering to respect.
+      for (var i = 0; i < BackupService.autoBackupKeepCount + 3; i++) {
+        final f = File('${backupsDir.path}/omnis-backup-seed-$i.zip');
+        await f.writeAsBytes([0]);
+        await f.setLastModified(
+            DateTime(2026, 1, 1).add(Duration(days: i)));
+      }
+
+      await service.maybeRunAutomaticBackup(now: DateTime(2026, 8, 15));
+
+      final remaining = await backupsDir.list().toList();
+      // The freshly-written backup counts toward the same keep-count
+      // pool as every pre-seeded one (it's the newest by mtime, so it's
+      // never itself pruned) — total remaining is exactly keepCount, not
+      // keepCount + 1.
+      expect(remaining.length, BackupService.autoBackupKeepCount);
+    });
+
+    test('a failure (e.g. an unwritable path) never throws — startup '
+        'must never be blocked by this', () async {
+      AppSettings.instance.autoBackupEnabled = true;
+      // Point at a path that can't be created as a directory (a file
+      // already sits where the "backups" subdirectory would go).
+      final blocker = File('${sourceDir.path}/backups');
+      await blocker.writeAsBytes([0]);
+
+      await expectLater(
+          service.maybeRunAutomaticBackup(now: DateTime(2026, 8, 15)),
+          completes);
+      expect(AppSettings.instance.lastAutoBackupAt, isNull,
+          reason: 'the failed attempt must not falsely claim success');
     });
   });
 }

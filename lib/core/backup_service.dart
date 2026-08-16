@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/backup_scheduler.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -209,4 +211,84 @@ class BackupService {
 
     return BackupRestoreResult.success(written);
   }
+
+  /// How many rotated automatic-backup files to keep on disk — see
+  /// [maybeRunAutomaticBackup].
+  static const int autoBackupKeepCount = 5;
+
+  /// Runs an automatic backup if [settings] (defaults to
+  /// [AppSettings.instance]) says one is enabled and due (via
+  /// [BackupScheduler.isDue]) — item 4/50's "automatic scheduled
+  /// backups" gap: previously [createBackup] only ever ran from
+  /// `BackupSettingsPage`'s two manual buttons, with no timer or
+  /// interval anywhere.
+  ///
+  /// Writes straight to `<documents>/backups/omnis-backup-<timestamp>
+  /// .zip` — no file-picker dialog, since this runs unattended (e.g. at
+  /// app startup), unlike [createBackup] itself (which just returns
+  /// bytes for a caller's own manual-save flow). Prunes older automatic
+  /// backups down to [autoBackupKeepCount] (newest kept, via
+  /// [BackupScheduler.filesToPrune]), then stamps
+  /// [AppSettings.lastAutoBackupAt]. Never throws — a failure here must
+  /// never block startup, the same "denial degrades, never blocks boot"
+  /// contract this app's permission-gating already follows.
+  Future<void> maybeRunAutomaticBackup({
+    AppSettings? settings,
+    DateTime? now,
+  }) async {
+    final appSettings = settings ?? AppSettings.instance;
+    if (!appSettings.autoBackupEnabled) return;
+    final effectiveNow = now ?? DateTime.now();
+    final due = BackupScheduler.isDue(
+      appSettings.lastAutoBackupAt,
+      Duration(days: appSettings.autoBackupIntervalDays),
+      effectiveNow,
+    );
+    if (!due) return;
+
+    try {
+      final dir = await _documentsDir();
+      final backupsDir = Directory(p.join(dir.path, 'backups'));
+      if (!await backupsDir.exists()) {
+        await backupsDir.create(recursive: true);
+      }
+
+      final bytes = await createBackup();
+      final stamp = effectiveNow
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
+      final file = File(p.join(backupsDir.path, 'omnis-backup-$stamp.zip'));
+      await file.writeAsBytes(bytes, flush: true);
+
+      final existing = await backupsDir
+          .list()
+          .where((e) => e is File && e.path.endsWith('.zip'))
+          .cast<File>()
+          .toList();
+      final withDates = [
+        for (final f in existing) _TimestampedFile(f, await f.lastModified())
+      ];
+      final toDelete = BackupScheduler.filesToPrune(
+          withDates, autoBackupKeepCount, (f) => f.modifiedAt);
+      for (final entry in toDelete) {
+        try {
+          await entry.file.delete();
+        } catch (_) {
+          // Best-effort pruning; a stray extra file is harmless.
+        }
+      }
+
+      appSettings.lastAutoBackupAt = effectiveNow;
+    } catch (e) {
+      // Best-effort; never let an automatic backup failure block startup.
+    }
+  }
+}
+
+class _TimestampedFile {
+  final File file;
+  final DateTime modifiedAt;
+  const _TimestampedFile(this.file, this.modifiedAt);
 }

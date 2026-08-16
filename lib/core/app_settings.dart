@@ -87,6 +87,9 @@ class AppSettings extends ChangeNotifier {
       'app_dynamic_color_from_art_enabled';
   static const _nowPlayingBackgroundStyleKey =
       'app_now_playing_background_style';
+  static const _autoBackupEnabledKey = 'app_auto_backup_enabled';
+  static const _autoBackupIntervalDaysKey = 'app_auto_backup_interval_days';
+  static const _lastAutoBackupAtKey = 'app_last_auto_backup_at';
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
 
@@ -602,6 +605,51 @@ class AppSettings extends ChangeNotifier {
   set highContrastEnabled(bool value) {
     _ensurePrefs();
     _prefs!.setBool(_highContrastEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// Item 4/50's "automatic scheduled backups" gap — `BackupService`
+  /// previously only ever ran from the two manual buttons on
+  /// `BackupSettingsPage`, with no timer or interval anywhere. Defaults
+  /// to `false`: writing a zip to disk unattended is a real, if small,
+  /// storage/behavior change nobody asked for until they opt in.
+  bool get autoBackupEnabled =>
+      _prefs?.getBool(_autoBackupEnabledKey) ?? false;
+
+  set autoBackupEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_autoBackupEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// How often an automatic backup should run, in days. Defaults to 7
+  /// (weekly) — frequent enough to matter, infrequent enough not to pile
+  /// up disk usage between prunes.
+  int get autoBackupIntervalDays =>
+      _prefs?.getInt(_autoBackupIntervalDaysKey) ?? 7;
+
+  set autoBackupIntervalDays(int value) {
+    _ensurePrefs();
+    _prefs!.setInt(_autoBackupIntervalDaysKey, value < 1 ? 1 : value);
+    notifyListeners();
+  }
+
+  /// When the last automatic backup actually ran, or `null` if one never
+  /// has — `BackupScheduler.isDue` treats `null` as due immediately, so
+  /// a fresh install/first-ever enable doesn't wait a full interval for
+  /// its first backup.
+  DateTime? get lastAutoBackupAt {
+    final ms = _prefs?.getInt(_lastAutoBackupAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  set lastAutoBackupAt(DateTime? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastAutoBackupAtKey);
+    } else {
+      _prefs!.setInt(_lastAutoBackupAtKey, value.millisecondsSinceEpoch);
+    }
     notifyListeners();
   }
 

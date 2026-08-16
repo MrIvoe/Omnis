@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/permissions.dart';
@@ -220,6 +221,15 @@ class MainCore {
     // installed on disk from previous sessions.
     await _pluginManager.initializeAll();
     await _pluginManager.loadInstalled();
+
+    // Item 4/50's "automatic scheduled backups" — a no-op unless the
+    // user has opted in (AppSettings.autoBackupEnabled defaults false)
+    // and one is actually due. Fire-and-forget, not awaited: writing a
+    // zip must never delay app startup, the same "denial degrades,
+    // never blocks boot" contract OmnisPermissions above already
+    // follows.
+    // ignore: unawaited_futures
+    BackupService().maybeRunAutomaticBackup();
 
     debugPrint('Omnis Core initialized successfully');
   }
