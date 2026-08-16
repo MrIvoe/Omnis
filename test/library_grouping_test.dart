@@ -42,6 +42,65 @@ void main() {
       expect(sections.first.children.first.children.first.title, 'Sunrise');
     });
 
+    test('LibrarySection.allTracks flattens a nested artist/album/track '
+        'structure into every real track it covers', () {
+      final tracks = [
+        BaseTrack(
+          id: '1',
+          title: 'Sunrise',
+          artists: ['Ava'],
+          album: 'Morning',
+          duration: 180,
+          type: TrackType.local,
+        ),
+        BaseTrack(
+          id: '2',
+          title: 'Moonlight',
+          artists: ['Ava'],
+          album: 'Night',
+          duration: 200,
+          type: TrackType.local,
+        ),
+        BaseTrack(
+          id: '3',
+          title: 'Echo',
+          artists: ['Ben'],
+          album: 'Night',
+          duration: 210,
+          type: TrackType.local,
+        ),
+      ];
+
+      final sections = buildLibrarySections(tracks,
+          viewMode: LibraryViewMode.artists, showAlbums: true);
+
+      // Ava's top-level section has no direct `tracks` of its own (it's
+      // all nested under album children) — allTracks must still surface
+      // both of her tracks.
+      final ava = sections.firstWhere((s) => s.title == 'Ava');
+      expect(ava.tracks, isEmpty);
+      expect(ava.allTracks.map((t) => t.id).toSet(), {'1', '2'});
+    });
+
+    test('LibrarySection.allTracks on a flat (non-nested) section just '
+        'returns its own tracks unchanged', () {
+      final tracks = [
+        BaseTrack(
+          id: '1',
+          title: 'Sunrise',
+          artists: const ['Ava'],
+          album: 'Morning',
+          duration: 180,
+          type: TrackType.local,
+        ),
+      ];
+
+      final sections =
+          buildLibrarySections(tracks, viewMode: LibraryViewMode.albums, showAlbums: false);
+
+      expect(sections.single.allTracks, sections.single.tracks);
+    });
+
     test('folders mode groups by parent directory, titled by its basename', () {
       final tracks = [
         BaseTrack(

@@ -14,6 +14,7 @@ import 'package:omnis/core/library_search.dart';
 import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/rating_aggregation.dart';
 import 'package:omnis/core/tag_find_replace.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -47,6 +48,14 @@ class LibrarySection {
     this.children = const [],
     this.tracks = const [],
   });
+
+  /// Every track this section covers, including nested children's —
+  /// [tracks] alone is empty for a section that only holds sub-sections
+  /// (e.g. an Artists-view artist row when albums are grouped beneath
+  /// it), so a caller wanting "every track under this row" (like a
+  /// calculated rating average) needs the full recursive set.
+  List<BaseTrack> get allTracks =>
+      children.isEmpty ? tracks : children.expand((c) => c.allTracks).toList();
 }
 
 List<LibrarySection> buildLibrarySections(
@@ -2420,6 +2429,10 @@ class _LibraryPageState extends State<LibraryPage> {
     final cover = section.tracks.isNotEmpty ? section.tracks.first : null;
     final selected =
         section.tracks.isNotEmpty && section.tracks.every((t) => _selectedIds.contains(t.id));
+    final gridRatingBadge =
+        (_viewMode == LibraryViewMode.albums || _viewMode == LibraryViewMode.artists)
+            ? _groupRatingBadge(section.tracks)
+            : null;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => _selectionMode
@@ -2472,6 +2485,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall),
+          if (gridRatingBadge != null) gridRatingBadge,
         ],
       ),
     );
@@ -2489,6 +2503,24 @@ class _LibraryPageState extends State<LibraryPage> {
     await widget.engine.play();
   }
 
+  /// MusicBee-comparison §36's "album/artist-level ratings" gap — a
+  /// read-only, calculated average across [tracks]' individual ratings,
+  /// distinct from (and never itself persisted alongside) the per-track
+  /// rating `RatingsPlugin` stores. `null` when no track in the group
+  /// has been rated yet, so callers can skip rendering anything rather
+  /// than showing a misleading "0.0".
+  Widget? _groupRatingBadge(List<BaseTrack> tracks) {
+    final summary = averageRating(tracks, _ratingOf);
+    if (summary == null) return null;
+    final theme = Theme.of(context);
+    return Text(
+      '★ ${summary.average.toStringAsFixed(1)} '
+      '(${summary.ratedCount} rated)',
+      style: theme.textTheme.bodySmall
+          ?.copyWith(color: theme.colorScheme.primary),
+    );
+  }
+
   Widget _buildSection(LibrarySection section, {required int depth}) {
     final theme = Theme.of(context);
     // Only the top-level row of an Artists-view section is actually an
@@ -2496,6 +2528,7 @@ class _LibraryPageState extends State<LibraryPage> {
     // other view mode's top level (album/genre/folder) isn't an artist
     // at all, so this only ever fires exactly where a photo makes sense.
     final isArtistRow = depth == 0 && _viewMode == LibraryViewMode.artists;
+    final isAlbumRow = depth == 0 && _viewMode == LibraryViewMode.albums;
 
     if (section.children.isNotEmpty) {
       return ExpansionTile(
@@ -2508,11 +2541,15 @@ class _LibraryPageState extends State<LibraryPage> {
               )
             : null,
         title: Text(section.title, style: theme.textTheme.titleMedium),
+        subtitle: isArtistRow ? _groupRatingBadge(section.allTracks) : null,
         children: section.children
             .map((child) => _buildSection(child, depth: depth + 1))
             .toList(),
       );
     }
+
+    final ratingBadge =
+        (isArtistRow || isAlbumRow) ? _groupRatingBadge(section.allTracks) : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2520,19 +2557,25 @@ class _LibraryPageState extends State<LibraryPage> {
         if (section.title.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(left: 16 + depth * 12, top: 8, bottom: 4),
-            child: isArtistRow
-                ? Row(
-                    children: [
-                      ArtistAvatar(
-                        artistName: section.title,
-                        imageProvider: _artistImageProvider,
-                        radius: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(section.title, style: theme.textTheme.titleSmall),
-                    ],
-                  )
-                : Text(section.title, style: theme.textTheme.titleSmall),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                isArtistRow
+                    ? Row(
+                        children: [
+                          ArtistAvatar(
+                            artistName: section.title,
+                            imageProvider: _artistImageProvider,
+                            radius: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(section.title, style: theme.textTheme.titleSmall),
+                        ],
+                      )
+                    : Text(section.title, style: theme.textTheme.titleSmall),
+                if (ratingBadge != null) ratingBadge,
+              ],
+            ),
           ),
         ...section.tracks.map((track) {
           final selected = _selectedIds.contains(track.id);
