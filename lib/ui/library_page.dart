@@ -517,6 +517,48 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Looks up [track]'s cover art online via `MetadataEnrichmentPlugin
+  /// .lookupArtwork` (MusicBrainz → Cover Art Archive, item 12/spec §47)
+  /// and embeds it through the same `TagEditorPlugin.writeTags` call the
+  /// manual "pick an image" flow (`TagEditorDialog._pickArtwork`) already
+  /// uses — this is genuinely the same "write artwork bytes to the file"
+  /// operation, just sourced online instead of from a file picker.
+  Future<void> _lookupArtworkOnline(BaseTrack track) async {
+    final enrichment = _enrichmentPlugin;
+    if (enrichment == null) {
+      _toast('The Metadata Enrichment plugin is disabled in Settings.');
+      return;
+    }
+    final tagEditor = _tagEditorPlugin;
+    if (tagEditor == null) {
+      _toast('The Tag Editor plugin is disabled in Settings.');
+      return;
+    }
+    final path = track.localPath;
+    if (path == null) {
+      _toast('"${track.title}" has no local file to update.');
+      return;
+    }
+    setState(() => _enrichingIds.add(track.id));
+    try {
+      final artwork = await enrichment.lookupArtwork(track);
+      if (artwork == null) {
+        _toast('No artwork found online for "${track.title}".');
+        return;
+      }
+      final ok = await tagEditor.writeTags(path, artworkBytes: artwork);
+      if (!ok) {
+        _toast('Could not write artwork to "${track.title}".');
+        return;
+      }
+      ArtworkProvider.invalidate(track.id);
+      if (mounted) setState(() {});
+      _toast('Updated artwork for "${track.title}".');
+    } finally {
+      if (mounted) setState(() => _enrichingIds.remove(track.id));
+    }
+  }
+
   /// Looks up every track sequentially, respecting MusicBrainz's ~1
   /// request/second rate limit between calls. Shows live progress and can
   /// be cancelled mid-run; whatever was already updated is kept.
@@ -2386,6 +2428,9 @@ class _LibraryPageState extends State<LibraryPage> {
                               _setThumb(track, ThumbState.down);
                             }
                             if (value == 'enrich') _enrichSingle(track);
+                            if (value == 'lookup_artwork') {
+                              _lookupArtworkOnline(track);
+                            }
                             if (value == 'analyze') _analyzeSingle(track);
                             if (value == 'set_ringtone') _setAsRingtone(track);
                             if (value == 'audio_info') _showAudioInfo(track);
@@ -2430,6 +2475,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             PopupMenuItem(
                               value: 'enrich',
                               child: Text('Look up metadata'),
+                            ),
+                            PopupMenuItem(
+                              value: 'lookup_artwork',
+                              child: Text('Look up artwork online'),
                             ),
                             PopupMenuItem(
                               value: 'analyze',
