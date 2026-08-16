@@ -4,6 +4,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart' show ThumbState;
 import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
@@ -213,6 +214,69 @@ void main() {
 
     final result = smartPlaylist
         .buildQueueForRule([track(id: 'loved')], 'my-favorites');
+    expect(result, isEmpty);
+  });
+
+  test('a saved rule with a thumbUp: condition matches through the real '
+      'registered IThumbsProvider, not just a caller-supplied lookup — '
+      'item 36', () async {
+    final ratings = RatingsPlugin();
+    final smartPlaylist = SmartPlaylistPlugin();
+    await managerWith([ratings, smartPlaylist]);
+
+    await ratings.setThumb('liked', ThumbState.up);
+    await ratings.setThumb('disliked', ThumbState.down);
+
+    await smartPlaylist.saveRule(const SmartPlaylistRule(
+      id: 'liked-tracks',
+      name: 'Liked Tracks',
+      matchType: RuleMatchType.all,
+      conditions: [
+        RuleCondition(
+          field: RuleField.thumbUp,
+          operator: RuleOperator.equals,
+          value: 'true',
+        ),
+      ],
+    ));
+
+    final tracks = [
+      track(id: 'liked'),
+      track(id: 'disliked'),
+      track(id: 'neutral'),
+    ];
+
+    final result = smartPlaylist.buildQueueForRule(tracks, 'liked-tracks');
+    expect(result.map((t) => t.id), ['liked']);
+  });
+
+  test('disabling RatingsPlugin unregisters IThumbsProvider too, so a '
+      'thumbUp: condition stops matching without SmartPlaylistPlugin '
+      'itself changing — proves both interfaces share the same '
+      'enable/disable lifecycle, not just IRatingsProvider', () async {
+    final ratings = RatingsPlugin();
+    final smartPlaylist = SmartPlaylistPlugin();
+    final manager = await managerWith([ratings, smartPlaylist]);
+
+    await ratings.setThumb('liked', ThumbState.up);
+    await smartPlaylist.saveRule(const SmartPlaylistRule(
+      id: 'liked-tracks',
+      name: 'Liked Tracks',
+      matchType: RuleMatchType.all,
+      conditions: [
+        RuleCondition(
+          field: RuleField.thumbUp,
+          operator: RuleOperator.equals,
+          value: 'true',
+        ),
+      ],
+    ));
+
+    final ratingsManaged = manager.byId('ratings')!;
+    await manager.disablePlugin(ratingsManaged);
+
+    final result = smartPlaylist
+        .buildQueueForRule([track(id: 'liked')], 'liked-tracks');
     expect(result, isEmpty);
   });
 }

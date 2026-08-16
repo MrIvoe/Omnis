@@ -1224,6 +1224,28 @@ class _LibraryPageState extends State<LibraryPage> {
 
   int _ratingOf(String trackId) => _ratingsPlugin?.ratingOf(trackId) ?? 0;
 
+  /// [RatingsPlugin] also implements [IThumbsProvider] — same plugin
+  /// instance, an independent signal from the star rating above (§36:
+  /// a coarse "yes/no" preference some listeners prefer over picking a
+  /// specific star count).
+  ThumbState _thumbOf(String trackId) =>
+      _ratingsPlugin?.thumbOf(trackId) ?? ThumbState.none;
+
+  /// Toggles [track]'s thumb state: tapping the currently-active thumb
+  /// clears it, tapping the other one switches to it — the same
+  /// one-tap-no-confirm UX [_toggleFavorite] already uses.
+  Future<void> _setThumb(BaseTrack track, ThumbState state) async {
+    final plugin = _ratingsPlugin;
+    if (plugin == null) {
+      _toast('The Ratings plugin is disabled in Settings.');
+      return;
+    }
+    OmnisHaptics.selectionClick();
+    final next = _thumbOf(track.id) == state ? ThumbState.none : state;
+    await plugin.setThumb(track.id, next);
+    if (mounted) setState(() {});
+  }
+
   /// Opens a 5-star picker for [track] — tapping a star immediately sets
   /// that rating and closes, tapping the already-selected star (or the
   /// explicit clear button, when rated) clears it. One tap, no separate
@@ -2299,6 +2321,25 @@ class _LibraryPageState extends State<LibraryPage> {
                           tooltip: 'Rated ${_ratingOf(track.id)}/5',
                           onPressed: () => _rateTrack(track),
                         ),
+                      // Same "only shown once set" reasoning as the star
+                      // rating above — an independent signal (§36), so a
+                      // track can show a thumb icon, a star icon, both,
+                      // or neither.
+                      if (_thumbOf(track.id) != ThumbState.none)
+                        IconButton(
+                          icon: Icon(
+                            _thumbOf(track.id) == ThumbState.up
+                                ? Icons.thumb_up
+                                : Icons.thumb_down,
+                            size: 20,
+                          ),
+                          color: theme.colorScheme.primary,
+                          tooltip: _thumbOf(track.id) == ThumbState.up
+                              ? 'Thumbed up'
+                              : 'Thumbed down',
+                          onPressed: () =>
+                              _setThumb(track, _thumbOf(track.id)),
+                        ),
                       if (_enrichingIds.contains(track.id) ||
                           _analyzingIds.contains(track.id))
                         const Padding(
@@ -2322,6 +2363,12 @@ class _LibraryPageState extends State<LibraryPage> {
                               _addToPlaylist({track.id});
                             }
                             if (value == 'rate') _rateTrack(track);
+                            if (value == 'thumb_up') {
+                              _setThumb(track, ThumbState.up);
+                            }
+                            if (value == 'thumb_down') {
+                              _setThumb(track, ThumbState.down);
+                            }
                             if (value == 'enrich') _enrichSingle(track);
                             if (value == 'analyze') _analyzeSingle(track);
                             if (value == 'set_ringtone') _setAsRingtone(track);
@@ -2355,6 +2402,14 @@ class _LibraryPageState extends State<LibraryPage> {
                             PopupMenuItem(
                               value: 'rate',
                               child: Text('Rate track'),
+                            ),
+                            PopupMenuItem(
+                              value: 'thumb_up',
+                              child: Text('Thumbs up'),
+                            ),
+                            PopupMenuItem(
+                              value: 'thumb_down',
+                              child: Text('Thumbs down'),
                             ),
                             PopupMenuItem(
                               value: 'enrich',
