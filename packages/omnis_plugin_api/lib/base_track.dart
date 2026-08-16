@@ -112,6 +112,15 @@ class BaseTrack {
   /// Channel count (1 = mono, 2 = stereo, ...). `null` when unknown.
   final int? channels;
 
+  /// The track's composer, distinct from [artists] (the performers) —
+  /// classical/film-score/cover libraries commonly need this
+  /// distinction. `null` when unknown; read from the same `TCOM`/
+  /// `TXXX:COMPOSER` tag `TagEditorPlugin`'s own "Composer" edit field
+  /// already reads and writes (`TrackTags.composer`) — this field is
+  /// what makes that data reach the library model at all, previously
+  /// edit-only and never scanned in.
+  final String? composer;
+
   /// Constructor
   BaseTrack({
     required this.id,
@@ -143,6 +152,7 @@ class BaseTrack {
     this.bitDepth,
     this.bitrateKbps,
     this.channels,
+    this.composer,
   });
 
   /// Create a copy of this track with updated values
@@ -176,6 +186,7 @@ class BaseTrack {
     int? bitDepth,
     int? bitrateKbps,
     int? channels,
+    String? composer,
   }) {
     return BaseTrack(
       id: id ?? this.id,
@@ -207,6 +218,7 @@ class BaseTrack {
       bitDepth: bitDepth ?? this.bitDepth,
       bitrateKbps: bitrateKbps ?? this.bitrateKbps,
       channels: channels ?? this.channels,
+      composer: composer ?? this.composer,
     );
   }
 
@@ -242,6 +254,7 @@ class BaseTrack {
       'bitDepth': bitDepth,
       'bitrateKbps': bitrateKbps,
       'channels': channels,
+      'composer': composer,
     };
   }
 
@@ -292,6 +305,7 @@ class BaseTrack {
       bitDepth: json['bitDepth'] as int?,
       bitrateKbps: json['bitrateKbps'] as int?,
       channels: json['channels'] as int?,
+      composer: json['composer'] as String?,
     );
   }
 
@@ -345,7 +359,8 @@ class BaseTrack {
         other.sampleRateHz == sampleRateHz &&
         other.bitDepth == bitDepth &&
         other.bitrateKbps == bitrateKbps &&
-        other.channels == channels;
+        other.channels == channels &&
+        other.composer == composer;
   }
 
   @override
@@ -383,6 +398,7 @@ class BaseTrack {
       bitDepth,
       bitrateKbps,
       channels,
+      composer,
     ]);
   }
 }
