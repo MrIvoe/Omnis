@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/mute_toggle.dart';
 
 /// App-wide playback keyboard shortcuts (§45 UI spec's "Keyboard"
 /// settings category — previously a genuine 0%, "no `Shortcuts`/
@@ -73,6 +74,10 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
 
   final _anchorFocusNode =
       FocusNode(debugLabel: 'GlobalKeyboardShortcutsAnchor');
+
+  /// Remembered by [toggleMute] across presses — see that function's own
+  /// doc for why this is nullable state rather than a plain boolean.
+  double? _volumeBeforeMute;
 
   @override
   void initState() {
@@ -153,6 +158,13 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
     widget.engine.setVolume(target);
   }
 
+  void _toggleMute() {
+    if (!_enabled || _typingInTextField) return;
+    final result = toggleMute(widget.engine.volume, _volumeBeforeMute);
+    _volumeBeforeMute = result.volumeToRemember;
+    widget.engine.setVolume(result.newVolume);
+  }
+
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
@@ -174,6 +186,12 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
             _adjustVolume(_volumeStep),
         const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
             _adjustVolume(-_volumeStep),
+        // A plain letter key rather than a platform media-mute key
+        // constant — `LogicalKeyboardKey` has no `mediaMute` equivalent
+        // to `mediaPlayPause`/`mediaTrackNext` that's been verified to
+        // exist across the platforms this app targets, so this avoids
+        // relying on one that might not.
+        const SingleActivator(LogicalKeyboardKey.keyM): _toggleMute,
       },
       child: Focus(
         focusNode: _anchorFocusNode,

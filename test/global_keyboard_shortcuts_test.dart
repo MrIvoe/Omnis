@@ -191,6 +191,27 @@ void main() {
     expect(engine.volumeSetTo, 0.0);
   });
 
+  testWidgets('M mutes when volume is non-zero', (tester) async {
+    final engine = await pumpHarness(tester);
+    engine._volume = 0.7;
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(engine.volumeSetTo, 0.0);
+  });
+
+  testWidgets('a second M press restores the exact volume the first one '
+      'muted', (tester) async {
+    final engine = await pumpHarness(tester);
+    engine._volume = 0.35;
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(engine.volumeSetTo, 0.0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.pump();
+    expect(engine.volumeSetTo, 0.35);
+  });
+
   testWidgets(
       'disabling keyboard shortcuts via AppSettings makes every '
       'binding a no-op', (tester) async {

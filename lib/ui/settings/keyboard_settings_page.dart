@@ -38,6 +38,7 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
     ('Ctrl + Right / Left arrow', 'Next / previous track'),
     ('Right / Left arrow', 'Seek forward / backward 10s'),
     ('Up / Down arrow', 'Volume up / down'),
+    ('M', 'Mute / unmute'),
   ];
 
   @override
