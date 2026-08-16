@@ -67,4 +67,48 @@ void main() {
     expect(find.text('Total duration'), findsOneWidget);
     expect(find.textContaining('1 h'), findsOneWidget);
   });
+
+  testWidgets(
+      'with no favorites/ratings supplied, the "Listening favorites" '
+      'rows stay hidden rather than showing empty groups', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LibraryStatisticsPage(tracks: [_track(id: '1')]),
+    ));
+
+    expect(find.text('Favorite artists'), findsNothing);
+    expect(find.text('Favorite albums'), findsNothing);
+    expect(find.text('Favorite genres'), findsNothing);
+    expect(find.text('Highest rated tracks'), findsNothing);
+  });
+
+  testWidgets('favorited/rated tracks surface ranked "Listening favorites" '
+      'rows', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LibraryStatisticsPage(
+        tracks: [
+          _track(id: '1', album: 'Album A', artists: const ['Artist A']),
+          _track(id: '2', album: 'Album A', artists: const ['Artist A']),
+        ],
+        isFavorite: (id) => true,
+        ratingOf: (id) => id == '1' ? 5 : 3,
+      ),
+    ));
+
+    // The stat list now has enough rows that the new "Listening
+    // favorites" entries fall past the ListView's initial cache
+    // extent and aren't built yet — drag the list itself to reach
+    // them, same fix `plugin_settings_page_test.dart`/the `RuleField`
+    // dropdown popup needed for the same underlying reason.
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+
+    final values = <String, String>{
+      for (final tile in tester.widgetList<ListTile>(find.byType(ListTile)))
+        (tile.title as Text).data!: (tile.trailing as Text).data!,
+    };
+
+    expect(values['Favorite artists'], 'Artist A (2)');
+    expect(values['Favorite albums'], 'Album A (2)');
+    expect(values['Highest rated tracks'], contains('Title 1 (5★)'));
+  });
 }

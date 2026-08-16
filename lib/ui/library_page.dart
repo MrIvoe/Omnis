@@ -1423,7 +1423,11 @@ class _LibraryPageState extends State<LibraryPage> {
   /// contract [_openCleanupReport] already establishes.
   Future<void> _openStatistics() async {
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (context) => LibraryStatisticsPage(tracks: _tracks),
+      builder: (context) => LibraryStatisticsPage(
+        tracks: _tracks,
+        isFavorite: _isFavorite,
+        ratingOf: _ratingOf,
+      ),
     ));
   }
 
