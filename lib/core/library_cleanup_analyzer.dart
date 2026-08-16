@@ -26,6 +26,14 @@ class LibraryCleanupReport {
   final List<List<BaseTrack>> duplicateAlbumGroups;
   final List<BaseTrack> corruptFiles;
 
+  /// Local tracks whose codec is a known-lossy format at a bitrate below
+  /// [LibraryCleanupAnalyzer.lowQualityBitrateThresholdKbps] — spec §9's
+  /// "Low-quality files" category. Lossless tracks and any track with an
+  /// unknown bitrate are never flagged, the same "don't manufacture a
+  /// claim the data can't support" stance [corruptFiles]'s own doc
+  /// comment already states.
+  final List<BaseTrack> lowQualityFiles;
+
   /// Local tracks whose file no longer exists on disk. Always `const []`
   /// on the report [LibraryCleanupAnalyzer.analyze] itself returns —
   /// filled in afterward by a caller that awaits
@@ -44,6 +52,7 @@ class LibraryCleanupReport {
     required this.inconsistentGenres,
     required this.duplicateAlbumGroups,
     required this.corruptFiles,
+    this.lowQualityFiles = const [],
     this.missingFiles = const [],
   });
 
@@ -60,6 +69,7 @@ class LibraryCleanupReport {
         inconsistentGenres: inconsistentGenres,
         duplicateAlbumGroups: duplicateAlbumGroups,
         corruptFiles: corruptFiles,
+        lowQualityFiles: lowQualityFiles,
         missingFiles: missingFiles,
       );
 
@@ -85,6 +95,8 @@ class LibraryCleanupReport {
         LibraryCleanupCategory(
             label: 'duplicate albums', count: duplicateAlbumsCount),
         LibraryCleanupCategory(label: 'corrupt files', count: corruptFiles.length),
+        LibraryCleanupCategory(
+            label: 'low-quality files', count: lowQualityFiles.length),
         LibraryCleanupCategory(
             label: 'missing files', count: missingFiles.length),
       ];
@@ -126,6 +138,12 @@ String _extensionOf(String path) {
 class LibraryCleanupAnalyzer {
   const LibraryCleanupAnalyzer._();
 
+  /// The conventional "low bitrate" floor for a lossy encode — below
+  /// this, quality loss is broadly audible regardless of the specific
+  /// lossy codec. Matches [_lossyCodecs]' own scope: only meaningful for
+  /// a lossy format, never applied to a lossless one.
+  static const lowQualityBitrateThresholdKbps = 128;
+
   static LibraryCleanupReport analyze(List<BaseTrack> tracks) {
     return LibraryCleanupReport(
       missingArtwork: _missingArtwork(tracks),
@@ -138,6 +156,7 @@ class LibraryCleanupAnalyzer {
           tracks, (t) => t.genres.isNotEmpty ? t.genres.first : ''),
       duplicateAlbumGroups: _duplicateAlbums(tracks),
       corruptFiles: _corruptFiles(tracks),
+      lowQualityFiles: _lowQualityFiles(tracks),
     );
   }
 
@@ -272,6 +291,29 @@ class LibraryCleanupAnalyzer {
           t.localPath != null &&
           t.codec == null &&
           _fullyParsedExtensions.contains(_extensionOf(t.localPath!)))
+      .toList();
+
+  /// Known-lossy codec labels — the exact strings `AudioFormatReader`
+  /// actually produces (confirmed by reading it directly). Duplicated
+  /// from `library_statistics.dart`'s identical set rather than
+  /// cross-imported — small, stable list, the same "not worth a
+  /// cross-file coupling" reasoning [_fullyParsedExtensions] above
+  /// already applies. `AAC/ALAC (M4A)` is deliberately excluded: it's a
+  /// container, not a codec, and can hold either lossy AAC or lossless
+  /// ALAC — flagging it either way would be a guess, not a finding.
+  static const _lossyCodecs = {'MP3', 'Ogg', 'Ogg Vorbis', 'Opus', 'WMA', 'AAC'};
+
+  /// A local track encoded in a known-lossy format below
+  /// [lowQualityBitrateThresholdKbps] — spec §9's "Low-quality files"
+  /// category. A lossless track, an unrecognized/ambiguous codec, or a
+  /// track with no known bitrate is never flagged.
+  static List<BaseTrack> _lowQualityFiles(List<BaseTrack> tracks) => tracks
+      .where((t) =>
+          t.type == TrackType.local &&
+          t.codec != null &&
+          _lossyCodecs.contains(t.codec) &&
+          t.bitrateKbps != null &&
+          t.bitrateKbps! < lowQualityBitrateThresholdKbps)
       .toList();
 
   /// Local tracks whose file no longer exists on disk — moved, renamed

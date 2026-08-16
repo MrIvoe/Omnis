@@ -17,6 +17,7 @@ void main() {
     String? codec,
     String? localPath,
     TrackType type = TrackType.local,
+    int? bitrateKbps,
   }) =>
       BaseTrack(
         id: id,
@@ -31,6 +32,7 @@ void main() {
         codec: codec,
         localPath: localPath,
         type: type,
+        bitrateKbps: bitrateKbps,
       );
 
   group('missing artwork', () {
@@ -245,12 +247,92 @@ void main() {
     });
   });
 
+  group('low-quality files', () {
+    test('flags a lossy track below the bitrate threshold', () {
+      final tracks = [
+        track(id: '1', codec: 'MP3', bitrateKbps: 96),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles,
+          hasLength(1));
+    });
+
+    test('a lossy track at or above the threshold is never flagged', () {
+      final tracks = [
+        track(id: '1', codec: 'MP3', bitrateKbps: 128),
+        track(id: '2', codec: 'MP3', bitrateKbps: 320),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('a lossless track is never flagged regardless of bitrate', () {
+      final tracks = [
+        track(id: '1', codec: 'FLAC', bitrateKbps: 96),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('a track with an unknown bitrate is never flagged', () {
+      final tracks = [
+        track(id: '1', codec: 'MP3', bitrateKbps: null),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('an ambiguous AAC/ALAC (M4A) container is never flagged — could '
+        'be lossy AAC or lossless ALAC, not a guessable call', () {
+      final tracks = [
+        track(id: '1', codec: 'AAC/ALAC (M4A)', bitrateKbps: 64),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('a non-local track is never flagged even with a low bitrate',
+        () {
+      final tracks = [
+        track(id: '1', codec: 'MP3', bitrateKbps: 64, type: TrackType.spotify),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('a track with no codec at all is never flagged', () {
+      final tracks = [
+        track(id: '1', codec: null, bitrateKbps: 64),
+      ];
+
+      expect(
+          LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles, isEmpty);
+    });
+
+    test('mixed library: only the genuinely low-quality tracks are '
+        'flagged', () {
+      final tracks = [
+        track(id: 'low', codec: 'MP3', bitrateKbps: 96),
+        track(id: 'high', codec: 'MP3', bitrateKbps: 320),
+        track(id: 'lossless', codec: 'FLAC', bitrateKbps: 96),
+      ];
+
+      final flagged = LibraryCleanupAnalyzer.analyze(tracks).lowQualityFiles;
+      expect(flagged.map((t) => t.id), ['low']);
+    });
+  });
+
   group('LibraryCleanupReport.categories / isClean', () {
     test('an empty library reports every category at zero and isClean '
         'true', () {
       final report = LibraryCleanupAnalyzer.analyze(const []);
 
-      expect(report.categories, hasLength(9));
+      expect(report.categories, hasLength(10));
       expect(report.categories.every((c) => c.count == 0), isTrue);
       expect(report.isClean, isTrue);
     });
@@ -277,7 +359,7 @@ void main() {
 
       expect(updated.missingFiles, missing);
       expect(updated.missingArtwork, base.missingArtwork);
-      expect(updated.categories, hasLength(9));
+      expect(updated.categories, hasLength(10));
     });
   });
 

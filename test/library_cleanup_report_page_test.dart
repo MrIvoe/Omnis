@@ -14,6 +14,7 @@ BaseTrack _track({
   String? coverArt,
   String? codec,
   String? localPath,
+  int? bitrateKbps,
 }) =>
     BaseTrack(
       id: id,
@@ -28,6 +29,7 @@ BaseTrack _track({
       codec: codec,
       localPath: localPath,
       type: TrackType.local,
+      bitrateKbps: bitrateKbps,
     );
 
 void main() {
@@ -212,6 +214,56 @@ void main() {
     expect(find.text('Broken'), findsOneWidget);
     expect(find.text('Edit tags'), findsNothing);
     expect(find.textContaining("couldn't be read"), findsOneWidget);
+  });
+
+  testWidgets('low-quality files are listed read-only with a bitrate '
+      'disclaimer', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LibraryCleanupReportPage(
+        tracks: [
+          _track(id: '1', title: 'Muddy', codec: 'MP3', bitrateKbps: 96),
+        ],
+        onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
+      ),
+    ));
+    await tester.pump();
+
+    await tester.dragUntilVisible(
+      find.text('1 low-quality files'),
+      find.byType(ListView),
+      const Offset(0, -100),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 low-quality files'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Muddy'), findsOneWidget);
+    expect(find.textContaining('MP3 · 96 kbps'), findsOneWidget);
+    expect(find.text('Edit tags'), findsNothing);
+    expect(find.textContaining('128'), findsWidgets);
+  });
+
+  testWidgets('a lossless track is never listed as low-quality',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: LibraryCleanupReportPage(
+        tracks: [
+          _track(
+              id: '1',
+              coverArt: '/art.jpg',
+              year: 2000,
+              trackNumber: 1,
+              codec: 'FLAC',
+              bitrateKbps: 96),
+        ],
+        onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('Nothing to clean up'), findsOneWidget);
   });
 
   group('missing files (item 17)', () {

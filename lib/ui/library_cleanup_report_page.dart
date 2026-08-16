@@ -12,9 +12,10 @@ import 'package:omnis/core/library_cleanup_analyzer.dart';
 /// the file afterward, and persists the change, so this page never
 /// duplicates that logic. Duplicate tracks/albums point at `LibraryPage`'s
 /// own existing "Find duplicates & short tracks…" tool rather than
-/// re-implementing merge/delete a second time; corrupt files are listed
-/// read-only, since there's nothing this app can do to repair a file's
-/// own header bytes.
+/// re-implementing merge/delete a second time; corrupt files and
+/// low-quality files are both listed read-only, since there's nothing
+/// this app can do to repair a file's own header bytes or re-encode it
+/// at a higher bitrate.
 ///
 /// A point-in-time snapshot, deliberately: [tracks] is analyzed once in
 /// `initState` and the category lists don't live-update as edits are
@@ -187,6 +188,34 @@ class _LibraryCleanupReportPageState extends State<LibraryCleanupReportPage> {
                 child: ListTile(
                   title: Text(track.title),
                   subtitle: Text(track.localPath ?? ''),
+                ),
+              ),
+          ],
+        );
+      case 'low-quality files':
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'These files are encoded in a lossy format below '
+                '${LibraryCleanupAnalyzer.lowQualityBitrateThresholdKbps} '
+                'kbps — re-ripping or replacing them from a higher-quality '
+                'source is the only real fix.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            for (final track in _report.lowQualityFiles)
+              Card(
+                child: ListTile(
+                  title: Text(track.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    '${track.codec} · ${track.bitrateKbps} kbps',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
           ],
