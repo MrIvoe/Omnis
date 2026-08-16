@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/home_layout_store.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -37,9 +38,10 @@ class HomeDashboardPage extends StatefulWidget {
 }
 
 class _HomeSection {
+  final String id;
   final String title;
   final List<BaseTrack> tracks;
-  const _HomeSection(this.title, this.tracks);
+  const _HomeSection(this.id, this.title, this.tracks);
 }
 
 class _HomeDashboardPageState extends State<HomeDashboardPage> {
@@ -50,6 +52,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   List<BaseTrack> _continueListening = const [];
   List<BaseTrack> _favorites = const [];
   List<BaseTrack> _mostSkipped = const [];
+  List<HomeSectionPreference> _layout = const [];
 
   StreamSubscription<BaseTrack?>? _trackSub;
   StreamSubscription<FavoriteChangedEvent>? _favoriteSub;
@@ -132,6 +135,8 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
             ?.favoritesWithSnapshots(library) ??
         const <BaseTrack>[];
 
+    final layout = await HomeLayoutStore.instance.load();
+
     if (!mounted) return;
     setState(() {
       _recentlyPlayed = recentlyPlayed;
@@ -140,8 +145,24 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       _continueListening = continueListening;
       _favorites = favorites.take(20).toList();
       _mostSkipped = mostSkipped;
+      _layout = layout;
       _loading = false;
     });
+  }
+
+  /// Item 45's "0% for Home" gap — a real, persisted customization of
+  /// section order/visibility, the tractable slice of the spec's larger
+  /// "widget canvas" vision for a fixed set of sections rather than
+  /// freely-composable ones. Opens a modal sheet to reorder/hide the
+  /// six known sections; on close, saves via [HomeLayoutStore] and
+  /// reloads so [applyHomeLayout] picks up the change immediately.
+  Future<void> _openCustomize() async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _HomeCustomizeSheet(),
+    );
+    if (changed == true) await _load();
   }
 
   Future<void> _play(List<BaseTrack> section, int index) async {
@@ -158,20 +179,35 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final sections = <_HomeSection>[
+    final defaultSections = <_HomeSection>[
       if (_continueListening.isNotEmpty)
-        _HomeSection('Continue Listening', _continueListening),
+        _HomeSection('continue_listening', 'Continue Listening',
+            _continueListening),
       if (_recentlyPlayed.isNotEmpty)
-        _HomeSection('Recently Played', _recentlyPlayed),
-      if (_mostPlayed.isNotEmpty) _HomeSection('Most Played', _mostPlayed),
+        _HomeSection('recently_played', 'Recently Played', _recentlyPlayed),
+      if (_mostPlayed.isNotEmpty)
+        _HomeSection('most_played', 'Most Played', _mostPlayed),
       if (_recentlyAdded.isNotEmpty)
-        _HomeSection('Recently Added', _recentlyAdded),
-      if (_favorites.isNotEmpty) _HomeSection('Favorites', _favorites),
-      if (_mostSkipped.isNotEmpty) _HomeSection('Most Skipped', _mostSkipped),
+        _HomeSection('recently_added', 'Recently Added', _recentlyAdded),
+      if (_favorites.isNotEmpty)
+        _HomeSection('favorites', 'Favorites', _favorites),
+      if (_mostSkipped.isNotEmpty)
+        _HomeSection('most_skipped', 'Most Skipped', _mostSkipped),
     ];
+    final sections =
+        applyHomeLayout(defaultSections, _layout, (s) => s.id);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
+      appBar: AppBar(
+        title: const Text('Home'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Customize',
+            onPressed: _openCustomize,
+          ),
+        ],
+      ),
       body: sections.isEmpty
           ? const Center(
               child: Padding(
@@ -219,6 +255,145 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Modal sheet for item 45's Home customization: drag-to-reorder plus a
+/// visibility checkbox for each of the six known sections
+/// ([homeSectionCatalog]) — listed regardless of whether that section
+/// currently has anything to show, so a user can pre-arrange a section
+/// before it ever has content. Builds its working list from whatever's
+/// already saved (defaulting to catalog order, all visible, when
+/// nothing has ever been customized) and only writes to
+/// [HomeLayoutStore] once, when the sheet closes — not on every drag/
+/// toggle — the same "the dialog builds the value, caller applies it"
+/// split this app's other builder-style dialogs already use.
+class _HomeCustomizeSheet extends StatefulWidget {
+  const _HomeCustomizeSheet();
+
+  @override
+  State<_HomeCustomizeSheet> createState() => _HomeCustomizeSheetState();
+}
+
+class _HomeCustomizeSheetState extends State<_HomeCustomizeSheet> {
+  List<HomeSectionPreference> _prefs = [];
+  bool _loading = true;
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final saved = await HomeLayoutStore.instance.load();
+    final byId = {for (final p in saved) p.sectionId: p};
+    // Every known section, in the saved order first, then any section
+    // never mentioned in a save (nothing customized yet, or a section
+    // added since) appended at the end — the same precedence
+    // [applyHomeLayout] itself uses.
+    final ordered = <HomeSectionPreference>[
+      for (final p in saved)
+        if (homeSectionCatalog.containsKey(p.sectionId)) p,
+      for (final id in homeSectionCatalog.keys)
+        if (!byId.containsKey(id)) HomeSectionPreference(sectionId: id, visible: true),
+    ];
+    if (!mounted) return;
+    setState(() {
+      _prefs = ordered;
+      _loading = false;
+    });
+  }
+
+  Future<void> _save() async {
+    await HomeLayoutStore.instance.save(_prefs);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _resetToDefault() async {
+    await HomeLayoutStore.instance.save(const []);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // The whole sheet scrolls together (SingleChildScrollView), not just
+    // the section list — six sections plus the header/button can exceed
+    // a short screen's height, and everything (including "Done") needs
+    // to stay reachable. The ReorderableListView inside uses
+    // `shrinkWrap: true` + `NeverScrollableScrollPhysics` so it sizes to
+    // its own content and hands scroll gestures up to the outer
+    // scrollable — drag-to-reorder is a distinct long-press gesture, so
+    // it's unaffected by the inner list not handling plain scroll drags.
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text('Customize Home', style: theme.textTheme.titleLarge),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _resetToDefault,
+                    child: const Text('Reset'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Drag to reorder, or hide a section entirely.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else
+                ReorderableListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onReorder: (oldIndex, newIndex) => setState(() {
+                    if (newIndex > oldIndex) newIndex -= 1;
+                    final item = _prefs.removeAt(oldIndex);
+                    _prefs.insert(newIndex, item);
+                    _changed = true;
+                  }),
+                  children: [
+                    for (final pref in _prefs)
+                      CheckboxListTile(
+                        key: ValueKey(pref.sectionId),
+                        value: pref.visible,
+                        title: Text(
+                            homeSectionCatalog[pref.sectionId] ?? pref.sectionId),
+                        onChanged: (value) => setState(() {
+                          final index =
+                              _prefs.indexWhere((p) => p.sectionId == pref.sectionId);
+                          _prefs[index] =
+                              _prefs[index].copyWith(visible: value ?? true);
+                          _changed = true;
+                        }),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed:
+                    _changed ? _save : () => Navigator.of(context).pop(false),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -109,7 +109,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 
 | # | Item | Status |
 |---|------|--------|
-| 45 | Layout builder | 🟢 Solid for Now Playing (real drag-and-drop editor, 6 bundled layouts); other builder scopes not attempted |
+| 45 | Layout builder | 🟢 Solid for Now Playing (real drag-and-drop editor, 6 bundled layouts); Home now has reorder/hide too, but no free-form widget canvas or sidebar |
 | 46 | Car mode | 🟢 Dedicated minimal layout plus real GPS-speed auto-activation |
 | 47 | TV mode | 🟡 New TV-optimized Now Playing layout; built from a genuine 0% start |
 | 48 | Accessibility | 🟡 Keyboard shortcuts, tooltips, `Semantics` pass, reduce-motion/transparency all real; partial coverage |
