@@ -97,6 +97,7 @@ class _OmnisAppState extends State<OmnisApp> {
             brightness: Brightness.light,
             preset: settings.themePreset,
             accentColor: settings.accentColor,
+            highContrast: settings.highContrastEnabled,
           );
     final darkTheme = customTheme != null
         ? DeclarativeOmnisTheme.build(customTheme)
@@ -104,6 +105,7 @@ class _OmnisAppState extends State<OmnisApp> {
             brightness: Brightness.dark,
             preset: settings.themePreset,
             accentColor: settings.accentColor,
+            highContrast: settings.highContrastEnabled,
           );
 
     return MaterialApp(

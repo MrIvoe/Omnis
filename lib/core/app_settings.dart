@@ -81,6 +81,7 @@ class AppSettings extends ChangeNotifier {
   static const _reduceMotionEnabledKey = 'app_reduce_motion_enabled';
   static const _reduceTransparencyEnabledKey =
       'app_reduce_transparency_enabled';
+  static const _highContrastEnabledKey = 'app_high_contrast_enabled';
   static const _hapticFeedbackEnabledKey = 'app_haptic_feedback_enabled';
   static const _dynamicColorFromArtEnabledKey =
       'app_dynamic_color_from_art_enabled';
@@ -583,6 +584,24 @@ class AppSettings extends ChangeNotifier {
   set reduceTransparencyEnabled(bool value) {
     _ensurePrefs();
     _prefs!.setBool(_reduceTransparencyEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// §58's "high contrast" accessibility requirement — flows into
+  /// [OmnisTheme.build]'s `highContrast` param, which both raises
+  /// `ColorScheme.fromSeed`'s `contrastLevel` (a real Material 3
+  /// mechanism for this, not a hand-rolled palette) and swaps the
+  /// low-alpha borders/dividers/outlined-button strokes every preset
+  /// otherwise uses for fully-opaque, near-black/near-white ones.
+  /// Defaults to `false`, the same opt-in stance [reduceMotionEnabled]
+  /// takes — a visible palette change shouldn't happen to someone who
+  /// never asked for it.
+  bool get highContrastEnabled =>
+      _prefs?.getBool(_highContrastEnabledKey) ?? false;
+
+  set highContrastEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_highContrastEnabledKey, value);
     notifyListeners();
   }
 

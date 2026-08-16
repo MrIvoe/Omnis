@@ -1714,7 +1714,7 @@ Required:
 - accessible lyrics
 - voice controls
 
-*(Item 48's tracker entry: "Reduce motion"/"Reduce transparency"/"Haptic feedback" live in a dedicated Accessibility settings category. Keyboard shortcuts exist too. High-contrast mode, app-wide text scaling, and full keyboard navigation are still open.)*
+*(Item 48's tracker entry: "Reduce motion"/"Reduce transparency"/"Haptic feedback"/"High contrast" (closed 2026-08-15) all live in a dedicated Accessibility settings category. Keyboard shortcuts exist too. App-wide text scaling and full keyboard navigation are still open.)*
 
 ---
 

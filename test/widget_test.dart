@@ -92,6 +92,24 @@ void main() {
     expect(AppSettings.instance.hasCompletedOnboarding, isTrue);
   });
 
+  test('AppSettings persists highContrastEnabled, default false', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.highContrastEnabled, isFalse);
+
+    AppSettings.instance.highContrastEnabled = true;
+    expect(AppSettings.instance.highContrastEnabled, isTrue);
+  });
+
+  // Kept last in this file deliberately: OmnisTheme.build pulls in
+  // google_fonts (via OmnisTypography.build), which kicks off a
+  // fire-and-forget real font-fetch Future that always fails under
+  // TestWidgetsFlutterBinding (HttpClient calls get a fake 400) — a
+  // pre-existing package-level quirk, not something this test can fix.
+  // Keeping this the final test in the file is what lets that leaked
+  // failure settle harmlessly after the suite's own teardown rather than
+  // bleeding into whatever test happens to run next.
   test('AppSettings persists theme presets and builds themed surfaces',
       () async {
     SharedPreferences.setMockInitialValues({});

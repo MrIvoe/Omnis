@@ -26,6 +26,7 @@ class _AccessibilitySettingsPageState
 
   final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
     for (final field in [
+      'high_contrast',
       'reduce_motion',
       'reduce_transparency',
       'haptic_feedback',
@@ -49,6 +50,20 @@ class _AccessibilitySettingsPageState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Display', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          SettingsHighlight(
+            key: _keys['high_contrast'],
+            child: SwitchListTile(
+              title: const Text('High contrast'),
+              subtitle: const Text(
+                  'Stronger borders and a higher-contrast color scheme'),
+              value: settings.highContrastEnabled,
+              onChanged: (value) =>
+                  setState(() => settings.highContrastEnabled = value),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text('Motion', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           SettingsHighlight(

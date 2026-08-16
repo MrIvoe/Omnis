@@ -24,6 +24,7 @@ class OmnisTheme {
     String fontKey = OmnisTypography.defaultFont,
     double textScale = 1.0,
     double cornerRadius = 16,
+    bool highContrast = false,
   }) {
     final base =
         brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light();
@@ -33,8 +34,15 @@ class OmnisTheme {
         isDark ? OmnisPalette.darkSurface : OmnisPalette.lightSurface;
     final elevatedColor =
         isDark ? OmnisPalette.darkElevated : OmnisPalette.lightElevated;
-    final borderColor =
-        isDark ? OmnisPalette.darkBorder : OmnisPalette.lightBorder;
+    // §58's "high contrast" requirement: every preset's default border is
+    // a subtle, low-contrast tint against its surface — deliberately, for
+    // a calm default look — so high contrast swaps it for a fully-opaque
+    // near-black/near-white one instead of just nudging the alpha, the
+    // same "opt into a real, visible change" stance every other border/
+    // outline swap below takes.
+    final borderColor = highContrast
+        ? (isDark ? Colors.white : Colors.black)
+        : (isDark ? OmnisPalette.darkBorder : OmnisPalette.lightBorder);
 
     final presetColors = switch (preset) {
       AppThemePreset.midnight => (
@@ -55,11 +63,18 @@ class OmnisTheme {
         ),
     };
 
+    // `contrastLevel` is a real Material 3 mechanism (-1.0..1.0) for
+    // exactly this — 1.0 is Material's own "maximum contrast" curve, not
+    // a hand-picked value. Only applies when deriving from a seed color;
+    // a caller-supplied [colorSchemeOverride] (a declarative custom
+    // theme) is used as-is, the same "override wins outright" contract
+    // every other [build] parameter already has for it.
     final themedScheme = colorSchemeOverride ??
         ColorScheme.fromSeed(
           seedColor: presetColors.primary,
           brightness: brightness,
           secondary: presetColors.secondary,
+          contrastLevel: highContrast ? 1.0 : 0.0,
         );
 
     final radius = cornerRadius.clamp(0.0, 32.0);
@@ -112,7 +127,9 @@ class OmnisTheme {
         outlinedButtonTheme: OutlinedButtonThemeData(
             style: OutlinedButton.styleFrom(
                 side: BorderSide(
-                    color: themedScheme.primary.withValues(alpha: 0.3)),
+                    color: highContrast
+                        ? themedScheme.primary
+                        : themedScheme.primary.withValues(alpha: 0.3)),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(radius * 0.6)))));
   }
