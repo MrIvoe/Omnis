@@ -12,15 +12,16 @@ import 'package:omnis/ui/widgets/track_artwork.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
 
 /// Home tab: Recently Played / Most Played / Recently Added / Continue
-/// Listening / Favorites, each a horizontally-scrolling row of cards.
+/// Listening / Favorites / Most Skipped, each a horizontally-scrolling
+/// row of cards.
 ///
-/// Recently Played/Most Played/Continue Listening are sourced from
-/// `PlayHistoryStore` (core, always on — works regardless of whether the
-/// optional `ScrobblePlugin` is installed). Favorites reads
-/// `FavoritesPlugin` by type the same way `NowPlayingPage` looks up
-/// optional plugins — the section simply doesn't render if that plugin
-/// is disabled or nothing's favorited, the same graceful-absence pattern
-/// used throughout this app.
+/// Recently Played/Most Played/Continue Listening/Most Skipped are
+/// sourced from `PlayHistoryStore` (core, always on — works regardless
+/// of whether the optional `ScrobblePlugin` is installed). Favorites
+/// reads `FavoritesPlugin` by type the same way `NowPlayingPage` looks
+/// up optional plugins — the section simply doesn't render if that
+/// plugin is disabled or nothing's favorited, the same graceful-absence
+/// pattern used throughout this app.
 class HomeDashboardPage extends StatefulWidget {
   final AudioEngine engine;
   final PluginManager pluginManager;
@@ -48,6 +49,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   List<BaseTrack> _recentlyAdded = const [];
   List<BaseTrack> _continueListening = const [];
   List<BaseTrack> _favorites = const [];
+  List<BaseTrack> _mostSkipped = const [];
 
   StreamSubscription<BaseTrack?>? _trackSub;
   StreamSubscription<FavoriteChangedEvent>? _favoriteSub;
@@ -120,6 +122,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
     final mostPlayed = joinStats(await PlayHistoryStore.instance.mostPlayed());
     final continueListening =
         joinStats(await PlayHistoryStore.instance.continueListening());
+    final mostSkipped = joinStats(await PlayHistoryStore.instance.mostSkipped());
 
     final recentlyAdded = library.where((t) => t.dateAdded != null).toList()
       ..sort((a, b) => b.dateAdded!.compareTo(a.dateAdded!));
@@ -136,6 +139,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       _recentlyAdded = recentlyAdded.take(20).toList();
       _continueListening = continueListening;
       _favorites = favorites.take(20).toList();
+      _mostSkipped = mostSkipped;
       _loading = false;
     });
   }
@@ -163,6 +167,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
       if (_recentlyAdded.isNotEmpty)
         _HomeSection('Recently Added', _recentlyAdded),
       if (_favorites.isNotEmpty) _HomeSection('Favorites', _favorites),
+      if (_mostSkipped.isNotEmpty) _HomeSection('Most Skipped', _mostSkipped),
     ];
 
     return Scaffold(

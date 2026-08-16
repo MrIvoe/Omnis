@@ -143,6 +143,7 @@ void main() {
       expect(find.text('Most Played'), findsNothing);
       expect(find.text('Continue Listening'), findsNothing);
       expect(find.text('Favorites'), findsNothing);
+      expect(find.text('Most Skipped'), findsNothing);
     });
   });
 
@@ -165,6 +166,32 @@ void main() {
       expect(find.text('Continue Listening'), findsOneWidget);
       // 'b' was never played — must not appear as a card anywhere.
       expect(find.text('Track b'), findsNothing);
+    });
+  });
+
+  testWidgets('Most Skipped populates from PlayHistoryStore.mostSkipped '
+      'joined against the library (item 16, §37 skip tracking)',
+      (tester) async {
+    await tester.runAsync(() async {
+      await LibraryStore.instance.save([_track('a')]);
+      for (var i = 0; i < 3; i++) {
+        await PlayHistoryStore.instance.recordPlay(_track('a'));
+        await PlayHistoryStore.instance.recordTrackEnd('a',
+            const Duration(seconds: 5), const Duration(seconds: 200));
+      }
+
+      await tester.pumpWidget(MaterialApp(
+        home: HomeDashboardPage(
+            engine: _FakeEngine(), pluginManager: PluginManager()),
+      ));
+      await _settle(tester);
+
+      expect(find.text('Most Skipped'), findsOneWidget);
+      final skippedCards = find.descendant(
+        of: find.byKey(const ValueKey('home_section_Most Skipped')),
+        matching: find.text('Track a'),
+      );
+      expect(skippedCards, findsOneWidget);
     });
   });
 

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/play_completion.dart';
 import 'package:omnis/core/schema_versioning.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -53,6 +54,16 @@ class TrackPlayStats {
   /// be pure duplication for the overwhelmingly common case.
   final Map<String, dynamic>? trackSnapshot;
 
+  /// How many listens of this track ended before reaching
+  /// [PlayHistoryStore.recordTrackEnd]'s completion threshold — item 16/
+  /// MusicBee-comparison §37's "skip tracking" gap. A derived completion
+  /// rate is `(playCount - skipCount) / playCount`, so this is the only
+  /// new field needed rather than storing the rate itself. Defaults to
+  /// `0` and decodes as `0` for any pre-existing record written before
+  /// this field existed — the same additive-field convention every
+  /// other optional field on this class already follows.
+  final int skipCount;
+
   const TrackPlayStats({
     required this.trackId,
     required this.playCount,
@@ -60,6 +71,7 @@ class TrackPlayStats {
     this.lastPositionSeconds = 0,
     this.durationSeconds = 0,
     this.trackSnapshot,
+    this.skipCount = 0,
   });
 
   TrackPlayStats copyWith({
@@ -68,6 +80,7 @@ class TrackPlayStats {
     int? lastPositionSeconds,
     int? durationSeconds,
     Map<String, dynamic>? trackSnapshot,
+    int? skipCount,
   }) {
     return TrackPlayStats(
       trackId: trackId,
@@ -76,6 +89,7 @@ class TrackPlayStats {
       lastPositionSeconds: lastPositionSeconds ?? this.lastPositionSeconds,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       trackSnapshot: trackSnapshot ?? this.trackSnapshot,
+      skipCount: skipCount ?? this.skipCount,
     );
   }
 
@@ -86,6 +100,7 @@ class TrackPlayStats {
         'lastPositionSeconds': lastPositionSeconds,
         'durationSeconds': durationSeconds,
         if (trackSnapshot != null) 'trackSnapshot': trackSnapshot,
+        'skipCount': skipCount,
       };
 
   factory TrackPlayStats.fromJson(Map<String, dynamic> json) {
@@ -98,6 +113,7 @@ class TrackPlayStats {
       durationSeconds: json['durationSeconds'] as int? ?? 0,
       trackSnapshot:
           snapshot is Map ? Map<String, dynamic>.from(snapshot) : null,
+      skipCount: json['skipCount'] as int? ?? 0,
     );
   }
 }
@@ -237,6 +253,10 @@ class PlayHistoryStore {
           lastPlayedAt: DateTime.now(),
           trackSnapshot:
               track.type == TrackType.local ? null : track.toJson(),
+          // A lifetime count, like playCount itself — a fresh listen
+          // starting over resets position/duration but must not erase
+          // how many times this track has been skipped before.
+          skipCount: existing?.skipCount ?? 0,
         );
         await _save(stats);
       });
@@ -258,6 +278,30 @@ class PlayHistoryStore {
           lastPositionSeconds: position.inSeconds,
           durationSeconds: duration.inSeconds,
         );
+        await _save(stats);
+      });
+
+  /// Called once per genuinely-ended listen — when playback moves off
+  /// [trackId] to a different track (see `MainCore`'s `trackStream`
+  /// wiring), not on every pause the way [recordPosition] fires
+  /// (pausing then resuming isn't a skip). Increments [TrackPlayStats
+  /// .skipCount] when [position]/[duration] never reached
+  /// [isSkip]'s threshold through the track. A no-op if [recordPlay] was
+  /// never called for this track, or if [duration] is unknown — the
+  /// same "nothing to compute a real ratio against" guard
+  /// [completionRatio] itself already establishes.
+  Future<void> recordTrackEnd(
+    String trackId,
+    Duration position,
+    Duration duration,
+  ) =>
+      _serialized(() async {
+        final stats = await _load();
+        final existing = stats[trackId];
+        if (existing == null) return;
+        final ratio = completionRatio(position.inSeconds, duration.inSeconds);
+        if (ratio == null || !isSkip(ratio)) return;
+        stats[trackId] = existing.copyWith(skipCount: existing.skipCount + 1);
         await _save(stats);
       });
 
@@ -283,6 +327,29 @@ class PlayHistoryStore {
       return ratio >= 0.1 && ratio <= 0.9;
     }).toList()
       ..sort((a, b) => b.lastPlayedAt.compareTo(a.lastPlayedAt));
+    return stats.take(limit).toList();
+  }
+
+  /// Tracks with the highest skip ratio (`skipCount / playCount`),
+  /// excluding anything with fewer than [minPlays] plays — a track
+  /// played once and skipped that one time would otherwise dominate a
+  /// ratio-sorted list on pure noise, the same reasoning a "most
+  /// skipped" list needs a minimum sample size to mean anything.
+  /// Excludes tracks with zero skips entirely, since "never skipped" is
+  /// not itself a finding this list is for.
+  Future<List<TrackPlayStats>> mostSkipped({
+    int limit = 20,
+    int minPlays = 3,
+  }) async {
+    final stats = (await _load())
+        .values
+        .where((s) => s.playCount >= minPlays && s.skipCount > 0)
+        .toList()
+      ..sort((a, b) {
+        final ratioA = a.skipCount / a.playCount;
+        final ratioB = b.skipCount / b.playCount;
+        return ratioB.compareTo(ratioA);
+      });
     return stats.take(limit).toList();
   }
 

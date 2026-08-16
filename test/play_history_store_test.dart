@@ -382,4 +382,134 @@ void main() {
       expect(map.length, 30);
     });
   });
+
+  group('recordTrackEnd / mostSkipped (item 16, §37 skip tracking)', () {
+    test('a listen that ended below the completion threshold increments '
+        'skipCount', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+
+      await store.recordTrackEnd(
+          'a', const Duration(seconds: 30), const Duration(seconds: 200));
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.skipCount, 1);
+    });
+
+    test('a listen that reached the completion threshold does not '
+        'increment skipCount', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+
+      await store.recordTrackEnd(
+          'a', const Duration(seconds: 150), const Duration(seconds: 200));
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.skipCount, 0);
+    });
+
+    test('is a no-op for a track never recorded via recordPlay', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordTrackEnd(
+          'never-played', const Duration(seconds: 5), const Duration(seconds: 200));
+
+      expect(await store.mostPlayed(), isEmpty);
+    });
+
+    test('is a no-op when duration is unknown (zero) — no real ratio to '
+        'judge against', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+
+      await store.recordTrackEnd('a', const Duration(seconds: 5), Duration.zero);
+
+      final stats = await store.mostPlayed();
+      expect(stats.single.skipCount, 0);
+    });
+
+    test('skipCount is cumulative across repeated plays, not reset by a '
+        'fresh recordPlay', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+      await store.recordTrackEnd(
+          'a', const Duration(seconds: 10), const Duration(seconds: 200));
+
+      // A second listen of the same track — recordPlay resets position/
+      // duration for the fresh listen, but must not erase the skip
+      // history from the previous one.
+      await store.recordPlay(_track('a'));
+      final stats = await store.mostPlayed();
+      expect(stats.single.skipCount, 1,
+          reason: 'a fresh play must not silently wipe skipCount');
+
+      await store.recordTrackEnd(
+          'a', const Duration(seconds: 190), const Duration(seconds: 200));
+      final afterCompleted = await store.mostPlayed();
+      expect(afterCompleted.single.skipCount, 1,
+          reason: 'a completed listen must not increment skipCount');
+    });
+
+    test('mostSkipped excludes tracks below minPlays even with a real '
+        'skip', () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('once'));
+      await store.recordTrackEnd(
+          'once', const Duration(seconds: 5), const Duration(seconds: 200));
+
+      expect(await store.mostSkipped(minPlays: 3), isEmpty);
+    });
+
+    test('mostSkipped excludes tracks with zero skips even above '
+        'minPlays', () async {
+      final store = PlayHistoryStore.instance;
+      for (var i = 0; i < 5; i++) {
+        await store.recordPlay(_track('never-skipped'));
+        await store.recordTrackEnd('never-skipped',
+            const Duration(seconds: 190), const Duration(seconds: 200));
+      }
+
+      expect(await store.mostSkipped(minPlays: 3), isEmpty);
+    });
+
+    test('mostSkipped sorts by skip ratio descending, not raw skip '
+        'count', () async {
+      final store = PlayHistoryStore.instance;
+
+      // "often_skipped": 3 plays, 3 skips -> ratio 1.0.
+      for (var i = 0; i < 3; i++) {
+        await store.recordPlay(_track('often_skipped'));
+        await store.recordTrackEnd('often_skipped',
+            const Duration(seconds: 5), const Duration(seconds: 200));
+      }
+
+      // "rarely_skipped": 10 plays, 2 skips -> ratio 0.2, but a higher
+      // raw skip count than the track above.
+      for (var i = 0; i < 8; i++) {
+        await store.recordPlay(_track('rarely_skipped'));
+        await store.recordTrackEnd('rarely_skipped',
+            const Duration(seconds: 190), const Duration(seconds: 200));
+      }
+      for (var i = 0; i < 2; i++) {
+        await store.recordPlay(_track('rarely_skipped'));
+        await store.recordTrackEnd('rarely_skipped',
+            const Duration(seconds: 5), const Duration(seconds: 200));
+      }
+
+      final mostSkipped = await store.mostSkipped(minPlays: 1);
+
+      expect(mostSkipped.map((s) => s.trackId).toList(),
+          ['often_skipped', 'rarely_skipped']);
+    });
+
+    test('mostSkipped respects the limit parameter', () async {
+      final store = PlayHistoryStore.instance;
+      for (final id in ['a', 'b', 'c']) {
+        await store.recordPlay(_track(id));
+        await store.recordTrackEnd(
+            id, const Duration(seconds: 5), const Duration(seconds: 200));
+      }
+
+      expect(await store.mostSkipped(limit: 2, minPlays: 1), hasLength(2));
+    });
+  });
 }

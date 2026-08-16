@@ -210,6 +210,13 @@ class MainCore {
         // ignore: unawaited_futures
         PlayHistoryStore.instance
             .recordPosition(previous.id, _lastPosition, _lastDuration);
+        // Item 16/MusicBee comparison §37's "skip tracking" — the
+        // moment playback moves off a track is exactly what "the
+        // listen ended" means, distinct from a pause (recordPosition
+        // above), which isn't itself a skip.
+        // ignore: unawaited_futures
+        PlayHistoryStore.instance
+            .recordTrackEnd(previous.id, _lastPosition, _lastDuration);
       }
       _trackBeingTracked = track;
       if (track != null) {
