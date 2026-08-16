@@ -15,6 +15,7 @@ import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/rating_aggregation.dart';
+import 'package:omnis/core/star_rating.dart';
 import 'package:omnis/core/tag_find_replace.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -1322,15 +1323,15 @@ class _LibraryPageState extends State<LibraryPage> {
       _toast('The Ratings plugin is disabled in Settings.');
       return;
     }
-    final selected = await showDialog<int>(
+    final selected = await showDialog<double>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Rate "${track.title}"'),
-        content: _StarPicker(initialRating: plugin.ratingOf(track.id)),
+        content: _StarPicker(initialRating: plugin.preciseRatingOf(track.id)),
       ),
     );
     if (selected == null || !mounted) return;
-    await plugin.setRating(track.id, selected);
+    await plugin.setPreciseRating(track.id, selected);
     if (mounted) setState(() {});
   }
 
@@ -1352,7 +1353,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     final ids = Set<String>.from(_selectedIds);
     if (ids.isEmpty) return;
-    final selected = await showDialog<int>(
+    final selected = await showDialog<double>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Rate ${ids.length} track${ids.length == 1 ? '' : 's'}'),
@@ -1361,7 +1362,7 @@ class _LibraryPageState extends State<LibraryPage> {
     );
     if (selected == null || !mounted) return;
     for (final id in ids) {
-      await plugin.setRating(id, selected);
+      await plugin.setPreciseRating(id, selected);
     }
     if (mounted) setState(() {});
     _toast('Rated ${ids.length} track${ids.length == 1 ? '' : 's'} '
@@ -2945,33 +2946,52 @@ class _CleanupSheetState extends State<_CleanupSheet> {
   }
 }
 
-/// Five tappable stars for [_LibraryPageState._rateTrack] — tapping a
-/// star immediately pops the dialog with that rating (1-5), no separate
-/// confirm step. A "Clear rating" action only appears once something is
-/// actually rated, popping with 0.
+/// Five tappable stars for [_LibraryPageState._rateTrack] — MusicBee
+/// comparison §36's "half stars" gap: tapping the left half of a star
+/// picks `i - 0.5`, the right half picks the whole `i`, both popping the
+/// dialog immediately with no separate confirm step (the same one-tap
+/// shape this always had, just with twice the resolution). A "Clear
+/// rating" action only appears once something is actually rated,
+/// popping with `0`.
 class _StarPicker extends StatelessWidget {
-  final int initialRating;
+  final double initialRating;
 
   const _StarPicker({required this.initialRating});
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary;
+    const iconSize = 32.0;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 1; i <= 5; i++)
-          IconButton(
-            icon: Icon(i <= initialRating ? Icons.star : Icons.star_border),
-            color: i <= initialRating ? color : null,
-            tooltip: '$i star${i == 1 ? '' : 's'}',
-            onPressed: () => Navigator.of(context).pop(i),
+          GestureDetector(
+            onTapUp: (details) {
+              final tappedLeftHalf = details.localPosition.dx < iconSize / 2;
+              final rating = snapToHalfStep(tappedLeftHalf ? i - 0.5 : i.toDouble());
+              Navigator.of(context).pop(rating);
+            },
+            child: Tooltip(
+              message: '$i star${i == 1 ? '' : 's'}',
+              child: Icon(
+                switch (iconStateFor(i, initialRating)) {
+                  StarIconState.full => Icons.star,
+                  StarIconState.half => Icons.star_half,
+                  StarIconState.empty => Icons.star_border,
+                },
+                size: iconSize,
+                color: iconStateFor(i, initialRating) == StarIconState.empty
+                    ? null
+                    : color,
+              ),
+            ),
           ),
         if (initialRating > 0)
           IconButton(
             icon: const Icon(Icons.close),
             tooltip: 'Clear rating',
-            onPressed: () => Navigator.of(context).pop(0),
+            onPressed: () => Navigator.of(context).pop(0.0),
           ),
       ],
     );
