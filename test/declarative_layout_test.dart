@@ -66,6 +66,7 @@ PlayerLayoutData _dataFor(AppSettings settings) => PlayerLayoutData(
       onStartSleepTimer: () {},
       onCyclePlayMode: () {},
       onCycleAbRepeat: () {},
+      onLongPressAbRepeat: () {},
     );
 
 const _validYaml = '''
@@ -146,8 +147,8 @@ void main() {
 
     test('returns null for malformed YAML rather than throwing', () {
       expect(LayoutManifest.parse('not: [valid', sourceUrl: 'x'), isNull);
-      expect(LayoutManifest.parse('just a plain string', sourceUrl: 'x'),
-          isNull);
+      expect(
+          LayoutManifest.parse('just a plain string', sourceUrl: 'x'), isNull);
     });
   });
 
@@ -225,7 +226,8 @@ root:
       expect(find.text('Sunrise'), findsOneWidget);
     });
 
-    testWidgets('defines_own_gestures wraps the layout in a working gesture '
+    testWidgets(
+        'defines_own_gestures wraps the layout in a working gesture '
         'detector', (tester) async {
       var playPauseCalls = 0;
       var nextCalls = 0;
@@ -265,6 +267,7 @@ root:
         onStartSleepTimer: () {},
         onCyclePlayMode: () {},
         onCycleAbRepeat: () {},
+        onLongPressAbRepeat: () {},
       );
 
       await tester.pumpWidget(MaterialApp(
@@ -290,12 +293,12 @@ root:
     late String tempDir;
 
     setUp(() async {
-      tempDir = (await Directory.systemTemp.createTemp('omnis_layout_test')).path;
+      tempDir =
+          (await Directory.systemTemp.createTemp('omnis_layout_test')).path;
       PathProviderPlatform.instance = _FakePathProvider(tempDir);
     });
 
-    test('readFromFile + persist round-trips through listInstalled',
-        () async {
+    test('readFromFile + persist round-trips through listInstalled', () async {
       final source = File('${tempDir}_src.yaml');
       await source.writeAsString(_validYaml);
       addTearDown(() => source.delete());
@@ -389,8 +392,7 @@ root: { type: component, component: album_art }
         () async {
       final manager = LayoutManager();
       await manager.loadInstalled();
-      expect(manager.resolve('does_not_exist').id,
-          manager.allLayouts.first.id);
+      expect(manager.resolve('does_not_exist').id, manager.allLayouts.first.id);
     });
 
     test(
@@ -412,8 +414,8 @@ root: { type: component, component: album_art }
       // loading from the same (faked) disk location sees it too.
       final reloaded = LayoutManager();
       await reloaded.loadInstalled();
-      expect(reloaded.allLayouts.any((l) => l.id == 'custom_from_text'),
-          isTrue);
+      expect(
+          reloaded.allLayouts.any((l) => l.id == 'custom_from_text'), isTrue);
     });
 
     test('installFromText rejects an id colliding with a bundled layout',

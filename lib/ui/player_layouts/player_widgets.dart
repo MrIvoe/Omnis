@@ -512,7 +512,10 @@ class PlayerExtrasRow extends StatelessWidget {
 /// A-B repeat toggle: a 3-state cycle (off -> A marked -> looping A-B -> off)
 /// driven entirely by AudioEngine's own loop-point state -- this widget
 /// just reflects it. A common practicing/DJ feature (Poweramp, Musicolet,
-/// most desktop players) just_audio has no built-in concept of.
+/// most desktop players) just_audio has no built-in concept of. Long-press
+/// opens the saved/named loops sheet (`data.onLongPressAbRepeat`) --
+/// MusicBee comparison §27 / spec §19's "saved loops" gap, since the
+/// underlying `AbRepeatController` only ever holds one loop in memory.
 class PlayerAbRepeatButton extends StatelessWidget {
   final PlayerLayoutData data;
 
@@ -530,18 +533,21 @@ class PlayerAbRepeatButton extends StatelessWidget {
             ? (Icons.bookmark_added_outlined, 'Set point B')
             : (Icons.repeat, 'A-B repeat');
 
-    return OutlinedButton.icon(
-      onPressed: data.onCycleAbRepeat,
-      icon: Icon(icon,
-          color: (looping || aMarked) ? theme.colorScheme.primary : null),
-      label: Text(label,
-          style: (looping || aMarked)
-              ? TextStyle(color: theme.colorScheme.primary)
-              : null),
-      style: (looping || aMarked)
-          ? OutlinedButton.styleFrom(
-              side: BorderSide(color: theme.colorScheme.primary, width: 1.5))
-          : null,
+    return GestureDetector(
+      onLongPress: data.onLongPressAbRepeat,
+      child: OutlinedButton.icon(
+        onPressed: data.onCycleAbRepeat,
+        icon: Icon(icon,
+            color: (looping || aMarked) ? theme.colorScheme.primary : null),
+        label: Text(label,
+            style: (looping || aMarked)
+                ? TextStyle(color: theme.colorScheme.primary)
+                : null),
+        style: (looping || aMarked)
+            ? OutlinedButton.styleFrom(
+                side: BorderSide(color: theme.colorScheme.primary, width: 1.5))
+            : null,
+      ),
     );
   }
 }

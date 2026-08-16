@@ -99,6 +99,11 @@ class PlayerLayoutData {
   final VoidCallback onCyclePlayMode;
   final VoidCallback onCycleAbRepeat;
 
+  /// Long-press on the A-B repeat button — opens the saved/named loops
+  /// sheet (save the currently-active loop, apply/delete a previously
+  /// saved one for this track). MusicBee comparison §27 / spec §19.
+  final VoidCallback onLongPressAbRepeat;
+
   const PlayerLayoutData({
     required this.track,
     required this.position,
@@ -129,6 +134,7 @@ class PlayerLayoutData {
     this.onCancelSleepTimer,
     required this.onCyclePlayMode,
     required this.onCycleAbRepeat,
+    required this.onLongPressAbRepeat,
   });
 
   /// `h:mm:ss` once past an hour, `m:ss` otherwise.

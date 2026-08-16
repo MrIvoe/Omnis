@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_waveform/just_waveform.dart';
+import 'package:omnis/core/ab_loop_store.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
@@ -183,6 +184,30 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
     );
   }
 
+  /// Opens the saved/named A-B loops sheet for [track] — MusicBee
+  /// comparison §27 / spec §19's "saved/named loops" gap.
+  /// `AbRepeatController` only ever holds one loop in memory and forgets
+  /// it the instant it's cleared or a new A point is marked, so this is
+  /// what lets a practicing/DJ loop survive past that moment.
+  Future<void> _openSavedLoopsSheet(BaseTrack track) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _SavedLoopsSheet(
+        track: track,
+        canSaveCurrent: engine.abRepeatRange != null,
+        onSaveCurrent: (name) async {
+          await engine.saveCurrentLoop(name);
+        },
+        onApply: (loop) {
+          engine.applyLoop(loop);
+        },
+        onDelete: (id) => AbLoopStore.instance.delete(id),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   /// Duration picker for the sleep timer. Previously this was hardcoded
   /// to a single fixed 15-minute button with no way to change it — the
   /// plugin itself (`SleepTimerPlugin.startTimer`) already accepts any
@@ -295,7 +320,8 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   /// without touching the persisted `playerLayoutId` the user actually
   /// picked. Gesture-first layouts and Car Mode already suit a wide
   /// viewport on their own, so they're left alone.
-  PlayerLayout _resolveActiveLayout(BuildContext context, AppSettings settings) {
+  PlayerLayout _resolveActiveLayout(
+      BuildContext context, AppSettings settings) {
     final selected = _layouts.resolve(settings.playerLayoutId);
     const portraitOriented = {'standard', 'top_controls'};
     final isLandscape =
@@ -398,6 +424,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
         }
         setState(() {});
       },
+      onLongPressAbRepeat: () => _openSavedLoopsSheet(track),
       onPlayPause: () => _playing ? engine.pause() : engine.play(),
       onNext: () => engine.next(),
       onPrevious: () => engine.previous(),
@@ -424,8 +451,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               if (visualizerEmitter.isCapturing) return;
               await visualizerEmitter.activate();
               if (!mounted) return;
-              _toast(visualizerEmitter.lastError ??
-                  'Visualizer activated.');
+              _toast(visualizerEmitter.lastError ?? 'Visualizer activated.');
             },
       onStartSleepTimer: sleepTimer == null
           ? () {}
@@ -532,6 +558,164 @@ class _DynamicColorScopeState extends State<_DynamicColorScope> {
     return Theme(
       data: Theme.of(context).copyWith(colorScheme: scheme),
       child: widget.child,
+    );
+  }
+}
+
+/// Saved/named A-B loops sheet — MusicBee comparison §27 / spec §19.
+/// Reached via a long-press on the A-B repeat button. Offers "Save
+/// current loop" (only when a loop is actively looping right now) and
+/// the list of loops already saved for [track], each with Apply/Delete.
+class _SavedLoopsSheet extends StatefulWidget {
+  final BaseTrack track;
+  final bool canSaveCurrent;
+  final Future<void> Function(String name) onSaveCurrent;
+  final void Function(SavedAbLoop loop) onApply;
+  final Future<void> Function(String id) onDelete;
+
+  const _SavedLoopsSheet({
+    required this.track,
+    required this.canSaveCurrent,
+    required this.onSaveCurrent,
+    required this.onApply,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SavedLoopsSheet> createState() => _SavedLoopsSheetState();
+}
+
+class _SavedLoopsSheetState extends State<_SavedLoopsSheet> {
+  late Future<List<SavedAbLoop>> _loops;
+
+  @override
+  void initState() {
+    super.initState();
+    _loops = AbLoopStore.instance.loopsForTrack(widget.track.id);
+  }
+
+  void _reload() => setState(
+      () => _loops = AbLoopStore.instance.loopsForTrack(widget.track.id));
+
+  String _format(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  Future<void> _promptSaveCurrent() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save this loop'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+    await widget.onSaveCurrent(trimmed);
+    _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Saved loops', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            if (widget.canSaveCurrent)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.bookmark_add_outlined),
+                title: const Text('Save this loop'),
+                onTap: _promptSaveCurrent,
+              ),
+            FutureBuilder<List<SavedAbLoop>>(
+              future: _loops,
+              builder: (context, snapshot) {
+                final loops = snapshot.data ?? const <SavedAbLoop>[];
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (loops.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      widget.canSaveCurrent
+                          ? 'No saved loops for this track yet.'
+                          : 'No saved loops for this track yet — mark an '
+                              'A-B loop, then long-press here again to '
+                              'save it.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  );
+                }
+                return Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: loops.length,
+                    itemBuilder: (context, index) {
+                      final loop = loops[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(loop.name),
+                        subtitle: Text(
+                            '${_format(loop.start)} – ${_format(loop.end)}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.play_arrow),
+                              tooltip: 'Apply',
+                              onPressed: () {
+                                widget.onApply(loop);
+                                Navigator.pop(context);
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              tooltip: 'Delete',
+                              onPressed: () async {
+                                await widget.onDelete(loop.id);
+                                _reload();
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -83,6 +83,7 @@ PlayerLayoutData _dataFor({
       onCancelSleepTimer: onCancelSleepTimer,
       onCyclePlayMode: onCyclePlayMode ?? () {},
       onCycleAbRepeat: () {},
+      onLongPressAbRepeat: () {},
     );
 
 void main() {
@@ -137,7 +138,8 @@ void main() {
       expect(find.byIcon(Icons.shuffle), findsNothing);
     });
 
-    testWidgets('shows the shuffle icon when shuffle is enabled, taking '
+    testWidgets(
+        'shows the shuffle icon when shuffle is enabled, taking '
         'priority over any repeat glyph', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -157,8 +159,7 @@ void main() {
         'the full 6-button standard layout does not overflow at a real '
         'narrow phone width — item 47\'s TV-mode verification found this '
         'exact overflow (~4.6px on a real ~360dp device) and left it '
-        'unfixed at the time; FittedBox(scaleDown) is the fix',
-        (tester) async {
+        'unfixed at the time; FittedBox(scaleDown) is the fix', (tester) async {
       tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -170,7 +171,8 @@ void main() {
       addTearDown(() => FlutterError.onError = previousOnError);
 
       await tester.pumpWidget(MaterialApp(
-        home: Scaffold(body: Center(child: PlayerControlsRow(data: _dataFor()))),
+        home:
+            Scaffold(body: Center(child: PlayerControlsRow(data: _dataFor()))),
       ));
       await tester.pump();
 
@@ -233,9 +235,8 @@ void main() {
       ));
       await tester.pump();
 
-      final animatedIconButton = tester.widget<IconButton>(
-          find.ancestor(
-              of: find.byType(AnimatedIcon), matching: find.byType(IconButton)));
+      final animatedIconButton = tester.widget<IconButton>(find.ancestor(
+          of: find.byType(AnimatedIcon), matching: find.byType(IconButton)));
       expect(animatedIconButton.tooltip, 'Play');
     });
   });
@@ -344,11 +345,11 @@ void main() {
       await tester.pump();
 
       final text = tester.widget<Text>(find.text('La la la'));
-      expect(text.style?.fontSize, resolvedTheme!.textTheme.bodyMedium?.fontSize);
+      expect(
+          text.style?.fontSize, resolvedTheme!.textTheme.bodyMedium?.fontSize);
     });
 
-    testWidgets('renders larger text as the setting is raised',
-        (tester) async {
+    testWidgets('renders larger text as the setting is raised', (tester) async {
       AppSettings.instance.lyricsTextSize = LyricsTextSize.extraLarge;
       ThemeData? resolvedTheme;
       await tester.pumpWidget(MaterialApp(
@@ -367,8 +368,8 @@ void main() {
       await tester.pump();
 
       final text = tester.widget<Text>(find.text('La la la'));
-      expect(
-          text.style?.fontSize, resolvedTheme!.textTheme.headlineSmall?.fontSize);
+      expect(text.style?.fontSize,
+          resolvedTheme!.textTheme.headlineSmall?.fontSize);
       expect(
         text.style!.fontSize!,
         greaterThan(resolvedTheme!.textTheme.bodyMedium!.fontSize!),
@@ -408,7 +409,8 @@ void main() {
       expect(find.byType(SeekPositionVisualizer), findsNothing);
     });
 
-    testWidgets('overlays a SeekPositionVisualizer when a visualizer '
+    testWidgets(
+        'overlays a SeekPositionVisualizer when a visualizer '
         'plugin is available', (tester) async {
       final provider = _FakeVisualizerProvider();
       await tester.pumpWidget(MaterialApp(
@@ -424,8 +426,7 @@ void main() {
       provider.close();
     });
 
-    testWidgets(
-        'the overlay never blocks the seek gesture underneath it',
+    testWidgets('the overlay never blocks the seek gesture underneath it',
         (tester) async {
       final provider = _FakeVisualizerProvider();
       Duration? sought;

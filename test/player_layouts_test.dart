@@ -46,6 +46,7 @@ PlayerLayoutData _dataFor(AppSettings settings) => PlayerLayoutData(
       onStartSleepTimer: () {},
       onCyclePlayMode: () {},
       onCycleAbRepeat: () {},
+      onLongPressAbRepeat: () {},
     );
 
 void main() {
@@ -115,15 +116,14 @@ void main() {
   group('PlayerLayoutData.formatDuration', () {
     test('renders m:ss under an hour', () {
       final data = _dataFor(AppSettings.instance);
-      expect(data.formatDuration(const Duration(minutes: 3, seconds: 5)),
-          '3:05');
+      expect(
+          data.formatDuration(const Duration(minutes: 3, seconds: 5)), '3:05');
     });
 
     test('renders h:mm:ss at or past an hour', () {
       final data = _dataFor(AppSettings.instance);
       expect(
-        data.formatDuration(
-            const Duration(hours: 1, minutes: 2, seconds: 3)),
+        data.formatDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
         '1:02:03',
       );
     });
@@ -172,7 +172,8 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tv_mode layout renders without overflow at a real '
+    testWidgets(
+        'tv_mode layout renders without overflow at a real '
         "phone's logical width — not just this test file's 800px "
         "default, which a real device's much narrower ~360-400dp "
         "screen doesn't match (a real overflow bug only a narrower "
@@ -206,7 +207,8 @@ void main() {
     FocusNode focusNodeFor(WidgetTester tester, Key key) =>
         Focus.of(tester.element(find.byKey(key)));
 
-    testWidgets('Play/Pause has focus as soon as the layout appears — a '
+    testWidgets(
+        'Play/Pause has focus as soon as the layout appears — a '
         'remote never lands with nothing focused at all', (tester) async {
       final layout = resolvePlayerLayout('tv_mode');
       final data = _dataFor(AppSettings.instance);
@@ -224,7 +226,8 @@ void main() {
       );
     });
 
-    testWidgets('arrow-right moves focus from Play/Pause to Next, '
+    testWidgets(
+        'arrow-right moves focus from Play/Pause to Next, '
         'arrow-left moves it back — real focus traversal, not just a '
         'visual claim', (tester) async {
       final layout = resolvePlayerLayout('tv_mode');
@@ -259,7 +262,8 @@ void main() {
       );
     });
 
-    testWidgets('activating the focused button (Enter/DPAD_CENTER) '
+    testWidgets(
+        'activating the focused button (Enter/DPAD_CENTER) '
         'actually invokes its callback, not just moves a visual '
         'highlight', (tester) async {
       final layout = resolvePlayerLayout('tv_mode');
@@ -292,6 +296,7 @@ void main() {
         onStartSleepTimer: () {},
         onCyclePlayMode: () {},
         onCycleAbRepeat: () {},
+        onLongPressAbRepeat: () {},
       );
 
       await tester.pumpWidget(MaterialApp(

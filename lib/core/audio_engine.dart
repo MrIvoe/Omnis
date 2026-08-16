@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart' hide PlaybackState;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart' show RepeatMode;
+import 'package:omnis/core/ab_loop_store.dart';
 import 'package:omnis/core/ab_repeat_controller.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/home_widget_track_source.dart';
@@ -851,6 +852,29 @@ class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
 
   /// Clears A-B repeat and lets playback continue normally.
   void clearLoop() => _abRepeat.clear();
+
+  /// Persists the currently-active A-B loop (if any) as [name], keyed to
+  /// whatever's currently playing — MusicBee comparison §27 / spec §19's
+  /// "saved/named loops" gap: [AbRepeatController] only ever holds one
+  /// loop in memory and forgets it the moment it's cleared, so this is
+  /// what lets a loop survive past that moment. A no-op (returns `null`)
+  /// when there's no active loop or no current track to key it to.
+  Future<SavedAbLoop?> saveCurrentLoop(String name) async {
+    final range = abRepeatRange;
+    final track = currentTrack;
+    if (range == null || track == null) return null;
+    final updated =
+        await AbLoopStore.instance.add(track.id, name, range.$1, range.$2);
+    return updated.last;
+  }
+
+  /// Applies a previously-[saveCurrentLoop]d loop — marks A and B at its
+  /// saved points, starting the loop immediately, the same as marking
+  /// them by ear via [markLoopA]/[markLoopB].
+  void applyLoop(SavedAbLoop loop) {
+    markLoopA(loop.start);
+    markLoopB(loop.end);
+  }
 
   /// Resolve a track to a playable URI.
   ///
