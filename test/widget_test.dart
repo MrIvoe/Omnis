@@ -118,6 +118,17 @@ void main() {
     expect(AppSettings.instance.textScaleFactor, 1.5);
   });
 
+  test('AppSettings persists libraryWatcherEnabled, default false',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.libraryWatcherEnabled, isFalse);
+
+    AppSettings.instance.libraryWatcherEnabled = true;
+    expect(AppSettings.instance.libraryWatcherEnabled, isTrue);
+  });
+
   // Kept last in this file deliberately: OmnisTheme.build pulls in
   // google_fonts (via OmnisTypography.build), which kicks off a
   // fire-and-forget real font-fetch Future that always fails under

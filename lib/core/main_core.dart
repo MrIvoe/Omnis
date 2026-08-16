@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:io' show File, Platform;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
@@ -8,6 +9,8 @@ import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/library_repository.dart';
+import 'package:omnis/core/library_watcher.dart';
+import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/permissions.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/playback_diagnostics.dart';
@@ -92,6 +95,19 @@ class MainCore {
   /// restart) and far simpler than a store field that would need its
   /// own migration/reset story.
   final Map<String, DateTime> _scheduleLastFiredAt = {};
+
+  /// Item 5/spec §8's "filesystem watchers" gap — auto-rescans the
+  /// user's dedicated library folder shortly after it changes on disk,
+  /// instead of requiring a manual rescan. `null` when
+  /// [AppSettings.libraryWatcherEnabled] is off, the platform is
+  /// Android (which already gets live results from `on_audio_query`'s
+  /// own MediaStore index — see `MediaScanner._scanAndroid`), or
+  /// [AppSettings.librarySource] isn't a dedicated folder. Started once
+  /// from current settings at [initialize] time, the same "read once at
+  /// startup" shape every other restored player preference in this
+  /// method already has — changing the watched folder or toggling the
+  /// setting takes effect on the next app restart, not live.
+  LibraryWatcher? _libraryWatcher;
 
   /// Constructor.
   MainCore()
@@ -256,6 +272,11 @@ class MainCore {
     // ignore: unawaited_futures
     BackupService().maybeRunAutomaticBackup();
 
+    // Item 5/spec §8's "filesystem watchers" gap — see [_libraryWatcher]'s
+    // own doc for the full gating logic (opt-in, desktop-only, dedicated
+    // folder required).
+    _maybeStartLibraryWatcher();
+
     debugPrint('Omnis Core initialized successfully');
   }
 
@@ -305,6 +326,59 @@ class MainCore {
     }
   }
 
+  /// Starts [_libraryWatcher] when every condition [_libraryWatcher]'s
+  /// own doc names is met: [AppSettings.libraryWatcherEnabled], not
+  /// Android/web, a dedicated folder actually selected. Any other
+  /// combination is a silent no-op, not an error — this is a pure
+  /// convenience feature, never something that should be able to block
+  /// or complicate startup.
+  void _maybeStartLibraryWatcher() {
+    final settings = AppSettings.instance;
+    if (!settings.libraryWatcherEnabled) return;
+    if (!kIsWeb && Platform.isAndroid) return;
+    if (settings.librarySource != LibrarySource.dedicatedFolder) return;
+    final folder = settings.selectedFolderPath;
+    if (folder == null || folder.isEmpty) return;
+
+    _libraryWatcher = LibraryWatcher(
+      onSettled: () async {
+        // Mirrors library_page.dart's own "_pickAndAdd" merge exactly
+        // (minus its UI-specific bits — no `setState`, no in-progress
+        // spinner): a fresh scan only ever reports *local* files, so
+        // naively replacing the whole library with its result would
+        // silently drop every non-local track (Spotify/YouTube/radio/
+        // ...). Keep every still-valid existing track, add only what's
+        // genuinely new, and prune a local track whose file is now gone.
+        final current = LibraryRepository.instance.tracks;
+        final scanned =
+            await MediaScanner.instance.scanLibrary(knownTracks: current);
+        if (scanned.isEmpty) return;
+
+        final existingIds = current.map((t) => t.id).toSet();
+        final newTracks = scanned
+            .where((t) => !existingIds.contains(t.id))
+            .map((t) => t.dateAdded == null
+                ? t.copyWith(dateAdded: DateTime.now())
+                : t)
+            .toList();
+        final stillPresent = current.where((t) {
+          if (t.type != TrackType.local || t.localPath == null) return true;
+          return File(t.localPath!).existsSync();
+        }).toList();
+        // Only a genuine addition or removal is worth a write — a
+        // watcher-triggered rescan that finds nothing new and nothing
+        // gone (e.g. a file merely touched/re-saved with the same
+        // path) shouldn't churn the library store for no reason.
+        if (newTracks.isEmpty && stillPresent.length == current.length) {
+          return;
+        }
+        await LibraryRepository.instance
+            .save([...stillPresent, ...newTracks]);
+      },
+    );
+    _libraryWatcher!.start(folder);
+  }
+
   /// Dispose the core engine.
   Future<void> dispose() async {
     if (_disposed) return;
@@ -312,6 +386,7 @@ class MainCore {
     debugPrint('Disposing Omnis Core...');
     _journalTimer?.cancel();
     _scheduleTimer?.cancel();
+    _libraryWatcher?.stop();
     await _positionSub?.cancel();
     await _durationSub?.cancel();
     await _playerStateSub?.cancel();

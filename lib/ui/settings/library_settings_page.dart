@@ -27,6 +27,7 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
     for (final field in [
       'library_source',
       'library_folder',
+      'library_watcher',
       'list_density',
       'group_by_album_artist',
       'short_track_threshold',
@@ -92,6 +93,19 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
                 },
                 child: const Text('Pick folder'),
               ),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['library_watcher'],
+            child: SwitchListTile(
+              title: const Text('Watch folder for changes'),
+              subtitle: const Text(
+                  'Automatically rescan shortly after files change in the '
+                  'folder above — desktop only, and only takes effect on '
+                  'the next app restart'),
+              value: settings.libraryWatcherEnabled,
+              onChanged: (value) =>
+                  setState(() => settings.libraryWatcherEnabled = value),
             ),
           ),
           const SizedBox(height: 16),

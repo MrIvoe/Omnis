@@ -62,6 +62,7 @@ class AppSettings extends ChangeNotifier {
   static const _swipeGesturesKey = 'app_swipe_gestures';
   static const _librarySourceKey = 'app_library_source';
   static const _selectedFolderPathKey = 'app_selected_folder_path';
+  static const _libraryWatcherEnabledKey = 'app_library_watcher_enabled';
   static const _volumeKey = 'app_playback_volume';
   static const _speedKey = 'app_playback_speed';
   static const _pitchKey = 'app_playback_pitch';
@@ -398,6 +399,23 @@ class AppSettings extends ChangeNotifier {
     } else {
       _prefs!.setString(_selectedFolderPathKey, path);
     }
+    notifyListeners();
+  }
+
+  /// Item 5/spec §8's "filesystem watchers" gap — automatically rescans
+  /// [selectedFolderPath] shortly after files change there, instead of
+  /// requiring a manual rescan every time. Defaults to `false`, the
+  /// same opt-in stance `autoBackupEnabled` already takes for unattended
+  /// background work nobody asked for until they turn it on. Desktop-
+  /// only in practice (`MainCore` only starts the watcher off-Android) —
+  /// this flag exists regardless of platform so the setting itself
+  /// behaves consistently, it's just a no-op where it doesn't apply.
+  bool get libraryWatcherEnabled =>
+      _prefs?.getBool(_libraryWatcherEnabledKey) ?? false;
+
+  set libraryWatcherEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_libraryWatcherEnabledKey, value);
     notifyListeners();
   }
 

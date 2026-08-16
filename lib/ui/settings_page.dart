@@ -344,6 +344,13 @@ class _SettingsPageState extends State<SettingsPage> {
             highlightField: 'library_folder',
             navigate: (c) => _openLibrary(c, highlightField: 'library_folder')),
         _SearchableSetting(
+            title: 'Watch folder for changes',
+            category: 'Library',
+            categoryIcon: Icons.folder_outlined,
+            highlightField: 'library_watcher',
+            navigate: (c) =>
+                _openLibrary(c, highlightField: 'library_watcher')),
+        _SearchableSetting(
             title: 'List density',
             category: 'Library',
             categoryIcon: Icons.folder_outlined,
