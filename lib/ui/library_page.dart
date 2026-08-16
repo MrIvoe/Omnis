@@ -1161,8 +1161,25 @@ class _LibraryPageState extends State<LibraryPage> {
       builder: (context) => LibraryCleanupReportPage(
         tracks: _tracks,
         onEditTags: _editTags,
+        onRemoveFromLibrary: _removeFromLibrary,
       ),
     ));
+  }
+
+  /// Drops [track] from the library without attempting to delete
+  /// anything from disk — unlike [_deleteTracks], which is for a file
+  /// that still exists. Used by the cleanup report's "missing files"
+  /// category, where the file is already gone; there's nothing left to
+  /// delete, just a now-dangling library entry to remove.
+  Future<void> _removeFromLibrary(BaseTrack track) async {
+    if (!mounted) return;
+    setState(() {
+      _tracks.removeWhere((t) => t.id == track.id);
+      _selectedIds.remove(track.id);
+    });
+    await LibraryRepository.instance.save(_tracks);
+    await widget.engine.setQueue(_tracks);
+    _toast('Removed "${track.title}" from your library.');
   }
 
   // --- Favorites + playlists ---

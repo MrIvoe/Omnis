@@ -25,10 +25,17 @@ class LibraryCleanupReportPage extends StatefulWidget {
   final List<BaseTrack> tracks;
   final Future<void> Function(BaseTrack track) onEditTags;
 
+  /// Drops [track] from the library without touching disk — used only
+  /// by the "missing files" category, where the file is already gone,
+  /// unlike every other cleanup action here which edits/merges real
+  /// data.
+  final Future<void> Function(BaseTrack track) onRemoveFromLibrary;
+
   const LibraryCleanupReportPage({
     super.key,
     required this.tracks,
     required this.onEditTags,
+    required this.onRemoveFromLibrary,
   });
 
   @override
@@ -37,12 +44,25 @@ class LibraryCleanupReportPage extends StatefulWidget {
 }
 
 class _LibraryCleanupReportPageState extends State<LibraryCleanupReportPage> {
-  late final LibraryCleanupReport _report;
+  late LibraryCleanupReport _report;
 
   @override
   void initState() {
     super.initState();
     _report = LibraryCleanupAnalyzer.analyze(widget.tracks);
+    _loadMissingFiles();
+  }
+
+  /// Runs after the initial (synchronous) analysis so the report renders
+  /// immediately; missing-file detection's real disk I/O fills in a
+  /// beat later and just triggers a rebuild once it resolves — the same
+  /// "show what you have now, update when the slower thing finishes"
+  /// shape already used elsewhere in this app rather than blocking the
+  /// whole report behind it.
+  Future<void> _loadMissingFiles() async {
+    final missing = await LibraryCleanupAnalyzer.findMissingFiles(widget.tracks);
+    if (!mounted) return;
+    setState(() => _report = _report.copyWithMissingFiles(missing));
   }
 
   @override
@@ -167,6 +187,35 @@ class _LibraryCleanupReportPageState extends State<LibraryCleanupReportPage> {
                 child: ListTile(
                   title: Text(track.title),
                   subtitle: Text(track.localPath ?? ''),
+                ),
+              ),
+          ],
+        );
+      case 'missing files':
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                "These tracks' files couldn't be found — moved, renamed, "
+                'or deleted outside Omnis since the last scan. Removing '
+                "one here only drops its library entry; there's no file "
+                'left to delete.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            for (final track in _report.missingFiles)
+              Card(
+                child: ListTile(
+                  title: Text(track.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(track.localPath ?? '',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  trailing: TextButton(
+                    onPressed: () => widget.onRemoveFromLibrary(track),
+                    child: const Text('Remove'),
+                  ),
                 ),
               ),
           ],

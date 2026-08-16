@@ -37,6 +37,7 @@ void main() {
       home: LibraryCleanupReportPage(
         tracks: [_track(id: '1', coverArt: '/art.jpg', year: 2000, trackNumber: 1)],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -58,6 +59,7 @@ void main() {
               trackNumber: 1),
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -85,6 +87,7 @@ void main() {
           _track(id: '1', title: 'Untagged Song', coverArt: null),
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -104,6 +107,7 @@ void main() {
           _track(id: '1', coverArt: null), // only missing artwork is non-zero
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -126,6 +130,7 @@ void main() {
         onEditTags: (track) async {
           editedTrack = track;
         },
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -148,6 +153,7 @@ void main() {
           _track(id: '2', title: 'Sunrise', artist: 'Ava'),
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -170,6 +176,7 @@ void main() {
           _track(id: '1', album: 'Undated Album', year: null),
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -188,6 +195,7 @@ void main() {
           _track(id: '1', title: 'Broken', localPath: '/music/broken.flac'),
         ],
         onEditTags: (_) async {},
+        onRemoveFromLibrary: (_) async {},
       ),
     ));
     await tester.pump();
@@ -204,5 +212,111 @@ void main() {
     expect(find.text('Broken'), findsOneWidget);
     expect(find.text('Edit tags'), findsNothing);
     expect(find.textContaining("couldn't be read"), findsOneWidget);
+  });
+
+  group('missing files (item 17)', () {
+    testWidgets('a track whose file genuinely does not exist on disk is '
+        'flagged, after the async check resolves', (tester) async {
+      await tester.runAsync(() async {
+        await tester.pumpWidget(MaterialApp(
+          home: LibraryCleanupReportPage(
+            tracks: [
+              _track(
+                id: '1',
+                title: 'Ghost Track',
+                coverArt: '/art.jpg',
+                year: 2000,
+                trackNumber: 1,
+                localPath: '/definitely/does/not/exist/ghost.mp3',
+              ),
+            ],
+            onEditTags: (_) async {},
+            onRemoveFromLibrary: (_) async {},
+          ),
+        ));
+        await tester.pump();
+        // The initial synchronous analyze() pass can't know this yet —
+        // findMissingFiles is real dart:io I/O that resolves a beat
+        // later; runAsync (rather than just more pump()s) is what
+        // actually lets that real Future settle before we look.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
+
+        await tester.dragUntilVisible(
+          find.text('1 missing files'),
+          find.byType(ListView),
+          const Offset(0, -100),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('1 missing files'), findsOneWidget);
+      });
+    });
+
+    testWidgets('a track whose file genuinely exists is never flagged',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: LibraryCleanupReportPage(
+          tracks: [
+            _track(
+              id: '1',
+              coverArt: '/art.jpg',
+              year: 2000,
+              trackNumber: 1,
+              // No localPath at all — same "never checked" contract
+              // findMissingFiles itself already establishes.
+            ),
+          ],
+          onEditTags: (_) async {},
+          onRemoveFromLibrary: (_) async {},
+        ),
+      ));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Nothing to clean up'), findsOneWidget);
+    });
+
+    testWidgets('tapping "Remove" on a missing file invokes '
+        'onRemoveFromLibrary with that exact track', (tester) async {
+      await tester.runAsync(() async {
+        BaseTrack? removedTrack;
+        final ghost = _track(
+          id: '1',
+          title: 'Ghost Track',
+          coverArt: '/art.jpg',
+          year: 2000,
+          trackNumber: 1,
+          localPath: '/definitely/does/not/exist/ghost.mp3',
+        );
+
+        await tester.pumpWidget(MaterialApp(
+          home: LibraryCleanupReportPage(
+            tracks: [ghost],
+            onEditTags: (_) async {},
+            onRemoveFromLibrary: (track) async {
+              removedTrack = track;
+            },
+          ),
+        ));
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
+
+        await tester.dragUntilVisible(
+          find.text('1 missing files'),
+          find.byType(ListView),
+          const Offset(0, -100),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('1 missing files'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Ghost Track'), findsOneWidget);
+        await tester.tap(find.text('Remove'));
+        await tester.pump();
+
+        expect(removedTrack?.id, '1');
+      });
+    });
   });
 }

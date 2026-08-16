@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:omnis/core/base_track.dart';
 
 /// One category from spec §20's "Music Library Cleanup" report — a
@@ -24,6 +26,15 @@ class LibraryCleanupReport {
   final List<List<BaseTrack>> duplicateAlbumGroups;
   final List<BaseTrack> corruptFiles;
 
+  /// Local tracks whose file no longer exists on disk. Always `const []`
+  /// on the report [LibraryCleanupAnalyzer.analyze] itself returns —
+  /// filled in afterward by a caller that awaits
+  /// [LibraryCleanupAnalyzer.findMissingFiles] separately and applies it
+  /// via [copyWithMissingFiles], since checking real files is genuine
+  /// I/O that [analyze]'s own "no new I/O, work from what's already
+  /// loaded" contract deliberately excludes.
+  final List<BaseTrack> missingFiles;
+
   const LibraryCleanupReport({
     required this.missingArtwork,
     required this.inconsistentArtists,
@@ -33,7 +44,24 @@ class LibraryCleanupReport {
     required this.inconsistentGenres,
     required this.duplicateAlbumGroups,
     required this.corruptFiles,
+    this.missingFiles = const [],
   });
+
+  /// A copy with [missingFiles] filled in — see that field's own doc for
+  /// why this is applied after the fact rather than being part of the
+  /// synchronous [LibraryCleanupAnalyzer.analyze] pass.
+  LibraryCleanupReport copyWithMissingFiles(List<BaseTrack> missingFiles) =>
+      LibraryCleanupReport(
+        missingArtwork: missingArtwork,
+        inconsistentArtists: inconsistentArtists,
+        duplicateTrackGroups: duplicateTrackGroups,
+        albumsMissingYear: albumsMissingYear,
+        malformedTrackNumbers: malformedTrackNumbers,
+        inconsistentGenres: inconsistentGenres,
+        duplicateAlbumGroups: duplicateAlbumGroups,
+        corruptFiles: corruptFiles,
+        missingFiles: missingFiles,
+      );
 
   int get duplicateTracksCount =>
       duplicateTrackGroups.fold(0, (sum, g) => sum + g.length);
@@ -57,6 +85,8 @@ class LibraryCleanupReport {
         LibraryCleanupCategory(
             label: 'duplicate albums', count: duplicateAlbumsCount),
         LibraryCleanupCategory(label: 'corrupt files', count: corruptFiles.length),
+        LibraryCleanupCategory(
+            label: 'missing files', count: missingFiles.length),
       ];
 
   /// Whether every category came back clean — the report UI's "nothing
@@ -243,4 +273,30 @@ class LibraryCleanupAnalyzer {
           t.codec == null &&
           _fullyParsedExtensions.contains(_extensionOf(t.localPath!)))
       .toList();
+
+  /// Local tracks whose file no longer exists on disk — moved, renamed
+  /// outside the app, or deleted since the last scan. Deliberately a
+  /// separate method from [analyze], not folded into it: this is the one
+  /// category spec §20's "Music Library Cleanup" names that genuinely
+  /// needs real I/O (`File.exists()`), so it stays opt-in rather than
+  /// silently making every call to [analyze] touch the filesystem. Never
+  /// throws for an individual track — a permission error or transient
+  /// filesystem hiccup checking one file degrades to "treat as present"
+  /// (skip it) rather than failing the whole scan or wrongly flagging a
+  /// file that's actually fine.
+  static Future<List<BaseTrack>> findMissingFiles(
+    List<BaseTrack> tracks,
+  ) async {
+    final candidates =
+        tracks.where((t) => t.type == TrackType.local && t.localPath != null);
+    final checked = await Future.wait(candidates.map((t) async {
+      try {
+        final exists = await File(t.localPath!).exists();
+        return exists ? null : t;
+      } catch (_) {
+        return null;
+      }
+    }));
+    return checked.whereType<BaseTrack>().toList();
+  }
 }

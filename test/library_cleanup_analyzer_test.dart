@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/library_cleanup_analyzer.dart';
@@ -248,7 +250,7 @@ void main() {
         'true', () {
       final report = LibraryCleanupAnalyzer.analyze(const []);
 
-      expect(report.categories, hasLength(8));
+      expect(report.categories, hasLength(9));
       expect(report.categories.every((c) => c.count == 0), isTrue);
       expect(report.isClean, isTrue);
     });
@@ -257,6 +259,108 @@ void main() {
       final tracks = [track(id: '1', coverArt: null)];
 
       expect(LibraryCleanupAnalyzer.analyze(tracks).isClean, isFalse);
+    });
+
+    test('missingFiles defaults to empty on a fresh analyze() — it is '
+        'never computed by the synchronous pass', () {
+      final tracks = [track(id: '1', localPath: '/does/not/exist.mp3')];
+      expect(LibraryCleanupAnalyzer.analyze(tracks).missingFiles, isEmpty);
+    });
+
+    test('copyWithMissingFiles updates only that field, leaving every '
+        'other category untouched', () {
+      final tracks = [track(id: '1', coverArt: null)];
+      final base = LibraryCleanupAnalyzer.analyze(tracks);
+      final missing = [track(id: '2', localPath: '/gone.mp3')];
+
+      final updated = base.copyWithMissingFiles(missing);
+
+      expect(updated.missingFiles, missing);
+      expect(updated.missingArtwork, base.missingArtwork);
+      expect(updated.categories, hasLength(9));
+    });
+  });
+
+  group('findMissingFiles (item 17)', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('omnis_cleanup_test');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    });
+
+    test('a track whose file genuinely exists is not flagged', () async {
+      final file = File('${tempDir.path}/present.mp3');
+      await file.writeAsBytes([0]);
+      final tracks = [track(id: '1', localPath: file.path)];
+
+      final missing = await LibraryCleanupAnalyzer.findMissingFiles(tracks);
+
+      expect(missing, isEmpty);
+    });
+
+    test('a track whose file is gone is flagged', () async {
+      final tracks = [
+        track(id: '1', localPath: '${tempDir.path}/never_existed.mp3'),
+      ];
+
+      final missing = await LibraryCleanupAnalyzer.findMissingFiles(tracks);
+
+      expect(missing.map((t) => t.id), ['1']);
+    });
+
+    test('a real create-then-delete round trip is genuinely detected, not '
+        'just a made-up path', () async {
+      final file = File('${tempDir.path}/temporary.mp3');
+      await file.writeAsBytes([0]);
+      final tracks = [track(id: '1', localPath: file.path)];
+
+      expect(await LibraryCleanupAnalyzer.findMissingFiles(tracks), isEmpty);
+
+      await file.delete();
+
+      final missing = await LibraryCleanupAnalyzer.findMissingFiles(tracks);
+      expect(missing.map((t) => t.id), ['1']);
+    });
+
+    test('a non-local track is never checked, even with a localPath set',
+        () async {
+      final tracks = [
+        track(
+          id: '1',
+          localPath: '${tempDir.path}/never_existed.mp3',
+          type: TrackType.youtube,
+        ),
+      ];
+
+      expect(await LibraryCleanupAnalyzer.findMissingFiles(tracks), isEmpty);
+    });
+
+    test('a local track with no localPath at all is never checked',
+        () async {
+      final tracks = [track(id: '1')];
+      expect(await LibraryCleanupAnalyzer.findMissingFiles(tracks), isEmpty);
+    });
+
+    test('present and missing tracks are correctly distinguished within '
+        'the same call', () async {
+      final present = File('${tempDir.path}/present.mp3');
+      await present.writeAsBytes([0]);
+      final tracks = [
+        track(id: 'present', localPath: present.path),
+        track(id: 'missing', localPath: '${tempDir.path}/gone.mp3'),
+      ];
+
+      final missing = await LibraryCleanupAnalyzer.findMissingFiles(tracks);
+      expect(missing.map((t) => t.id), ['missing']);
+    });
+
+    test('an empty track list returns empty without touching the '
+        'filesystem', () async {
+      expect(await LibraryCleanupAnalyzer.findMissingFiles(const []), isEmpty);
     });
   });
 }
