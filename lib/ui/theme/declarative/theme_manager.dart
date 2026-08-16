@@ -6,10 +6,12 @@ import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
 
 /// Owns the set of user-imported themes, the theme equivalent of
 /// `LayoutManager`. There's no "bundled theme manifest" list to merge
-/// against the way layouts merge with `createPlayerLayouts()` — the four
-/// built-in presets are [AppThemePreset] entries handled directly by
-/// [OmnisTheme]/[AppSettings], not [ThemeManifest]s — so [allThemes] here
-/// is purely what the user has imported.
+/// against the way layouts merge with `createPlayerLayouts()` — the six
+/// built-in presets (Classic plus the five spec-named presets — Pure,
+/// Drive, Karaoke, Future, Audiophile, item 44) are [AppThemePreset]
+/// entries handled directly by [OmnisTheme]/[AppSettings], not
+/// [ThemeManifest]s — so [allThemes] here is purely what the user has
+/// imported.
 class ThemeManager {
   final ThemeInstaller _installer;
   final List<ThemeManifest> _installed = [];

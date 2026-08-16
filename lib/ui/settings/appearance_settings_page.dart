@@ -471,12 +471,16 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                   DropdownMenuItem(
                       value: AppThemePreset.classic, child: Text('Classic')),
                   DropdownMenuItem(
-                      value: AppThemePreset.midnight,
-                      child: Text('Midnight')),
+                      value: AppThemePreset.pure, child: Text('Pure')),
                   DropdownMenuItem(
-                      value: AppThemePreset.aurora, child: Text('Aurora')),
+                      value: AppThemePreset.drive, child: Text('Drive')),
                   DropdownMenuItem(
-                      value: AppThemePreset.sunset, child: Text('Sunset')),
+                      value: AppThemePreset.karaoke, child: Text('Karaoke')),
+                  DropdownMenuItem(
+                      value: AppThemePreset.future, child: Text('Future')),
+                  DropdownMenuItem(
+                      value: AppThemePreset.audiophile,
+                      child: Text('Audiophile')),
                 ],
                 onChanged: (value) {
                   if (value == null) return;

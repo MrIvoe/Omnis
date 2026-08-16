@@ -45,17 +45,25 @@ class OmnisTheme {
         : (isDark ? OmnisPalette.darkBorder : OmnisPalette.lightBorder);
 
     final presetColors = switch (preset) {
-      AppThemePreset.midnight => (
-          primary: OmnisPalette.midnightPrimary,
-          secondary: OmnisPalette.midnightSecondary
+      AppThemePreset.pure => (
+          primary: OmnisPalette.purePrimary,
+          secondary: OmnisPalette.pureSecondary
         ),
-      AppThemePreset.aurora => (
-          primary: OmnisPalette.auroraPrimary,
-          secondary: OmnisPalette.auroraSecondary
+      AppThemePreset.drive => (
+          primary: OmnisPalette.drivePrimary,
+          secondary: OmnisPalette.driveSecondary
         ),
-      AppThemePreset.sunset => (
-          primary: OmnisPalette.sunsetPrimary,
-          secondary: OmnisPalette.sunsetSecondary
+      AppThemePreset.karaoke => (
+          primary: OmnisPalette.karaokePrimary,
+          secondary: OmnisPalette.karaokeSecondary
+        ),
+      AppThemePreset.future => (
+          primary: OmnisPalette.futurePrimary,
+          secondary: OmnisPalette.futureSecondary
+        ),
+      AppThemePreset.audiophile => (
+          primary: OmnisPalette.audiophilePrimary,
+          secondary: OmnisPalette.audiophileSecondary
         ),
       AppThemePreset.classic => (
           primary: accentColor,

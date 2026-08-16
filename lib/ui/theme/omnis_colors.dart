@@ -10,12 +10,36 @@ import 'package:palette_generator/palette_generator.dart';
 class OmnisPalette {
   OmnisPalette._();
 
-  static const midnightPrimary = Color(0xFF7C93FF);
-  static const midnightSecondary = Color(0xFF5DE2FF);
-  static const auroraPrimary = Color(0xFF26C281);
-  static const auroraSecondary = Color(0xFF6D8CFF);
-  static const sunsetPrimary = Color(0xFFFF8A4C);
-  static const sunsetSecondary = Color(0xFFFF5F7D);
+  // Item 44/spec §22-27's six named presets — Classic (accent-color-
+  // driven, see `OmnisTheme.build`) plus these five fixed palettes,
+  // replacing the earlier invented Midnight/Aurora/Sunset trio so the
+  // preset dropdown actually offers the spec's own named set rather
+  // than substitutes with no connection to it.
+  /// Pure: minimal, near-monochrome — deliberately the least colorful
+  /// preset, letting artwork/typography carry the visual weight.
+  static const purePrimary = Color(0xFF6B7280);
+  static const pureSecondary = Color(0xFF9CA3AF);
+
+  /// Drive: bold, high-contrast — legible at a glance, the same reason
+  /// automotive UIs lean on saturated warning-adjacent colors.
+  static const drivePrimary = Color(0xFFFF3B30);
+  static const driveSecondary = Color(0xFFFFD60A);
+
+  /// Karaoke: warm, spotlight-like — a lyric-focused interface reads
+  /// warmer than a plain playback one.
+  static const karaokePrimary = Color(0xFFFFB020);
+  static const karaokeSecondary = Color(0xFFFF6F91);
+
+  /// Future: cool and restrained — deliberately not a neon-cyberpunk
+  /// cliché (the spec explicitly warns against that), just a cooler,
+  /// calmer palette than the others.
+  static const futurePrimary = Color(0xFF4C9AFF);
+  static const futureSecondary = Color(0xFF64E1D0);
+
+  /// Audiophile: desaturated and technical — reads like a measurement
+  /// tool, not a mood board.
+  static const audiophilePrimary = Color(0xFF5C6B7A);
+  static const audiophileSecondary = Color(0xFF8FA3B0);
 
   static const darkSurface = Color(0xFF101218);
   static const darkElevated = Color(0xFF171A22);

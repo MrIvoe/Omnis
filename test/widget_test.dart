@@ -131,10 +131,18 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppSettings.instance.initialize();
 
-    AppSettings.instance.themePreset = AppThemePreset.midnight;
+    // Item 44/spec §22-27's six named presets — cheap persistence
+    // round-trip for every one of them (no OmnisTheme.build call here,
+    // so no google_fonts risk), then a single real OmnisTheme.build
+    // call below for the one this test has always exercised.
+    for (final preset in AppThemePreset.values) {
+      AppSettings.instance.themePreset = preset;
+      expect(AppSettings.instance.themePreset, preset);
+    }
 
+    AppSettings.instance.themePreset = AppThemePreset.drive;
     final reloaded = AppSettings.instance;
-    expect(reloaded.themePreset, AppThemePreset.midnight);
+    expect(reloaded.themePreset, AppThemePreset.drive);
 
     final theme = OmnisTheme.build(
       brightness: Brightness.dark,

@@ -11,7 +11,12 @@ export 'package:omnis_plugin_api/repeat_mode.dart' show RepeatMode;
 
 enum AppThemeMode { system, light, dark }
 
-enum AppThemePreset { classic, midnight, aurora, sunset }
+/// Item 44/spec §22-27's six named theme presets. Only [classic] is
+/// accent-color-driven (see `OmnisTheme.build`); the other five each
+/// have a fixed palette (`OmnisPalette`) — replaces the earlier
+/// invented `midnight`/`aurora`/`sunset` trio, which named nothing the
+/// spec actually asks for.
+enum AppThemePreset { classic, pure, drive, karaoke, future, audiophile }
 
 enum ButtonLayout { standard, compact, minimal }
 
@@ -149,9 +154,11 @@ class AppSettings extends ChangeNotifier {
   AppThemePreset get themePreset {
     final value = _prefs?.getString(_themePresetKey) ?? 'classic';
     return switch (value) {
-      'midnight' => AppThemePreset.midnight,
-      'aurora' => AppThemePreset.aurora,
-      'sunset' => AppThemePreset.sunset,
+      'pure' => AppThemePreset.pure,
+      'drive' => AppThemePreset.drive,
+      'karaoke' => AppThemePreset.karaoke,
+      'future' => AppThemePreset.future,
+      'audiophile' => AppThemePreset.audiophile,
       _ => AppThemePreset.classic,
     };
   }
@@ -161,9 +168,11 @@ class AppSettings extends ChangeNotifier {
     _prefs!.setString(
         _themePresetKey,
         switch (preset) {
-          AppThemePreset.midnight => 'midnight',
-          AppThemePreset.aurora => 'aurora',
-          AppThemePreset.sunset => 'sunset',
+          AppThemePreset.pure => 'pure',
+          AppThemePreset.drive => 'drive',
+          AppThemePreset.karaoke => 'karaoke',
+          AppThemePreset.future => 'future',
+          AppThemePreset.audiophile => 'audiophile',
           AppThemePreset.classic => 'classic',
         });
     notifyListeners();
