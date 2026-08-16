@@ -7,6 +7,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/plugin_api/audio_analysis_result.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/calculated_tags.dart';
 import 'package:omnis/plugin_api/enrichment_result.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_search.dart';
@@ -22,6 +23,7 @@ import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
+import 'package:omnis/ui/calculated_tag_dialog.dart';
 import 'package:omnis/ui/library_cleanup_report_page.dart';
 import 'package:omnis/ui/library_statistics_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
@@ -1894,6 +1896,101 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// spec §12's "virtual/calculated tags" gap (item 17) — builds a new
+  /// value for one writable field from a `{token}` template referencing
+  /// computed data (year, bitrate, duration, ...) across the currently-
+  /// selected tracks. Mirrors [_findReplaceSelected] exactly: builds via
+  /// [CalculatedTagDialog] (preview-first), writes through the same
+  /// `TagEditorPlugin.writeTags` call, and reuses [_undoAutoTagBatch] for
+  /// the "Undo" snackbar action.
+  Future<void> _calculatedTagsSelected() async {
+    final tagEditor = _tagEditorPlugin;
+    if (tagEditor == null) {
+      _toast('The Tag Editor plugin is disabled in Settings.');
+      return;
+    }
+    final ids = Set<String>.from(_selectedIds);
+    if (ids.isEmpty) return;
+    final candidates =
+        _tracks.where((t) => ids.contains(t.id) && t.localPath != null).toList();
+    if (candidates.isEmpty) {
+      _toast('None of the selected tracks have a local file to edit.');
+      return;
+    }
+
+    final rule = await CalculatedTagDialog.show(context, candidates);
+    if (rule == null || !mounted) return;
+
+    final matches = previewCalculatedTags(candidates, rule);
+    if (matches.isEmpty) {
+      _toast('Nothing to change.');
+      return;
+    }
+
+    final changedOriginals = <BaseTrack>[];
+    for (final match in matches) {
+      final track = match.track;
+      final path = track.localPath;
+      if (path == null) continue;
+
+      final ok = await tagEditor.writeTags(
+        path,
+        title:
+            rule.target == CalculatedTagTargetField.title ? match.after : null,
+        artist:
+            rule.target == CalculatedTagTargetField.artist ? match.after : null,
+        album:
+            rule.target == CalculatedTagTargetField.album ? match.after : null,
+        genre:
+            rule.target == CalculatedTagTargetField.genre ? match.after : null,
+      );
+      if (!ok) continue;
+
+      changedOriginals.add(track);
+      final index = _tracks.indexWhere((t) => t.id == track.id);
+      if (index >= 0) {
+        final updated = _tracks[index].copyWith(
+          title: rule.target == CalculatedTagTargetField.title
+              ? match.after
+              : null,
+          artists: rule.target == CalculatedTagTargetField.artist
+              ? tagEditor.splitArtists(match.after)
+              : null,
+          album: rule.target == CalculatedTagTargetField.album
+              ? match.after
+              : null,
+          genres: rule.target == CalculatedTagTargetField.genre
+              ? [match.after]
+              : null,
+        );
+        if (mounted) {
+          setState(() => _tracks[index] = updated);
+        } else {
+          _tracks[index] = updated;
+        }
+      }
+    }
+
+    await LibraryRepository.instance.save(_tracks);
+    if (!mounted) return;
+    setState(_selectedIds.clear);
+
+    if (changedOriginals.isNotEmpty) {
+      final changed = changedOriginals.length;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => _undoAutoTagBatch(changedOriginals),
+        ),
+      ));
+    } else {
+      _toast('Nothing changed.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1943,6 +2040,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   icon: const Icon(Icons.find_replace),
                   tooltip: 'Find & Replace tags…',
                   onPressed: _findReplaceSelected,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.data_object),
+                  tooltip: 'Virtual / calculated tags…',
+                  onPressed: _calculatedTagsSelected,
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
