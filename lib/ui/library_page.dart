@@ -22,6 +22,7 @@ import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/library_cleanup_report_page.dart';
+import 'package:omnis/ui/library_statistics_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
@@ -1166,6 +1167,15 @@ class _LibraryPageState extends State<LibraryPage> {
     ));
   }
 
+  /// Spec §35's "Library Statistics" dashboard — a point-in-time
+  /// snapshot over the already-loaded [_tracks], the same "no new I/O"
+  /// contract [_openCleanupReport] already establishes.
+  Future<void> _openStatistics() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => LibraryStatisticsPage(tracks: _tracks),
+    ));
+  }
+
   /// Drops [track] from the library without attempting to delete
   /// anything from disk — unlike [_deleteTracks], which is for a file
   /// that still exists. Used by the cleanup report's "missing files"
@@ -1796,6 +1806,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     if (value == 'measure_durations') _measureDurations();
                     if (value == 'cleanup') _openCleanupTool();
                     if (value == 'cleanup_report') _openCleanupReport();
+                    if (value == 'statistics') _openStatistics();
                     if (value == 'auto_tag') _autoTagLibrary();
                     if (value == 'retag_all') _autoTagLibrary(force: true);
                   },
@@ -1829,6 +1840,11 @@ class _LibraryPageState extends State<LibraryPage> {
                     PopupMenuItem(
                       value: 'cleanup_report',
                       child: Text('Analyze library (cleanup report)…'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'statistics',
+                      child: Text('Library statistics'),
                     ),
                   ],
                 ),
