@@ -98,6 +98,11 @@ class AppSettings extends ChangeNotifier {
   static const _autoBackupEnabledKey = 'app_auto_backup_enabled';
   static const _autoBackupIntervalDaysKey = 'app_auto_backup_interval_days';
   static const _lastAutoBackupAtKey = 'app_last_auto_backup_at';
+  static const _autoUpdateCheckEnabledKey = 'app_auto_update_check_enabled';
+  static const _autoUpdateCheckIntervalDaysKey =
+      'app_auto_update_check_interval_days';
+  static const _lastPluginUpdateCheckAtKey =
+      'app_last_plugin_update_check_at';
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
 
@@ -696,6 +701,52 @@ class AppSettings extends ChangeNotifier {
       _prefs!.remove(_lastAutoBackupAtKey);
     } else {
       _prefs!.setInt(_lastAutoBackupAtKey, value.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  /// Item 29's "no automatic/background checking" gap —
+  /// `PluginManager.checkForUpdates` previously only ever ran from the
+  /// Plugins page's "Check for updates" button, with no timer or
+  /// interval anywhere. Defaults to `false`, the same opt-in stance
+  /// `autoBackupEnabled` already takes for unattended background work.
+  bool get autoUpdateCheckEnabled =>
+      _prefs?.getBool(_autoUpdateCheckEnabledKey) ?? false;
+
+  set autoUpdateCheckEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_autoUpdateCheckEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// How often an automatic update check should run, in days. Defaults
+  /// to 3 — more frequent than `autoBackupIntervalDays`' weekly default,
+  /// since a check is a cheap read-only network call (unlike writing a
+  /// backup zip), so there's less reason to space it out as far.
+  int get autoUpdateCheckIntervalDays =>
+      _prefs?.getInt(_autoUpdateCheckIntervalDaysKey) ?? 3;
+
+  set autoUpdateCheckIntervalDays(int value) {
+    _ensurePrefs();
+    _prefs!.setInt(_autoUpdateCheckIntervalDaysKey, value < 1 ? 1 : value);
+    notifyListeners();
+  }
+
+  /// When the last automatic update check actually ran, or `null` if one
+  /// never has — `PluginUpdateScheduler.isDue` treats `null` as due
+  /// immediately, the same "don't wait a full interval for the first
+  /// one" convention `lastAutoBackupAt` already establishes.
+  DateTime? get lastPluginUpdateCheckAt {
+    final ms = _prefs?.getInt(_lastPluginUpdateCheckAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  set lastPluginUpdateCheckAt(DateTime? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastPluginUpdateCheckAtKey);
+    } else {
+      _prefs!.setInt(_lastPluginUpdateCheckAtKey, value.millisecondsSinceEpoch);
     }
     notifyListeners();
   }

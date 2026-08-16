@@ -176,6 +176,97 @@ void main() {
     });
   });
 
+  group('maybeCheckForUpdatesAutomatically (item 29, "no automatic/'
+      'background checking")', () {
+    test('is a no-op when disabled, even if due', () async {
+      AppSettings.instance.autoUpdateCheckEnabled = false;
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      client.manifestVersion = '2.0.0';
+
+      await manager.maybeCheckForUpdatesAutomatically(
+          settings: AppSettings.instance);
+
+      expect(manager.lastKnownUpdates, isEmpty);
+      expect(AppSettings.instance.lastPluginUpdateCheckAt, isNull);
+    });
+
+    test('runs and caches results when enabled and never checked before '
+        '(first run is always due)', () async {
+      AppSettings.instance.autoUpdateCheckEnabled = true;
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      client.manifestVersion = '2.0.0';
+      final now = DateTime(2026, 8, 16);
+
+      await manager.maybeCheckForUpdatesAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(manager.lastKnownUpdates, hasLength(1));
+      expect(manager.lastKnownUpdates.single.pluginId, 'sample_plugin');
+      expect(AppSettings.instance.lastPluginUpdateCheckAt, now);
+    });
+
+    test('is a no-op when enabled but not yet due', () async {
+      AppSettings.instance.autoUpdateCheckEnabled = true;
+      AppSettings.instance.autoUpdateCheckIntervalDays = 3;
+      final now = DateTime(2026, 8, 16);
+      AppSettings.instance.lastPluginUpdateCheckAt =
+          now.subtract(const Duration(days: 1));
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      client.manifestVersion = '2.0.0';
+
+      await manager.maybeCheckForUpdatesAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(manager.lastKnownUpdates, isEmpty,
+          reason: 'not due yet, so no real check should have run');
+    });
+
+    test('runs again once the interval has actually elapsed', () async {
+      AppSettings.instance.autoUpdateCheckEnabled = true;
+      AppSettings.instance.autoUpdateCheckIntervalDays = 3;
+      final now = DateTime(2026, 8, 16);
+      AppSettings.instance.lastPluginUpdateCheckAt =
+          now.subtract(const Duration(days: 4));
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      client.manifestVersion = '2.0.0';
+
+      await manager.maybeCheckForUpdatesAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(manager.lastKnownUpdates, hasLength(1));
+      expect(AppSettings.instance.lastPluginUpdateCheckAt, now);
+    });
+
+    test('stamps lastPluginUpdateCheckAt even when the check finds '
+        'nothing — "checked, found nothing" is still a completed check',
+        () async {
+      AppSettings.instance.autoUpdateCheckEnabled = true;
+      final client =
+          _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+      final manager = PluginManager(installer: PluginInstaller(client: client));
+      await manager.installFromUrl('https://github.com/user/repo');
+      final now = DateTime(2026, 8, 16);
+
+      await manager.maybeCheckForUpdatesAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(manager.lastKnownUpdates, isEmpty);
+      expect(AppSettings.instance.lastPluginUpdateCheckAt, now);
+    });
+  });
+
   group('updatePlugin', () {
     test('throws for a plugin id that is not installed', () async {
       final manager = PluginManager(

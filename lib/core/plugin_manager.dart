@@ -13,6 +13,7 @@ import 'package:omnis/core/plugin_manifest.dart';
 import 'package:omnis/core/plugin_runtime.dart';
 import 'package:omnis/core/plugin_sandbox_bridge.dart';
 import 'package:omnis/core/plugin_sandbox_services.dart';
+import 'package:omnis/core/plugin_update_scheduler.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/semver.dart';
 import 'package:omnis/core/service_registry.dart';
@@ -143,6 +144,13 @@ class PluginManager {
   /// looking it up share one object, not two.
   final ServiceRegistry services = ServiceRegistry();
   final EventBus events = EventBus();
+
+  /// The result of the most recent [checkForUpdates] call — either a
+  /// manual "Check for updates" tap or [maybeCheckForUpdatesAutomatically]
+  /// — cached here so a UI that opens *after* an automatic background
+  /// check ran doesn't show a blank "no updates" state until the user
+  /// taps the button again themselves. Starts empty (never checked).
+  List<PluginUpdateInfo> lastKnownUpdates = const [];
 
   /// Capabilities handed to every in-process plugin at registration.
   PluginContext? _context;
@@ -511,6 +519,43 @@ class PluginManager {
       }
     }
     return updates;
+  }
+
+  /// Runs [checkForUpdates] automatically if [settings] (defaults to
+  /// [AppSettings.instance]) says it's enabled and due (via
+  /// [PluginUpdateScheduler.isDue]) — item 29's "no automatic/background
+  /// checking" gap: previously [checkForUpdates] only ever ran from the
+  /// Plugins page's manual "Check for updates" button, with no timer or
+  /// interval anywhere. A no-op when disabled or not yet due. On a real
+  /// check, caches the result into [lastKnownUpdates] and stamps
+  /// [AppSettings.lastPluginUpdateCheckAt] regardless of whether any
+  /// update was actually found — "checked and found nothing" is still a
+  /// completed check, the same as [BackupService.maybeRunAutomaticBackup]
+  /// stamping its own timestamp whether or not pruning had anything to
+  /// do. Never throws — a failure here must never block startup, the
+  /// same "denial degrades, never blocks boot" contract this app's
+  /// other background tasks already follow.
+  Future<void> maybeCheckForUpdatesAutomatically({
+    AppSettings? settings,
+    DateTime? now,
+  }) async {
+    final appSettings = settings ?? AppSettings.instance;
+    if (!appSettings.autoUpdateCheckEnabled) return;
+    final effectiveNow = now ?? DateTime.now();
+    final due = PluginUpdateScheduler.isDue(
+      appSettings.lastPluginUpdateCheckAt,
+      Duration(days: appSettings.autoUpdateCheckIntervalDays),
+      effectiveNow,
+    );
+    if (!due) return;
+
+    try {
+      lastKnownUpdates = await checkForUpdates();
+    } catch (_) {
+      // Best-effort; a failed check must never crash the app.
+    } finally {
+      appSettings.lastPluginUpdateCheckAt = effectiveNow;
+    }
   }
 
   /// Updates an installed external plugin to whatever is currently

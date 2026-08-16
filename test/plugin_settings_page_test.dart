@@ -134,9 +134,18 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Below the fold now that the catalog card's own search box (item 30)
-    // adds extra height above the installed-plugins list.
-    await tester.ensureVisible(find.text('Has Settings'));
+    // Further below the fold than the default 800x600 test viewport's
+    // sliver mount/cache-extent boundary reaches — the catalog card's
+    // search box (item 30) plus the "Automatic update checks" toggle
+    // (item 29) both add height above the installed-plugins list — not
+    // just off-screen but genuinely unmounted, so dragUntilVisible (not
+    // ensureVisible, which needs the widget to already exist) is what
+    // actually brings it into the tree.
+    await tester.dragUntilVisible(
+      find.text('Has Settings'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
     await tester.pump();
     await tester.tap(find.text('Has Settings'));
     await tester.pumpAndSettle();

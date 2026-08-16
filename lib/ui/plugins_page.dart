@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/plugin_catalog.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/plugin_manager.dart';
@@ -75,6 +76,18 @@ class _PluginsPageState extends State<PluginsPage> {
       if (mounted) setState(() => _health = records);
     };
     widget.sandbox.addHealthListener(_healthListener);
+    // Item 29's automatic-checking gap: a background check (see
+    // MainCore.maybeCheckForUpdatesAutomatically) may already have run
+    // before this page ever opened — priming from its cached result here
+    // means the update banner can show up immediately instead of staying
+    // blank until the user taps "Check for updates" themselves. Left
+    // `null` (the pre-existing "never checked" state) when the cache is
+    // still empty, so this never fakes a "checked, found nothing" state
+    // that didn't really happen.
+    final cached = widget.pluginManager.lastKnownUpdates;
+    if (cached.isNotEmpty) {
+      _availableUpdates = {for (final u in cached) u.pluginId: u};
+    }
     _loadCatalog();
   }
 
@@ -518,6 +531,16 @@ class _PluginsPageState extends State<PluginsPage> {
                   label: const Text('Disable all network plugins'),
                 ),
             ],
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Automatic update checks'),
+            subtitle: const Text(
+                'Periodically check for plugin updates in the background'),
+            value: AppSettings.instance.autoUpdateCheckEnabled,
+            onChanged: (value) => setState(
+                () => AppSettings.instance.autoUpdateCheckEnabled = value),
           ),
           if (_availableUpdates != null && _availableUpdates!.isEmpty)
             Padding(

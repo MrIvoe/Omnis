@@ -345,6 +345,63 @@ void main() {
     });
   });
 
+  group('Automatic update checks (item 29)', () {
+    testWidgets('the toggle renders, defaults off, and persists when '
+        'flipped', (tester) async {
+      final manager = PluginManager(
+          installer: PluginInstaller(client: _RoutingClient(
+              manifestVersion: '1.0.0', zipVersion: '1.0.0')));
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+      ));
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Automatic update checks'));
+      await tester.pump();
+      final tileBefore = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, 'Automatic update checks'));
+      expect(tileBefore.value, isFalse);
+
+      await tester.tap(find.text('Automatic update checks'));
+      await tester.pump();
+
+      expect(AppSettings.instance.autoUpdateCheckEnabled, isTrue);
+      final tileAfter = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, 'Automatic update checks'));
+      expect(tileAfter.value, isTrue);
+    });
+
+    testWidgets('a cached result from an earlier background check shows '
+        'the update banner immediately, without tapping "Check for '
+        'updates"', (tester) async {
+      await tester.runAsync(() async {
+        final client =
+            _RoutingClient(manifestVersion: '1.0.0', zipVersion: '1.0.0');
+        final manager =
+            PluginManager(installer: PluginInstaller(client: client));
+        await manager.installFromUrl('https://github.com/user/repo');
+        client.manifestVersion = '2.0.0';
+        // Simulates MainCore.maybeCheckForUpdatesAutomatically having
+        // already run once before this page ever opened.
+        await manager.maybeCheckForUpdatesAutomatically(
+            settings: AppSettings.instance..autoUpdateCheckEnabled = true);
+        expect(manager.lastKnownUpdates, hasLength(1));
+
+        await tester.pumpWidget(MaterialApp(
+          home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+        ));
+        await tester.pump();
+        await tester.ensureVisible(find.text('Check for updates'));
+        await tester.pump();
+
+        expect(find.text('Update available: v2.0.0'), findsOneWidget,
+            reason: 'the cached background-check result should be shown '
+                'immediately, not only after tapping the button');
+      });
+    });
+  });
+
   group('Plugin catalog fetch (item 30)', () {
     testWidgets('shows the real, fetched catalog.json entries instead of '
         'the hardcoded fallback', (tester) async {

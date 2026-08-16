@@ -279,6 +279,13 @@ class MainCore {
     // ignore: unawaited_futures
     BackupService().maybeRunAutomaticBackup();
 
+    // Item 29's "no automatic/background checking" — a no-op unless the
+    // user has opted in (AppSettings.autoUpdateCheckEnabled defaults
+    // false) and one is actually due. Fire-and-forget, same "never
+    // block boot" contract as the backup call above.
+    // ignore: unawaited_futures
+    _pluginManager.maybeCheckForUpdatesAutomatically();
+
     // Item 5/spec §8's "filesystem watchers" gap — see [_libraryWatcher]'s
     // own doc for the full gating logic (opt-in, desktop-only, dedicated
     // folder required).
