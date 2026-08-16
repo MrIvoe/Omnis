@@ -10,6 +10,18 @@ Core stays small and never crashes; every feature — equalizer, lyrics,
 scrobbling, smart playlists, tag editing, Spotify/YouTube integration —
 lives in a plugin.
 
+## Build progress
+
+Omnis 2.0 is under continuous, incremental development — 7 of 50
+tracked feature areas are fully solid, 8 more are fully built but not
+yet verified against a live external service, and the remaining 35 are
+real and working with specific, enumerated gaps left. None are
+starting from zero. See
+**[docs/OMNIS_2_0_STATUS.md](docs/OMNIS_2_0_STATUS.md)** for the
+phase-by-phase breakdown, or
+[docs/OMNIS_2_0_FINISHED_TASK.md](docs/OMNIS_2_0_FINISHED_TASK.md) for
+the full build log behind every line of it.
+
 ## Features
 
 **Playback**
