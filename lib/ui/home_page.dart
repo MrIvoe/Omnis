@@ -9,6 +9,7 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/ui/forgotten_music_page.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:omnis/ui/home_dashboard_page.dart';
 import 'package:omnis/ui/library_page.dart';
@@ -393,7 +394,21 @@ class _MoodsPageState extends State<_MoodsPage> {
     }.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Moods')),
+      appBar: AppBar(
+        title: const Text('Moods'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history_toggle_off),
+            tooltip: 'Forgotten Music',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ForgottenMusicPage(engine: widget.engine),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           GridView.builder(

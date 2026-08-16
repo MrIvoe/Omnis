@@ -336,4 +336,50 @@ void main() {
       expect(decoded['data'], isA<Map>());
     });
   });
+
+  group('lastPlayedByTrackId (item 39, Forgotten Music)', () {
+    test('returns an empty map when nothing has ever been played',
+        () async {
+      expect(await PlayHistoryStore.instance.lastPlayedByTrackId(), isEmpty);
+    });
+
+    test('returns every played track\'s id mapped to its lastPlayedAt',
+        () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+      await store.recordPlay(_track('b'));
+
+      final map = await store.lastPlayedByTrackId();
+
+      expect(map.keys.toSet(), {'a', 'b'});
+      expect(map['a'], isNotNull);
+      expect(map['b'], isNotNull);
+    });
+
+    test('a later recordPlay for the same track updates its timestamp',
+        () async {
+      final store = PlayHistoryStore.instance;
+      await store.recordPlay(_track('a'));
+      final first = (await store.lastPlayedByTrackId())['a'];
+
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await store.recordPlay(_track('a'));
+      final second = (await store.lastPlayedByTrackId())['a'];
+
+      expect(second!.isAfter(first!), isTrue);
+    });
+
+    test('is unaffected by the limit/sort semantics of recentlyPlayed/'
+        'mostPlayed — every entry comes back, unsorted, uncapped',
+        () async {
+      final store = PlayHistoryStore.instance;
+      for (final id in List.generate(30, (i) => 't$i')) {
+        await store.recordPlay(_track(id));
+      }
+
+      final map = await store.lastPlayedByTrackId();
+
+      expect(map.length, 30);
+    });
+  });
 }

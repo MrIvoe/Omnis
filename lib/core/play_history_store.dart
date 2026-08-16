@@ -286,6 +286,18 @@ class PlayHistoryStore {
     return stats.take(limit).toList();
   }
 
+  /// The full `trackId -> lastPlayedAt` map — unlike [recentlyPlayed]/
+  /// [mostPlayed], which are capped and sorted for a specific dashboard
+  /// section, this is the raw signal a "not played in a while" query
+  /// (item 39/§37's "Forgotten Music," see `forgotten_tracks.dart`) needs:
+  /// every track's last-played timestamp, unfiltered, so it can be
+  /// compared against a threshold or checked for absence entirely (a
+  /// track with no entry here has never been played).
+  Future<Map<String, DateTime>> lastPlayedByTrackId() async {
+    final stats = await _load();
+    return {for (final s in stats.values) s.trackId: s.lastPlayedAt};
+  }
+
   /// Clears all persisted play history. Not currently exposed in any UI —
   /// exists for tests and as a future "reset my history" settings action.
   Future<void> clear() => _serialized(() async {
