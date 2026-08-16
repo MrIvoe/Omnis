@@ -288,7 +288,10 @@ class MainCore {
   }
 
   /// Checks whether any saved [PlaybackSchedule] is due right now — the
-  /// [_scheduleTimer]'s once-a-minute callback. A due schedule with a
+  /// [_scheduleTimer]'s once-a-minute callback. A due
+  /// [PlaybackScheduleAction.stop] schedule just pauses playback,
+  /// ignoring [PlaybackSchedule.playlistId] entirely (meaningless for a
+  /// stop). A due [PlaybackScheduleAction.play] schedule with a
   /// [PlaybackSchedule.playlistId] resolves that playlist against the
   /// current library and replaces the queue with it; one with no
   /// playlist just resumes whatever's already queued. Never throws — a
@@ -304,6 +307,12 @@ class MainCore {
           schedules, now, _scheduleLastFiredAt);
       for (final schedule in due) {
         _scheduleLastFiredAt[schedule.id] = now;
+
+        if (schedule.action == PlaybackScheduleAction.stop) {
+          await _audioEngine.pause();
+          continue;
+        }
+
         final playlistId = schedule.playlistId;
         if (playlistId != null) {
           final playlists = await PlaylistStore.instance.load();

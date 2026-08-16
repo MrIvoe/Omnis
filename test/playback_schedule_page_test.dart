@@ -179,4 +179,94 @@ void main() {
       expect(find.textContaining('Road Trip'), findsOneWidget);
     });
   });
+
+  group('PlaybackScheduleAction (item 50, "stop playback at a time")', () {
+    testWidgets('a new schedule defaults to Play, with the playlist '
+        'picker visible', (tester) async {
+      await tester.runAsync(() async {
+        await pumpPage(tester);
+
+        await tester.tap(find.byIcon(Icons.add));
+        await _settle(tester);
+
+        expect(find.text('Playlist (optional)'), findsOneWidget);
+      });
+    });
+
+    testWidgets('switching to Stop hides the playlist picker', (tester) async {
+      await tester.runAsync(() async {
+        await pumpPage(tester);
+
+        await tester.tap(find.byIcon(Icons.add));
+        await _settle(tester);
+        await tester.tap(find.text('Stop'));
+        await tester.pump();
+
+        expect(find.text('Playlist (optional)'), findsNothing);
+      });
+    });
+
+    testWidgets('saving a Stop schedule persists action: stop and no '
+        'playlistId', (tester) async {
+      await tester.runAsync(() async {
+        await pumpPage(tester);
+
+        await tester.tap(find.byIcon(Icons.add));
+        await _settle(tester);
+        await tester.enterText(find.byType(TextField), 'Bedtime');
+        await tester.tap(find.text('Stop'));
+        await tester.pump();
+        await tester.tap(find.text('Save'));
+        await _settle(tester);
+
+        final saved = await PlaybackScheduleStore.instance.load();
+        expect(saved.single.action, PlaybackScheduleAction.stop);
+        expect(saved.single.playlistId, isNull);
+      });
+    });
+
+    testWidgets('a Stop schedule\'s row subtitle says "Stops playback"',
+        (tester) async {
+      await tester.runAsync(() async {
+        await PlaybackScheduleStore.instance.add(PlaybackSchedule(
+          id: 's1',
+          name: 'Bedtime',
+          minuteOfDay: 1320,
+          weekdays: const {1, 2, 3, 4, 5},
+          enabled: true,
+          action: PlaybackScheduleAction.stop,
+          createdAt: DateTime(2026, 1, 1),
+        ));
+
+        await pumpPage(tester);
+
+        expect(find.textContaining('Stops playback'), findsOneWidget);
+      });
+    });
+
+    testWidgets('editing an existing Stop schedule preselects Stop and '
+        'still hides the playlist picker', (tester) async {
+      await tester.runAsync(() async {
+        await PlaybackScheduleStore.instance.add(PlaybackSchedule(
+          id: 's1',
+          name: 'Bedtime',
+          minuteOfDay: 1320,
+          weekdays: const {1, 2, 3, 4, 5},
+          enabled: true,
+          action: PlaybackScheduleAction.stop,
+          createdAt: DateTime(2026, 1, 1),
+        ));
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Bedtime'));
+        await _settle(tester);
+
+        expect(find.text('Playlist (optional)'), findsNothing);
+        final segmentedButton =
+            tester.widget<SegmentedButton<PlaybackScheduleAction>>(
+                find.byType(SegmentedButton<PlaybackScheduleAction>));
+        expect(segmentedButton.selected, {PlaybackScheduleAction.stop});
+      });
+    });
+  });
 }

@@ -174,4 +174,59 @@ void main() {
     expect(unchanged.playlistId, 'playlist_1');
     expect(cleared.playlistId, isNull);
   });
+
+  group('PlaybackScheduleAction (item 50, "stop playback at a time")', () {
+    test('a fresh PlaybackSchedule defaults to action: play', () {
+      expect(_schedule('a').action, PlaybackScheduleAction.play);
+    });
+
+    test('action round-trips through toJson/fromJson for both values',
+        () async {
+      await PlaybackScheduleStore.instance
+          .add(_schedule('a').copyWith(action: PlaybackScheduleAction.stop));
+      await PlaybackScheduleStore.instance
+          .add(_schedule('b').copyWith(action: PlaybackScheduleAction.play));
+
+      final loaded = await PlaybackScheduleStore.instance.load();
+
+      expect(loaded.firstWhere((s) => s.id == 'a').action,
+          PlaybackScheduleAction.stop);
+      expect(loaded.firstWhere((s) => s.id == 'b').action,
+          PlaybackScheduleAction.play);
+    });
+
+    test('a legacy record persisted before the action field existed '
+        'decodes as play, not a throw — additive field, not a breaking '
+        'one', () async {
+      final file = File('$tempDir/omnis_playback_schedules.json');
+      await file.writeAsString(jsonEncode({
+        'schemaVersion': 1,
+        'data': [
+          {
+            'id': 'legacy',
+            'name': 'Legacy',
+            'minuteOfDay': 450,
+            'weekdays': [1, 2, 3, 4, 5],
+            'enabled': true,
+            'createdAt': DateTime(2024, 1, 1).toIso8601String(),
+          },
+        ],
+      }));
+
+      final loaded = await PlaybackScheduleStore.instance.load();
+
+      expect(loaded.single.action, PlaybackScheduleAction.play);
+    });
+
+    test('copyWith(action: ...) updates only the action, leaving every '
+        'other field untouched', () {
+      final schedule = _schedule('a').copyWith(playlistId: 'playlist_1');
+      final stopped = schedule.copyWith(action: PlaybackScheduleAction.stop);
+
+      expect(stopped.action, PlaybackScheduleAction.stop);
+      expect(stopped.name, schedule.name);
+      expect(stopped.minuteOfDay, schedule.minuteOfDay);
+      expect(stopped.playlistId, schedule.playlistId);
+    });
+  });
 }

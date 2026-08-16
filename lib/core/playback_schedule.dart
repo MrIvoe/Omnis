@@ -8,13 +8,27 @@ import 'package:path_provider/path_provider.dart';
 const _currentSchemaVersion = 1;
 const _migrations = <int, SchemaMigration>{};
 
-/// A recurring "start playback at this time, on these days" trigger —
-/// MusicBee comparison §43's scheduling gap ("start/stop playback at a
-/// time, wake playback, scheduled playlist... recurring/day-of-week
-/// rules"), distinct from `SleepTimerPlugin` (countdown-only, no
-/// future-time/day-of-week concept at all) and from a general
-/// automation-rules engine (item 50's larger, still-deferred ask) — this
-/// is one concrete, narrowly-scoped trigger type, not a rules engine.
+/// What a [PlaybackSchedule] does once it fires — item 50's "stop
+/// playback at a time" gap, the other half of MusicBee comparison §43's
+/// "start/stop playback at a time" ask (the "start" half was closed
+/// alongside this class's own original introduction). [play] resolves
+/// [PlaybackSchedule.playlistId] (or just resumes whatever's already
+/// queued) the same way this schedule type always has; [stop] pauses
+/// playback outright and never touches [PlaybackSchedule.playlistId] at
+/// all — that field is meaningless for a stop schedule, left present
+/// but unused rather than enforced away, the same "just don't read it"
+/// stance an inapplicable field gets elsewhere in this app (e.g. a
+/// `duplicate:` search qualifier's sub-field that doesn't apply).
+enum PlaybackScheduleAction { play, stop }
+
+/// A recurring "start/stop playback at this time, on these days"
+/// trigger — MusicBee comparison §43's scheduling gap ("start/stop
+/// playback at a time, wake playback, scheduled playlist...
+/// recurring/day-of-week rules"), distinct from `SleepTimerPlugin`
+/// (countdown-only, no future-time/day-of-week concept at all) and from
+/// a general automation-rules engine (item 50's larger, still-deferred
+/// ask) — this is one concrete, narrowly-scoped trigger type, not a
+/// rules engine.
 class PlaybackSchedule {
   final String id;
   final String name;
@@ -33,8 +47,15 @@ class PlaybackSchedule {
   final bool enabled;
 
   /// A specific playlist to play, or `null` to just resume/replay
-  /// whatever's already queued.
+  /// whatever's already queued. Only meaningful when [action] is
+  /// [PlaybackScheduleAction.play].
   final String? playlistId;
+
+  /// Defaults to [PlaybackScheduleAction.play] — every schedule this
+  /// class supported before [PlaybackScheduleAction] existed was
+  /// implicitly a start schedule, so a fresh instance keeps that
+  /// behavior unless told otherwise.
+  final PlaybackScheduleAction action;
 
   final DateTime createdAt;
 
@@ -45,6 +66,7 @@ class PlaybackSchedule {
     required this.weekdays,
     required this.enabled,
     this.playlistId,
+    this.action = PlaybackScheduleAction.play,
     required this.createdAt,
   });
 
@@ -55,6 +77,7 @@ class PlaybackSchedule {
     bool? enabled,
     String? playlistId,
     bool clearPlaylistId = false,
+    PlaybackScheduleAction? action,
   }) =>
       PlaybackSchedule(
         id: id,
@@ -64,6 +87,7 @@ class PlaybackSchedule {
         enabled: enabled ?? this.enabled,
         playlistId:
             clearPlaylistId ? null : (playlistId ?? this.playlistId),
+        action: action ?? this.action,
         createdAt: createdAt,
       );
 
@@ -74,6 +98,7 @@ class PlaybackSchedule {
         'weekdays': weekdays.toList(),
         'enabled': enabled,
         if (playlistId != null) 'playlistId': playlistId,
+        'action': action.name,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -87,6 +112,14 @@ class PlaybackSchedule {
             .toSet(),
         enabled: json['enabled'] as bool? ?? true,
         playlistId: json['playlistId'] as String?,
+        // A record persisted before this field existed has no 'action'
+        // key at all — decodes as `play`, the only kind of schedule
+        // that could have existed then, so every pre-existing schedule
+        // keeps its original behavior unchanged.
+        action: PlaybackScheduleAction.values.firstWhere(
+          (a) => a.name == json['action'],
+          orElse: () => PlaybackScheduleAction.play,
+        ),
         createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
       );

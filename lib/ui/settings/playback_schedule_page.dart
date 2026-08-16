@@ -129,13 +129,19 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
                   itemBuilder: (context, index) {
                     final schedule = _schedules[index];
                     final playlistName = _playlistName(schedule.playlistId);
+                    final actionLabel =
+                        schedule.action == PlaybackScheduleAction.stop
+                            ? 'Stops playback'
+                            : playlistName != null
+                                ? 'Plays $playlistName'
+                                : 'Resumes current queue';
                     return Card(
                       child: ListTile(
                         title: Text(schedule.name),
                         subtitle: Text(
                           '${_formatTime(schedule.minuteOfDay)} · '
-                          '${_formatWeekdays(schedule.weekdays)}'
-                          '${playlistName != null ? ' · $playlistName' : ''}',
+                          '${_formatWeekdays(schedule.weekdays)} · '
+                          '$actionLabel',
                         ),
                         leading: Switch(
                           value: schedule.enabled,
@@ -183,6 +189,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   late int _minuteOfDay;
   late Set<int> _weekdays;
   String? _playlistId;
+  late PlaybackScheduleAction _action;
 
   @override
   void initState() {
@@ -192,6 +199,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     _minuteOfDay = existing?.minuteOfDay ?? (8 * 60);
     _weekdays = Set<int>.of(existing?.weekdays ?? const {1, 2, 3, 4, 5});
     _playlistId = existing?.playlistId;
+    _action = existing?.action ?? PlaybackScheduleAction.play;
   }
 
   @override
@@ -220,7 +228,11 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
       minuteOfDay: _minuteOfDay,
       weekdays: _weekdays,
       enabled: existing?.enabled ?? true,
-      playlistId: _playlistId,
+      // playlistId is meaningless for a stop schedule — never persisted
+      // for one, so a schedule switched from Play to Stop doesn't carry
+      // a stale, unused playlist reference along with it.
+      playlistId: _action == PlaybackScheduleAction.stop ? null : _playlistId,
+      action: _action,
       createdAt: existing?.createdAt ?? DateTime.now(),
     );
     Navigator.pop(context, schedule);
@@ -251,6 +263,24 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
               onTap: _pickTime,
             ),
             const SizedBox(height: 8),
+            SegmentedButton<PlaybackScheduleAction>(
+              segments: const [
+                ButtonSegment(
+                  value: PlaybackScheduleAction.play,
+                  label: Text('Play'),
+                  icon: Icon(Icons.play_arrow),
+                ),
+                ButtonSegment(
+                  value: PlaybackScheduleAction.stop,
+                  label: Text('Stop'),
+                  icon: Icon(Icons.stop),
+                ),
+              ],
+              selected: {_action},
+              onSelectionChanged: (selection) =>
+                  setState(() => _action = selection.first),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
@@ -268,22 +298,27 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String?>(
-              value: _playlistId,
-              decoration:
-                  const InputDecoration(labelText: 'Playlist (optional)'),
-              items: [
-                const DropdownMenuItem<String?>(
-                    value: null, child: Text('Resume current queue')),
-                for (final playlist in widget.playlists)
-                  DropdownMenuItem<String?>(
-                    value: playlist.id,
-                    child: Text(playlist.name),
-                  ),
-              ],
-              onChanged: (value) => setState(() => _playlistId = value),
-            ),
+            // Meaningless for a Stop schedule — there's no queue to
+            // replace when the action is just "pause," so the picker
+            // only shows up for Play.
+            if (_action == PlaybackScheduleAction.play) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String?>(
+                value: _playlistId,
+                decoration:
+                    const InputDecoration(labelText: 'Playlist (optional)'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Resume current queue')),
+                  for (final playlist in widget.playlists)
+                    DropdownMenuItem<String?>(
+                      value: playlist.id,
+                      child: Text(playlist.name),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _playlistId = value),
+              ),
+            ],
           ],
         ),
       ),
