@@ -114,7 +114,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 47 | TV mode | 🟡 New TV-optimized Now Playing layout; built from a genuine 0% start |
 | 48 | Accessibility | 🟡 Keyboard shortcuts, tooltips, `Semantics` pass, reduce-motion/transparency all real; partial coverage |
 | 49 | Widgets | 🟡 Real interactive Android home-screen widget; built from a genuine 0% start |
-| 50 | Automation | 🟡 GPS-speed and Bluetooth-connect triggers, plus time-based playback scheduling (start/stop at a time); a general rules engine still deferred |
+| 50 | Automation | 🟡 GPS-speed and Bluetooth-connect triggers (now including a Car Mode layout switch), plus time-based playback scheduling; a general rules engine still deferred |
 
 ---
 
