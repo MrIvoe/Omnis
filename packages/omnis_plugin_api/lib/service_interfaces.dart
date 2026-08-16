@@ -89,6 +89,24 @@ abstract class IFavoritesProvider {
   List<String> favoriteIds();
 }
 
+/// A track's thumbs-up/down preference — MusicBee comparison §36:
+/// distinct from [IRatingsProvider]'s 0-5 star scale, a coarse "yes/no"
+/// signal some listeners prefer over picking a specific star count.
+enum ThumbState { none, up, down }
+
+/// Queries a track's thumbs-up/down state — the identical
+/// nothing-outside-the-owning-plugin-can-read-this gap
+/// [IRatingsProvider]/[IFavoritesProvider]'s own docs already describe,
+/// mirrored here for a third, independent signal. `RatingsPlugin`
+/// implements this alongside [IRatingsProvider] — the two are separate
+/// interfaces because a track can be thumbed without ever being
+/// star-rated and vice versa, not two views of the same value.
+abstract class IThumbsProvider {
+  /// [trackId]'s thumb state, or [ThumbState.none] if it's never been
+  /// thumbed — matches `RatingsPlugin.thumbOf`'s own convention exactly.
+  ThumbState thumbOf(String trackId);
+}
+
 /// Builds a ready-to-play queue for a named query (a mood/preset label
 /// like `"Chill"` or `"Workout"`).
 ///
