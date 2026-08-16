@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/plugin_api/audio_analysis_result.dart';
 import 'package:omnis/core/artist_similarity.dart';
+import 'package:omnis/core/artwork_candidates.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/calculated_tags.dart';
@@ -294,6 +295,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// Track ids currently being looked up via MetadataEnrichmentPlugin.
   final Set<String> _enrichingIds = {};
   bool _bulkEnrichCancelled = false;
+  bool _bulkArtworkCancelled = false;
 
   /// Track ids currently being analyzed via AudioAnalysisPlugin.
   final Set<String> _analyzingIds = {};
@@ -737,6 +739,148 @@ class _LibraryPageState extends State<LibraryPage> {
             ? 'Enrichment stopped after an error — $changed of $done tracks '
                 'were updated before it happened.'
             : 'Enrichment finished: $changed of $done tracks updated.');
+      }
+    }
+  }
+
+  /// Item 12/spec §47's "no bulk 'look up artwork for the whole library'
+  /// action" gap — deliberately scoped narrower than [_enrichAll]'s
+  /// batch flow (which covers title/artist/album/genre): this one only
+  /// ever targets [tracksNeedingArtwork], the local tracks that still
+  /// have no [BaseTrack.coverArt] at all, and reuses the exact
+  /// `MetadataEnrichmentPlugin.lookupArtwork` → `TagEditorPlugin
+  /// .writeTags` → `ArtworkProvider.invalidate` sequence
+  /// [_lookupArtworkOnline] already established for a single track — a
+  /// real but separate follow-on, not a duplicate of [_enrichAll].
+  /// Same rate-limit/progress/cancel/try-finally shape as [_enrichAll]
+  /// throughout, since it's making the same kind of MusicBrainz-backed
+  /// per-track network call.
+  Future<void> _lookupArtworkForAll() async {
+    final enrichment = _enrichmentPlugin;
+    if (enrichment == null) {
+      _toast('The Metadata Enrichment plugin is disabled in Settings.');
+      return;
+    }
+    final tagEditor = _tagEditorPlugin;
+    if (tagEditor == null) {
+      _toast('The Tag Editor plugin is disabled in Settings.');
+      return;
+    }
+    final candidates = tracksNeedingArtwork(_tracks);
+    if (candidates.isEmpty) {
+      _toast('Every local track already has artwork.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Look up artwork for the whole library?'),
+        content: Text(
+          'Looks up ${candidates.length} track${candidates.length == 1 ? '' : 's'} '
+          'missing artwork, one at a time — MusicBrainz rate-limits to '
+          'about one request per second, so this takes roughly '
+          '${candidates.length} seconds. You can cancel partway through; '
+          'anything already updated is kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Start'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    _bulkArtworkCancelled = false;
+    final total = candidates.length;
+    final doneNotifier = ValueNotifier<int>(0);
+    final changedNotifier = ValueNotifier<int>(0);
+
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Looking up artwork…'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ValueListenableBuilder<int>(
+              valueListenable: doneNotifier,
+              builder: (context, done, _) => LinearProgressIndicator(
+                value: total == 0 ? 0 : done / total,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<int>(
+              valueListenable: doneNotifier,
+              builder: (context, done, _) => ValueListenableBuilder<int>(
+                valueListenable: changedNotifier,
+                builder: (context, changed, __) =>
+                    Text('$done / $total tracks checked · $changed updated'),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _bulkArtworkCancelled = true;
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    ));
+
+    var done = 0;
+    var changed = 0;
+    // Same try/catch/finally shape as [_enrichAll], and for the same
+    // reason: this dialog is barrierDismissible: false, so an
+    // uncaught exception anywhere in the loop would otherwise strand it
+    // on screen with no way out short of force-closing the app.
+    var failed = false;
+    try {
+      for (final track in candidates) {
+        if (_bulkArtworkCancelled || !mounted) break;
+        final path = track.localPath;
+        if (path != null) {
+          final artwork = await enrichment.lookupArtwork(track);
+          if (artwork != null) {
+            final ok = await tagEditor.writeTags(path, artworkBytes: artwork);
+            if (ok) {
+              ArtworkProvider.invalidate(track.id);
+              changed++;
+              changedNotifier.value = changed;
+            }
+          }
+        }
+        done++;
+        doneNotifier.value = done;
+        if (done < total && !_bulkArtworkCancelled) {
+          await Future<void>.delayed(const Duration(milliseconds: 1100));
+        }
+      }
+    } catch (e) {
+      failed = true;
+      debugPrint('Omnis: bulk artwork lookup stopped early: $e');
+    } finally {
+      doneNotifier.dispose();
+      changedNotifier.dispose();
+      if (mounted) {
+        setState(() {});
+        Navigator.of(context, rootNavigator: false).pop();
+        _toast(failed
+            ? 'Artwork lookup stopped after an error — $changed of $done '
+                'tracks were updated before it happened.'
+            : 'Artwork lookup finished: $changed of $done tracks updated.');
       }
     }
   }
@@ -2123,6 +2267,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   enabled: !_loading && _tracks.isNotEmpty,
                   onSelected: (value) {
                     if (value == 'enrich_all') _enrichAll();
+                    if (value == 'artwork_all') _lookupArtworkForAll();
                     if (value == 'analyze_all') _analyzeAll();
                     if (value == 'measure_durations') _measureDurations();
                     if (value == 'cleanup') _openCleanupTool();
@@ -2135,6 +2280,10 @@ class _LibraryPageState extends State<LibraryPage> {
                     PopupMenuItem(
                       value: 'enrich_all',
                       child: Text('Look up metadata for the whole library'),
+                    ),
+                    PopupMenuItem(
+                      value: 'artwork_all',
+                      child: Text('Look up artwork for the whole library'),
                     ),
                     PopupMenuItem(
                       value: 'analyze_all',
