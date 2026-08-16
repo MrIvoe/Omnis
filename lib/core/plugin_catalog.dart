@@ -43,3 +43,27 @@ const List<CatalogPluginEntry> officialPluginCatalog = [
         'scans. Good starting point for writing your own.',
   ),
 ];
+
+/// Item 26's "no 'install this dependency for me' flow" gap — a missing
+/// declared dependency (`PluginManager.missingDependenciesFor`) is
+/// already detected and surfaced, but there's no way to act on it
+/// beyond manually finding and pasting the right URL. [id] is a missing
+/// dependency's plugin id, exactly as another plugin's manifest declared
+/// it; a catalog entry's own [CatalogPluginEntry.folder] is that same
+/// id string for every bundled/published plugin this catalog knows
+/// about (confirmed by `officialPluginCatalog`'s own `sample_logger`
+/// entry matching its plugin id 1:1), so a plain equality match — not a
+/// name/description search — is the correct, unambiguous lookup here.
+/// Returns `null` when nothing in [catalog] matches: a missing
+/// dependency that isn't in the discoverable catalog has nothing safe
+/// to one-tap install, and callers should keep today's warning-only
+/// behavior for it rather than offering a button that can't work.
+CatalogPluginEntry? findCatalogEntryForPluginId(
+  String id,
+  List<CatalogPluginEntry> catalog,
+) {
+  for (final entry in catalog) {
+    if (entry.folder == id) return entry;
+  }
+  return null;
+}

@@ -156,6 +156,140 @@ void main() {
     expect(find.text('Check for updates'), findsNothing);
   });
 
+  group('Missing dependency install (item 26)', () {
+    /// Writes a minimal external-plugin directory declaring [dependsOn]
+    /// in its manifest — same shape `plugin_system_test.dart`'s own
+    /// `writeDependentPlugin` uses for the same "item 26" gap, kept
+    /// local to this file rather than shared since it only needs to
+    /// produce something `installFromPath` accepts, not exercise the
+    /// manifest parser itself.
+    Future<Directory> writeDependentPluginDir(
+      String dirName, {
+      List<String> dependsOn = const [],
+    }) async {
+      final dir =
+          await Directory.systemTemp.createTemp('omnis_dep_install_test');
+      final depsYaml = dependsOn.isEmpty
+          ? ''
+          : 'dependencies:\n${dependsOn.map((d) => '  - $d').join('\n')}\n';
+      await File('${dir.path}/omnis_plugin.yaml').writeAsString('''
+id: $dirName
+name: $dirName
+description: test
+version: 1.0.0
+author: Test
+entrypoint: plugin.dart
+$depsYaml''');
+      await File('${dir.path}/plugin.dart').writeAsString('''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': '$dirName',
+    'name': '$dirName',
+    'version': '1.0.0',
+    'author': 'Test',
+    'hooks': [],
+  };
+}
+''');
+      return dir;
+    }
+
+    /// Installing a plugin whose dependency isn't installed *yet* is
+    /// itself rejected (`_registerInstalledPlugin`'s dependency gate) —
+    /// so a real "missing dependency" state, the same way
+    /// `plugin_system_test.dart` produces one, needs installing both
+    /// then uninstalling the dependency, not just installing the
+    /// dependent alone.
+    Future<ManagedPlugin> installWithLaterMissingDependency(
+      PluginManager manager, {
+      required String baseId,
+      required String dependentId,
+    }) async {
+      final baseDir = await writeDependentPluginDir(baseId);
+      // installFromPath uses baseDir directly as the plugin's own
+      // `directory` (no copy), and uninstallPlugin below deletes it for
+      // real — so this tearDown guards against a real
+      // PathNotFoundException on an already-gone directory, the same
+      // "check existence before deleting" pattern this file's own
+      // top-level tearDown() already follows.
+      addTearDown(() async {
+        if (await baseDir.exists()) await baseDir.delete(recursive: true);
+      });
+      final base = await manager.installFromPath(baseDir.path, sourceUrl: 'local');
+
+      final dependentDir =
+          await writeDependentPluginDir(dependentId, dependsOn: [baseId]);
+      addTearDown(() => dependentDir.delete(recursive: true));
+      final dependent = await manager.installFromPath(dependentDir.path,
+          sourceUrl: 'local');
+
+      await manager.uninstallPlugin(base);
+      return dependent;
+    }
+
+    testWidgets('a missing dependency that matches a catalog entry shows '
+        'a real "Install" button, not just a warning', (tester) async {
+      final client = MockClient((request) async => http.Response('', 500));
+      final manager =
+          PluginManager(installer: PluginInstaller(client: client));
+
+      await tester.runAsync(() async {
+        await installWithLaterMissingDependency(manager,
+            baseId: 'sample_logger', dependentId: 'needs_sample_logger');
+
+        await tester.pumpWidget(MaterialApp(
+          home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+        ));
+        await _settle(tester);
+
+        await tester.dragUntilVisible(
+          find.textContaining('Missing dependency'),
+          find.byType(ListView),
+          const Offset(0, -300),
+        );
+
+        expect(find.textContaining('Missing dependency: sample_logger'),
+            findsOneWidget);
+        expect(find.text('Install sample_logger'), findsOneWidget);
+      });
+    });
+
+    testWidgets('a missing dependency with no catalog match stays '
+        'warning-only, with no Install button', (tester) async {
+      final client = MockClient((request) async => http.Response('', 500));
+      final manager =
+          PluginManager(installer: PluginInstaller(client: client));
+
+      await tester.runAsync(() async {
+        await installWithLaterMissingDependency(manager,
+            baseId: 'totally_unknown_plugin_xyz',
+            dependentId: 'needs_unknown_plugin');
+
+        await tester.pumpWidget(MaterialApp(
+          home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+        ));
+        await _settle(tester);
+
+        await tester.dragUntilVisible(
+          find.textContaining('Missing dependency'),
+          find.byType(ListView),
+          const Offset(0, -300),
+        );
+
+        expect(
+          find.textContaining(
+              'Missing dependency: totally_unknown_plugin_xyz'),
+          findsOneWidget,
+        );
+        // A generic 'Install ' substring also matches this page's own
+        // pre-existing "Install a plugin" section header — assert on
+        // the specific per-dependency button text instead, the same
+        // mistake corrected here that a first draft of this test made.
+        expect(find.text('Install totally_unknown_plugin_xyz'), findsNothing);
+      });
+    });
+  });
+
   group('Plugin Health dashboard — per-record Reset (item 28)', () {
     testWidgets('a health record shows a Reset button; tapping it resets '
         "the named plugin (a real disable()+enable() cycle) and clears "

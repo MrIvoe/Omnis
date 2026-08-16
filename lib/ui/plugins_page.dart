@@ -11,7 +11,11 @@ import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 
 export 'package:omnis/core/plugin_catalog.dart'
-    show CatalogPluginEntry, officialPluginCatalog, omnisPluginsRepoUrl;
+    show
+        CatalogPluginEntry,
+        officialPluginCatalog,
+        omnisPluginsRepoUrl,
+        findCatalogEntryForPluginId;
 
 /// Plugins screen.
 ///
@@ -610,20 +614,43 @@ class _PluginsPageState extends State<PluginsPage> {
                     if (missingDeps.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.warning_amber,
-                                size: 18, color: theme.colorScheme.error),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                missingDeps.length == 1
-                                    ? 'Missing dependency: ${missingDeps.single}'
-                                    : 'Missing dependencies: ${missingDeps.join(", ")}',
-                                style:
-                                    TextStyle(color: theme.colorScheme.error),
-                              ),
+                            Row(
+                              children: [
+                                Icon(Icons.warning_amber,
+                                    size: 18, color: theme.colorScheme.error),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    missingDeps.length == 1
+                                        ? 'Missing dependency: ${missingDeps.single}'
+                                        : 'Missing dependencies: ${missingDeps.join(", ")}',
+                                    style: TextStyle(
+                                        color: theme.colorScheme.error),
+                                  ),
+                                ),
+                              ],
                             ),
+                            // Only offer a one-tap install for a missing
+                            // dependency this catalog actually knows about —
+                            // anything else stays warning-only, since
+                            // there's no safe URL to install from.
+                            for (final depId in missingDeps)
+                              if (findCatalogEntryForPluginId(
+                                      depId, _catalog) !=
+                                  null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: TextButton(
+                                    onPressed: () => _installFromCatalog(
+                                      findCatalogEntryForPluginId(
+                                          depId, _catalog)!,
+                                    ),
+                                    child: Text('Install $depId'),
+                                  ),
+                                ),
                           ],
                         ),
                       ),

@@ -75,7 +75,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 |---|------|--------|
 | 24 | Capability interfaces | ✅ Typed `ServiceRegistry`, 9 capability interfaces |
 | 25 | Plugin lifecycle | ✅ Real sandboxing, health tracking, deterministic init ordering |
-| 26 | Dependency resolution | 🟡 Bundled-plugin ordering solid; external (downloaded) plugin dependency resolution real but partial |
+| 26 | Dependency resolution | 🟡 Bundled-plugin ordering solid; missing external dependencies now offer a real one-tap Install when the catalog has them — no further named gaps |
 | 27 | Permissions | ✅ Manifest permissions map to real `dart_eval` grants, shown before any plugin code runs |
 | 28 | Plugin health | 🟡 Reactive health records + live UI + per-plugin retry/reset; partial coverage |
 | 29 | Plugin updates | 🟡 Real update detection plus automatic/background checking; built from a genuine 0% start |
