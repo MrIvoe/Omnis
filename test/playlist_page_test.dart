@@ -635,4 +635,56 @@ void main() {
       });
     });
   });
+
+  group('CSV/JSON playlist export (item 13, §46)', () {
+    testWidgets('the playlist row menu offers Export as CSV/JSON alongside '
+        'the existing M3U/PLS/XSPF entries', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.runAsync(() async {
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Road Trip',
+              trackIds: const [],
+              createdAt: DateTime(2025)),
+        ]);
+
+        await pumpPage(tester);
+        await tester.tap(find.byType(PopupMenuButton<String>).last);
+        await _settle(tester);
+
+        expect(find.text('Export as CSV'), findsOneWidget);
+        expect(find.text('Export as JSON'), findsOneWidget);
+        // The three pre-existing formats are still there, unreplaced.
+        expect(find.text('Export as M3U'), findsOneWidget);
+        expect(find.text('Export as PLS'), findsOneWidget);
+        expect(find.text('Export as XSPF'), findsOneWidget);
+      });
+    });
+
+    testWidgets('the playlist detail view\'s AppBar menu also offers '
+        'Export as CSV/JSON', (tester) async {
+      await tester.runAsync(() async {
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Road Trip',
+              trackIds: const [],
+              createdAt: DateTime(2025)),
+        ]);
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Road Trip'));
+        await _settle(tester);
+        await tester.tap(find.byType(PopupMenuButton<String>).last);
+        await _settle(tester);
+
+        expect(find.text('Export as CSV'), findsOneWidget);
+        expect(find.text('Export as JSON'), findsOneWidget);
+      });
+    });
+  });
 }

@@ -221,6 +221,55 @@ class _PlaylistPageState extends State<PlaylistPage> {
             '(${result.skippedCount} skipped — not in your local library).');
   }
 
+  /// Same shape as [_exportPlaylist]/[_exportPlaylistPls]/
+  /// [_exportPlaylistXspf], CSV instead — §46's "CSV/JSON export" gap.
+  /// No import counterpart: unlike M3U/PLS/XSPF (playback formats a
+  /// player opens), CSV/JSON are spreadsheet/interchange exports the
+  /// comparison doc only ever asks for one direction of.
+  Future<void> _exportPlaylistCsv(Playlist playlist) async {
+    final result = PlaylistStore.instance.exportCSV(playlist, _libraryTracks);
+    final bytes = Uint8List.fromList(utf8.encode(result.content));
+    final safeName = playlist.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export playlist',
+      fileName: '$safeName.csv',
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+      bytes: bytes,
+    );
+    if (path == null) return;
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      await File(path).writeAsBytes(bytes);
+    }
+    _snack(result.skippedCount == 0
+        ? 'Exported ${result.writtenCount} tracks.'
+        : 'Exported ${result.writtenCount} tracks '
+            '(${result.skippedCount} skipped — not in your local library).');
+  }
+
+  /// Same shape as [_exportPlaylistCsv], JSON instead — §46's "CSV/JSON
+  /// export" gap, JSON half.
+  Future<void> _exportPlaylistJson(Playlist playlist) async {
+    final result = PlaylistStore.instance.exportJSON(playlist, _libraryTracks);
+    final bytes = Uint8List.fromList(utf8.encode(result.content));
+    final safeName = playlist.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export playlist',
+      fileName: '$safeName.json',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      bytes: bytes,
+    );
+    if (path == null) return;
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      await File(path).writeAsBytes(bytes);
+    }
+    _snack(result.skippedCount == 0
+        ? 'Exported ${result.writtenCount} tracks.'
+        : 'Exported ${result.writtenCount} tracks '
+            '(${result.skippedCount} skipped — not in your local library).');
+  }
+
   /// Imports an M3U/M3U8 file, matching its entries against the current
   /// library, and adds the result as a new playlist.
   Future<void> _importM3U() async {
@@ -1198,6 +1247,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
             if (value == 'export') _exportPlaylist(playlist);
             if (value == 'export_pls') _exportPlaylistPls(playlist);
             if (value == 'export_xspf') _exportPlaylistXspf(playlist);
+            if (value == 'export_csv') _exportPlaylistCsv(playlist);
+            if (value == 'export_json') _exportPlaylistJson(playlist);
             if (value == 'delete') _deletePlaylist(playlist);
           },
           itemBuilder: (context) => const [
@@ -1206,6 +1257,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
             PopupMenuItem(value: 'export', child: Text('Export as M3U')),
             PopupMenuItem(value: 'export_pls', child: Text('Export as PLS')),
             PopupMenuItem(value: 'export_xspf', child: Text('Export as XSPF')),
+            PopupMenuItem(value: 'export_csv', child: Text('Export as CSV')),
+            PopupMenuItem(value: 'export_json', child: Text('Export as JSON')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
         ),
@@ -1237,6 +1290,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
               if (value == 'export') _exportPlaylist(playlist);
               if (value == 'export_pls') _exportPlaylistPls(playlist);
               if (value == 'export_xspf') _exportPlaylistXspf(playlist);
+              if (value == 'export_csv') _exportPlaylistCsv(playlist);
+              if (value == 'export_json') _exportPlaylistJson(playlist);
               if (value == 'delete') _deletePlaylist(playlist);
             },
             itemBuilder: (context) => const [
@@ -1248,6 +1303,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   value: 'export_pls', child: Text('Export as PLS')),
               PopupMenuItem(
                   value: 'export_xspf', child: Text('Export as XSPF')),
+              PopupMenuItem(
+                  value: 'export_csv', child: Text('Export as CSV')),
+              PopupMenuItem(
+                  value: 'export_json', child: Text('Export as JSON')),
               PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
             ],
           ),

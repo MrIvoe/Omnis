@@ -558,6 +558,148 @@ NumberOfEntries=1
     });
   });
 
+  group('CSV/JSON export (item 13)', () {
+    BaseTrack track(String id,
+            {String artist = 'Artist',
+            String title = 'Title',
+            bool local = true,
+            List<String> genres = const []}) =>
+        BaseTrack(
+          id: id,
+          title: title,
+          artists: [artist],
+          album: 'Album',
+          duration: 200,
+          type: local ? TrackType.local : TrackType.youtube,
+          localPath: local ? '/music/${id}_file.mp3' : null,
+          genres: genres,
+        );
+
+    test('exportCSV writes a header row plus one row per resolved track, '
+        'including non-local ones — unlike M3U/PLS/XSPF, CSV export is '
+        'not limited to playable local files', () {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise', genres: const ['Rock']),
+        track('b', local: false, title: 'Streamed'),
+      ];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'b', 'missing'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportCSV(playlist, tracks);
+
+      expect(result.writtenCount, 2);
+      expect(result.skippedCount, 1,
+          reason: 'only the id absent from the library is skipped');
+      final lines = const LineSplitter().convert(result.content);
+      expect(lines.first, contains('Title'));
+      expect(lines.first, contains('Artist'));
+      expect(lines.any((l) => l.contains('Sunrise') && l.contains('Ava')),
+          isTrue);
+      expect(lines.any((l) => l.contains('Streamed')), isTrue,
+          reason: 'a non-local (streaming) track is still exported');
+    });
+
+    test('exportCSV quotes and escapes a field containing a comma or a '
+        'quote character, per RFC 4180', () {
+      final tracks = [
+        track('a', title: 'Rock, "Redux"', artist: 'A, B & C'),
+      ];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportCSV(playlist, tracks);
+
+      expect(result.content, contains('"Rock, ""Redux"""'));
+      expect(result.content, contains('"A, B & C"'));
+    });
+
+    test('exportCSV leaves a plain field (no comma/quote/newline) '
+        'unquoted', () {
+      final tracks = [track('a', title: 'Plain Title', artist: 'Plain Artist')];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a'],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportCSV(playlist, tracks);
+
+      expect(result.content, contains('Plain Title,Plain Artist'));
+      expect(result.content, isNot(contains('"Plain Title"')));
+    });
+
+    test('exportCSV on an empty playlist still writes just the header '
+        'row', () {
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Empty',
+        trackIds: const [],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportCSV(playlist, const []);
+
+      expect(result.writtenCount, 0);
+      expect(result.skippedCount, 0);
+      expect(const LineSplitter().convert(result.content), hasLength(1));
+    });
+
+    test('exportJSON writes every resolved track as an object, including '
+        'non-local ones, with a top-level playlist name/createdAt', () {
+      final tracks = [
+        track('a', artist: 'Ava', title: 'Sunrise', genres: const ['Rock']),
+        track('b', local: false, title: 'Streamed'),
+      ];
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Mix',
+        trackIds: const ['a', 'b', 'missing'],
+        createdAt: DateTime(2025, 1, 1),
+      );
+
+      final result = PlaylistStore.instance.exportJSON(playlist, tracks);
+      final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+
+      expect(result.writtenCount, 2);
+      expect(result.skippedCount, 1);
+      expect(decoded['playlist'], 'Mix');
+      expect(decoded['createdAt'], DateTime(2025, 1, 1).toIso8601String());
+      final decodedTracks = decoded['tracks'] as List;
+      expect(decodedTracks, hasLength(2));
+      expect(decodedTracks[0]['title'], 'Sunrise');
+      expect(decodedTracks[0]['artists'], ['Ava']);
+      expect(decodedTracks[0]['genres'], ['Rock']);
+      expect(decodedTracks[1]['title'], 'Streamed');
+      expect(decodedTracks[1]['localPath'], isNull,
+          reason: 'a streaming track has no local path to export');
+    });
+
+    test('exportJSON on an empty playlist produces a valid, empty tracks '
+        'array', () {
+      final playlist = Playlist(
+        id: 'p1',
+        name: 'Empty',
+        trackIds: const [],
+        createdAt: DateTime.now(),
+      );
+
+      final result = PlaylistStore.instance.exportJSON(playlist, const []);
+      final decoded = jsonDecode(result.content) as Map<String, dynamic>;
+
+      expect(result.writtenCount, 0);
+      expect(decoded['tracks'], isEmpty);
+    });
+  });
+
   test('Playlist.copyWith replaces only the given fields', () {
     final playlist = Playlist(
       id: 'p1',

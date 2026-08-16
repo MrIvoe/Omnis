@@ -141,6 +141,46 @@ class XSPFImportResult {
   });
 }
 
+/// Result of [PlaylistStore.exportCSV].
+class CSVExportResult {
+  /// The CSV file content, ready to write to disk.
+  final String content;
+
+  /// How many playlist entries were written.
+  final int writtenCount;
+
+  /// How many entries were skipped — a track id no longer in the
+  /// library. Unlike [M3UExportResult.skippedCount] and its PLS/XSPF
+  /// siblings, a streaming-only track is never skipped here — see
+  /// [PlaylistStore.exportCSV]'s own doc for why.
+  final int skippedCount;
+
+  const CSVExportResult({
+    required this.content,
+    required this.writtenCount,
+    required this.skippedCount,
+  });
+}
+
+/// Result of [PlaylistStore.exportJSON].
+class JSONExportResult {
+  /// The JSON file content, ready to write to disk.
+  final String content;
+
+  /// How many playlist entries were written.
+  final int writtenCount;
+
+  /// How many entries were skipped — same reason as
+  /// [CSVExportResult.skippedCount].
+  final int skippedCount;
+
+  const JSONExportResult({
+    required this.content,
+    required this.writtenCount,
+    required this.skippedCount,
+  });
+}
+
 /// Persists named playlists to disk, the same load/save shape as
 /// `LibraryStore` — one JSON file in the app's documents directory, the
 /// caller owns the in-memory list and decides when to save.
@@ -532,4 +572,117 @@ class PlaylistStore {
   String _basename(String path) => File(path).uri.pathSegments.isNotEmpty
       ? File(path).uri.pathSegments.last
       : path;
+
+  static const _csvHeader = [
+    'Title',
+    'Artist',
+    'Album',
+    'Album Artist',
+    'Genre',
+    'Year',
+    'Track Number',
+    'Disc Number',
+    'Duration (s)',
+    'Type',
+    'Local Path',
+  ];
+
+  /// Escapes one CSV field per RFC 4180: quoted, with any embedded quote
+  /// doubled, whenever the field contains a comma, quote, or newline —
+  /// the characters that would otherwise be ambiguous with the format's
+  /// own delimiters. A field with none of those is left bare.
+  static String _csvEscape(String field) {
+    if (field.contains(',') ||
+        field.contains('"') ||
+        field.contains('\n') ||
+        field.contains('\r')) {
+      return '"${field.replaceAll('"', '""')}"';
+    }
+    return field;
+  }
+
+  /// Renders [playlist] as CSV, resolving each track id against [tracks].
+  /// Unlike [exportM3U]/[exportPLS]/[exportXSPF] — playback formats a
+  /// media player has to actually open, so only a local track with a
+  /// real file path is representable — CSV/JSON export (§46's
+  /// spreadsheet/interchange gap, distinct from "export a file a player
+  /// can open") includes **every** resolved track regardless of type: a
+  /// Spotify/YouTube/radio entry is real playlist data worth exporting
+  /// to a spreadsheet even though nothing here can play it back from the
+  /// exported file. A track id no longer in the library is still
+  /// skipped — there's genuinely no data left to export for it.
+  CSVExportResult exportCSV(Playlist playlist, List<BaseTrack> tracks) {
+    final byId = {for (final t in tracks) t.id: t};
+    final buffer = StringBuffer();
+    buffer.writeln(_csvHeader.join(','));
+    var written = 0;
+    var skipped = 0;
+    for (final id in playlist.trackIds) {
+      final track = byId[id];
+      if (track == null) {
+        skipped++;
+        continue;
+      }
+      final row = [
+        track.title,
+        track.artists.join('; '),
+        track.album,
+        track.albumArtist ?? '',
+        track.genres.join('; '),
+        track.year?.toString() ?? '',
+        track.trackNumber?.toString() ?? '',
+        track.discNumber?.toString() ?? '',
+        track.duration.toString(),
+        track.type.name,
+        track.localPath ?? '',
+      ];
+      buffer.writeln(row.map(_csvEscape).join(','));
+      written++;
+    }
+    return CSVExportResult(
+      content: buffer.toString(),
+      writtenCount: written,
+      skippedCount: skipped,
+    );
+  }
+
+  /// Renders [playlist] as JSON — a top-level object with the playlist's
+  /// own name/creation date and a `tracks` array, one object per
+  /// resolved entry. Same every-track-type inclusion rule as
+  /// [exportCSV], for the same reason.
+  JSONExportResult exportJSON(Playlist playlist, List<BaseTrack> tracks) {
+    final byId = {for (final t in tracks) t.id: t};
+    final entries = <Map<String, dynamic>>[];
+    var skipped = 0;
+    for (final id in playlist.trackIds) {
+      final track = byId[id];
+      if (track == null) {
+        skipped++;
+        continue;
+      }
+      entries.add({
+        'title': track.title,
+        'artists': track.artists,
+        'album': track.album,
+        'albumArtist': track.albumArtist,
+        'genres': track.genres,
+        'year': track.year,
+        'trackNumber': track.trackNumber,
+        'discNumber': track.discNumber,
+        'durationSeconds': track.duration,
+        'type': track.type.name,
+        'localPath': track.localPath,
+      });
+    }
+    final content = const JsonEncoder.withIndent('  ').convert({
+      'playlist': playlist.name,
+      'createdAt': playlist.createdAt.toIso8601String(),
+      'tracks': entries,
+    });
+    return JSONExportResult(
+      content: content,
+      writtenCount: entries.length,
+      skippedCount: skipped,
+    );
+  }
 }
