@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/plugin_api/audio_analysis_result.dart';
+import 'package:omnis/core/artist_similarity.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/calculated_tags.dart';
@@ -450,6 +451,56 @@ class _LibraryPageState extends State<LibraryPage> {
     final queue = [track, ...similar];
     await widget.engine.setQueue(queue, startIndex: 0);
     await widget.engine.playAt(0);
+  }
+
+  /// Item 39's still-missing "Similar Artist" recommendation, the
+  /// artist-level sibling of [_playSimilar] — real genre/mood/BPM
+  /// distance via [findSimilarArtists], not a placeholder. Groups
+  /// [_tracks] by artist the exact same way `buildLibrarySections`'s
+  /// own Artists-view grouping does (respecting
+  /// `groupArtistsByAlbumArtist`), so "the artist" this looks up
+  /// matches whatever's actually shown as one row in that view. An
+  /// artist with no comparable analysis/enrichment data across their
+  /// tracks yields an empty result, same "tell the user why, don't
+  /// silently queue an arbitrary shuffle" stance [_playSimilar] already
+  /// takes.
+  Future<void> _showSimilarArtists(String artist) async {
+    final groupByAlbumArtist = AppSettings.instance.groupArtistsByAlbumArtist;
+    final byArtist = <String, List<BaseTrack>>{};
+    for (final track in _tracks) {
+      final trackArtist = groupByAlbumArtist
+          ? (track.albumArtist ??
+              (track.artists.isNotEmpty ? track.artists.first : null) ??
+              'Unknown Artist')
+          : (track.artists.isNotEmpty ? track.artists.first : 'Unknown Artist');
+      byArtist.putIfAbsent(trackArtist, () => []).add(track);
+    }
+
+    final similar = findSimilarArtists(artist, byArtist);
+    if (similar.isEmpty) {
+      _toast('Not enough genre/mood/BPM data yet for "$artist" — try '
+          '"Analyze audio" or "Look up metadata" on their tracks first.');
+      return;
+    }
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Similar to $artist'),
+        children: [
+          for (final name in similar)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, name),
+              child: Text(name),
+            ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    final tracks = byArtist[selected];
+    if (tracks == null || tracks.isEmpty) return;
+    await widget.engine.setQueue(tracks);
+    await widget.engine.play();
   }
 
   void _toast(String message) {
@@ -2541,7 +2592,24 @@ class _LibraryPageState extends State<LibraryPage> {
                 radius: 18,
               )
             : null,
-        title: Text(section.title, style: theme.textTheme.titleMedium),
+        title: isArtistRow
+            ? Row(
+                children: [
+                  Expanded(
+                    child: Text(section.title,
+                        style: theme.textTheme.titleMedium),
+                  ),
+                  // A custom `trailing` would replace ExpansionTile's own
+                  // expand/collapse chevron entirely, so this sits in the
+                  // title row instead, preserving that default indicator.
+                  IconButton(
+                    icon: const Icon(Icons.people_outline),
+                    tooltip: 'Similar artists',
+                    onPressed: () => _showSimilarArtists(section.title),
+                  ),
+                ],
+              )
+            : Text(section.title, style: theme.textTheme.titleMedium),
         subtitle: isArtistRow ? _groupRatingBadge(section.allTracks) : null,
         children: section.children
             .map((child) => _buildSection(child, depth: depth + 1))
@@ -2570,7 +2638,16 @@ class _LibraryPageState extends State<LibraryPage> {
                             radius: 16,
                           ),
                           const SizedBox(width: 8),
-                          Text(section.title, style: theme.textTheme.titleSmall),
+                          Expanded(
+                            child: Text(section.title,
+                                style: theme.textTheme.titleSmall),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.people_outline, size: 20),
+                            tooltip: 'Similar artists',
+                            onPressed: () =>
+                                _showSimilarArtists(section.title),
+                          ),
                         ],
                       )
                     : Text(section.title, style: theme.textTheme.titleSmall),
