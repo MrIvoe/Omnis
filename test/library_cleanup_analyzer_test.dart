@@ -327,12 +327,123 @@ void main() {
     });
   });
 
+  group('unorganized files (item 17, spec §9)', () {
+    test('a correctly-organized track is never flagged', () {
+      final tracks = [
+        track(
+          id: '1',
+          artist: 'Queen',
+          album: 'A Night at the Opera',
+          localPath: '/music/Queen/A Night at the Opera/track.flac',
+        ),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles, isEmpty);
+    });
+
+    test('organization matching is case/whitespace-insensitive, same as '
+        'every other folder normalization in this analyzer', () {
+      final tracks = [
+        track(
+          id: '1',
+          artist: 'Queen',
+          album: 'A Night at the Opera',
+          localPath: '/music/queen/ a night at the opera /track.flac',
+        ),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles, isEmpty);
+    });
+
+    test('a wrong album folder is flagged', () {
+      final tracks = [
+        track(
+          id: '1',
+          artist: 'Queen',
+          album: 'A Night at the Opera',
+          localPath: '/music/Queen/Some Other Album/track.flac',
+        ),
+      ];
+
+      final flagged = LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles;
+      expect(flagged.map((t) => t.id), ['1']);
+    });
+
+    test('a wrong artist folder is flagged', () {
+      final tracks = [
+        track(
+          id: '1',
+          artist: 'Queen',
+          album: 'A Night at the Opera',
+          localPath: '/music/Someone Else/A Night at the Opera/track.flac',
+        ),
+      ];
+
+      final flagged = LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles;
+      expect(flagged.map((t) => t.id), ['1']);
+    });
+
+    test('too few path segments (dropped straight in the library root) is '
+        'flagged', () {
+      final tracks = [
+        track(id: '1', artist: 'Queen', album: 'A Night at the Opera',
+            localPath: '/track.flac'),
+      ];
+
+      final flagged = LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles;
+      expect(flagged.map((t) => t.id), ['1']);
+    });
+
+    test('a track with a blank artist or album is never flagged — nothing '
+        'real to compare the folder against', () {
+      final tracks = [
+        track(id: 'no-artist', artist: '', album: 'Album',
+            localPath: '/music/track.flac'),
+        track(id: 'no-album', artist: 'Artist', album: '',
+            localPath: '/music/track.flac'),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles, isEmpty);
+    });
+
+    test('a non-local track is never flagged, regardless of streamUrl '
+        'shape', () {
+      final tracks = [
+        track(id: '1', artist: 'Queen', album: 'A Night at the Opera',
+            type: TrackType.spotify),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles, isEmpty);
+    });
+
+    test('a local track with no localPath is never flagged', () {
+      final tracks = [
+        track(id: '1', artist: 'Queen', album: 'A Night at the Opera'),
+      ];
+
+      expect(LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles, isEmpty);
+    });
+
+    test('mixed library: only the genuinely misplaced tracks are flagged',
+        () {
+      final tracks = [
+        track(id: 'organized', artist: 'Queen', album: 'Opera',
+            localPath: '/music/Queen/Opera/a.flac'),
+        track(id: 'misplaced', artist: 'Queen', album: 'Opera',
+            localPath: '/music/Wrong Artist/Opera/b.flac'),
+      ];
+
+      final flagged = LibraryCleanupAnalyzer.analyze(tracks).unorganizedFiles;
+      expect(flagged.map((t) => t.id), ['misplaced']);
+    });
+  });
+
   group('LibraryCleanupReport.categories / isClean', () {
     test('an empty library reports every category at zero and isClean '
         'true', () {
       final report = LibraryCleanupAnalyzer.analyze(const []);
 
-      expect(report.categories, hasLength(10));
+      expect(report.categories, hasLength(11));
       expect(report.categories.every((c) => c.count == 0), isTrue);
       expect(report.isClean, isTrue);
     });
@@ -359,7 +470,7 @@ void main() {
 
       expect(updated.missingFiles, missing);
       expect(updated.missingArtwork, base.missingArtwork);
-      expect(updated.categories, hasLength(10));
+      expect(updated.categories, hasLength(11));
     });
   });
 

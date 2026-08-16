@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:omnis/core/base_track.dart';
+import 'package:path/path.dart' as p;
 
 /// One category from spec §20's "Music Library Cleanup" report — a
 /// count plus the actual tracks (or track groups) it counted, so a
@@ -43,6 +44,19 @@ class LibraryCleanupReport {
   /// loaded" contract deliberately excludes.
   final List<BaseTrack> missingFiles;
 
+  /// Local tracks whose file doesn't live in a `<primary artist>/<album>/`
+  /// folder structure — spec §9's third and last named Library Health
+  /// Center category. Reads only the file's own path (already loaded, no
+  /// new I/O — same contract every category above [missingFiles]
+  /// already has), comparing the immediate parent folder against
+  /// [BaseTrack.album] and the grandparent against the primary artist,
+  /// both normalized the same way [_duplicateAlbums] already does. A
+  /// track with a blank artist/album, or too few path segments to have a
+  /// real two-level folder at all, is never flagged — nothing to
+  /// meaningfully compare against, the same "don't manufacture a claim
+  /// the data can't support" stance every other category here takes.
+  final List<BaseTrack> unorganizedFiles;
+
   const LibraryCleanupReport({
     required this.missingArtwork,
     required this.inconsistentArtists,
@@ -54,6 +68,7 @@ class LibraryCleanupReport {
     required this.corruptFiles,
     this.lowQualityFiles = const [],
     this.missingFiles = const [],
+    this.unorganizedFiles = const [],
   });
 
   /// A copy with [missingFiles] filled in — see that field's own doc for
@@ -71,6 +86,7 @@ class LibraryCleanupReport {
         corruptFiles: corruptFiles,
         lowQualityFiles: lowQualityFiles,
         missingFiles: missingFiles,
+        unorganizedFiles: unorganizedFiles,
       );
 
   int get duplicateTracksCount =>
@@ -99,6 +115,8 @@ class LibraryCleanupReport {
             label: 'low-quality files', count: lowQualityFiles.length),
         LibraryCleanupCategory(
             label: 'missing files', count: missingFiles.length),
+        LibraryCleanupCategory(
+            label: 'unorganized files', count: unorganizedFiles.length),
       ];
 
   /// Whether every category came back clean — the report UI's "nothing
@@ -157,6 +175,7 @@ class LibraryCleanupAnalyzer {
       duplicateAlbumGroups: _duplicateAlbums(tracks),
       corruptFiles: _corruptFiles(tracks),
       lowQualityFiles: _lowQualityFiles(tracks),
+      unorganizedFiles: _unorganizedFiles(tracks),
     );
   }
 
@@ -315,6 +334,45 @@ class LibraryCleanupAnalyzer {
           t.bitrateKbps != null &&
           t.bitrateKbps! < lowQualityBitrateThresholdKbps)
       .toList();
+
+  /// A local track whose file doesn't sit in the conventional
+  /// `<primary artist>/<album>/<file>` folder layout — spec §9's
+  /// "Unorganized files" category. Uses `path.split` on
+  /// [BaseTrack.localPath] rather than raw string slicing, since
+  /// separator conventions differ (`\` on Windows, `/` elsewhere) and
+  /// this analyzer runs against paths a real scan produced on whatever
+  /// platform did the scanning. Flags a track with fewer than 2 real
+  /// path segments before the filename (no folder structure at all —
+  /// e.g. a file dropped directly in the library root), or whose
+  /// immediate parent folder doesn't normalize-match [BaseTrack.album]
+  /// or whose grandparent doesn't normalize-match the primary artist. A
+  /// track with a blank artist or album is never flagged — there's
+  /// nothing real to compare the folder name against.
+  static List<BaseTrack> _unorganizedFiles(List<BaseTrack> tracks) {
+    final flagged = <BaseTrack>[];
+    for (final t in tracks) {
+      if (t.type != TrackType.local || t.localPath == null) continue;
+      final album = t.album.trim();
+      final artist = t.artists.isNotEmpty ? t.artists.first.trim() : '';
+      if (album.isEmpty || artist.isEmpty) continue;
+
+      // Segments before the filename itself, e.g. for
+      // "/music/Queen/A Night at the Opera/track.flac" this is
+      // ["", "music", "Queen", "A Night at the Opera"].
+      final segments = p.split(p.dirname(t.localPath!));
+      if (segments.length < 2) {
+        flagged.add(t);
+        continue;
+      }
+      final albumFolder = segments[segments.length - 1];
+      final artistFolder = segments[segments.length - 2];
+      if (_normalize(albumFolder) != _normalize(album) ||
+          _normalize(artistFolder) != _normalize(artist)) {
+        flagged.add(t);
+      }
+    }
+    return flagged;
+  }
 
   /// Local tracks whose file no longer exists on disk — moved, renamed
   /// outside the app, or deleted since the last scan. Deliberately a

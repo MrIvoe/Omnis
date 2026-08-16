@@ -12,10 +12,10 @@ import 'package:omnis/core/library_cleanup_analyzer.dart';
 /// the file afterward, and persists the change, so this page never
 /// duplicates that logic. Duplicate tracks/albums point at `LibraryPage`'s
 /// own existing "Find duplicates & short tracks…" tool rather than
-/// re-implementing merge/delete a second time; corrupt files and
-/// low-quality files are both listed read-only, since there's nothing
-/// this app can do to repair a file's own header bytes or re-encode it
-/// at a higher bitrate.
+/// re-implementing merge/delete a second time; corrupt files,
+/// low-quality files, and unorganized files are all listed read-only,
+/// since there's nothing this app can do to repair a file's own header
+/// bytes, re-encode it at a higher bitrate, or move it on disk.
 ///
 /// A point-in-time snapshot, deliberately: [tracks] is analyzed once in
 /// `initState` and the category lists don't live-update as edits are
@@ -245,6 +245,30 @@ class _LibraryCleanupReportPageState extends State<LibraryCleanupReportPage> {
                     onPressed: () => widget.onRemoveFromLibrary(track),
                     child: const Text('Remove'),
                   ),
+                ),
+              ),
+          ],
+        );
+      case 'unorganized files':
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                "These files aren't in a <artist>/<album> folder layout — "
+                'moving them on disk is outside what Omnis can do for you, '
+                'but a file manager can use this list as a guide.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            for (final track in _report.unorganizedFiles)
+              Card(
+                child: ListTile(
+                  title: Text(track.title,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(track.localPath ?? '',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               ),
           ],

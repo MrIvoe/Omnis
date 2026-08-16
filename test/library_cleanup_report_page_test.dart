@@ -266,6 +266,66 @@ void main() {
     expect(find.textContaining('Nothing to clean up'), findsOneWidget);
   });
 
+  group('unorganized files (item 17, spec §9)', () {
+    testWidgets('a misplaced track is listed read-only with a disclaimer',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: LibraryCleanupReportPage(
+          tracks: [
+            _track(
+              id: '1',
+              title: 'Loose File',
+              artist: 'Queen',
+              album: 'A Night at the Opera',
+              localPath: '/music/Wrong Folder/track.flac',
+            ),
+          ],
+          onEditTags: (_) async {},
+          onRemoveFromLibrary: (_) async {},
+        ),
+      ));
+      await tester.pump();
+
+      await tester.dragUntilVisible(
+        find.text('1 unorganized files'),
+        find.byType(ListView),
+        const Offset(0, -100),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 unorganized files'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Loose File'), findsOneWidget);
+      expect(find.text('Edit tags'), findsNothing);
+      expect(find.textContaining("aren't in a"), findsOneWidget);
+    });
+
+    testWidgets('a correctly-organized track is never listed as '
+        'unorganized', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: LibraryCleanupReportPage(
+          tracks: [
+            _track(
+              id: '1',
+              coverArt: '/art.jpg',
+              year: 2000,
+              trackNumber: 1,
+              artist: 'Queen',
+              album: 'A Night at the Opera',
+              localPath: '/music/Queen/A Night at the Opera/track.flac',
+              codec: 'FLAC',
+            ),
+          ],
+          onEditTags: (_) async {},
+          onRemoveFromLibrary: (_) async {},
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.textContaining('Nothing to clean up'), findsOneWidget);
+    });
+  });
+
   group('missing files (item 17)', () {
     testWidgets('a track whose file genuinely does not exist on disk is '
         'flagged, after the async check resolves', (tester) async {
