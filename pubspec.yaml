@@ -43,7 +43,7 @@ dependencies:
   omnis_plugins:
     git:
       url: https://github.com/MrIvoe/Omnis-Plugins.git
-      ref: v0.39.0
+      ref: v0.40.0
   # --- Core playback ---
   just_audio: ^0.9.36
   audio_service: ^0.18.11
