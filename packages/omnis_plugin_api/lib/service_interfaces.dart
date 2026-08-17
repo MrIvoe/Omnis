@@ -282,3 +282,42 @@ abstract class IAIProvider {
     List<BaseTrack> library,
   );
 }
+
+/// Searches a self-hosted media server's own catalog and returns real,
+/// directly playable [BaseTrack]s (a genuine `streamUrl`, unlike
+/// [IAIProvider.searchLibrary], which only ever searches the tracks
+/// already scanned into the local library). Implemented by every
+/// self-hosted connectivity plugin whose stream URL just works with
+/// Omnis's own `AudioEngine` with no special handling — Ampache, Koel,
+/// OpenSubsonic, Jellyfin, Plex, Emby today.
+///
+/// Deliberately **not** implemented by `YoutubeMusicImportPlugin` or
+/// `SpotifyImportPlugin`: both return metadata-only tracks that
+/// `AudioEngine` cannot actually play (see each plugin's own class doc
+/// for why) — registering them here would silently misrepresent a
+/// search result as playable when tapping it can't do what every other
+/// registered provider's result does. The "Online" tab (`lib/ui`) gives
+/// YouTube/Spotify their own dedicated, honestly-labeled entry points
+/// instead of forcing them through this contract.
+///
+/// More than one provider can be registered at once, the same
+/// `ServiceRegistry.getAll<T>()` shape [IQueueBuilder] already
+/// establishes — the "Online" tab shows one entry per registered,
+/// [isConfigured] provider, alongside Radio.
+abstract class IOnlineSearchProvider {
+  /// A short, user-facing name for this provider's tab/section — e.g.
+  /// "Ampache", "Koel". Matches the plugin's own `MusicPlugin.name`.
+  String get providerName;
+
+  /// Whether this provider has enough configuration (server URL,
+  /// credentials) to actually search right now. `false` hides this
+  /// provider from the "Online" tab's selector entirely, rather than
+  /// showing an entry that can only ever return nothing.
+  bool get isConfigured;
+
+  /// Searches this provider's server catalog for [query]. Returns an
+  /// empty list — never throws — on any failure: not configured, a
+  /// network error, an auth failure, or a search that genuinely found
+  /// nothing.
+  Future<List<BaseTrack>> search(String query, {int limit = 25});
+}
