@@ -7,21 +7,21 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-16 (added the estimated-completion %).
+> Last regenerated: 2026-08-16 (item 28 closed).
 
 ## Overall
 
 | ✅ Solid | 🟢 Solid, unverified | 🟡 Partial / in progress | ⬜ Not started |
 |---|---|---|---|
-| 7 | 8 | 35 | 0 |
+| 8 | 8 | 34 | 0 |
 
-### Estimated completion: ~70% (≈30% left to build)
+### Estimated completion: ~71% (≈29% left to build)
 
 A rough, weighted estimate — not a precise metric, since "partial"
 areas vary in how much is actually left: ✅ counts as 100% done, 🟢
 counts as 90% (fully built, only live-service verification pending),
 🟡 counts as 60% (real, working functionality exists, but named gaps
-remain), ⬜ counts as 0%. `(7×100 + 8×90 + 35×60 + 0×0) / 50 ≈ 70%`.
+remain), ⬜ counts as 0%. `(8×100 + 8×90 + 34×60 + 0×0) / 50 ≈ 71%`.
 This will shift as items close out and as new gaps get discovered
 mid-build; it's refreshed alongside the rest of this file.
 
@@ -87,7 +87,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 25 | Plugin lifecycle | ✅ Real sandboxing, health tracking, deterministic init ordering |
 | 26 | Dependency resolution | 🟡 Bundled-plugin ordering solid; missing external dependencies now offer a real one-tap Install when the catalog has them — no further named gaps |
 | 27 | Permissions | ✅ Manifest permissions map to real `dart_eval` grants, shown before any plugin code runs |
-| 28 | Plugin health | 🟡 Reactive health records, per-plugin retry/reset, a real dedicated health-center page, and now background heartbeat monitoring for external (downloaded) plugins; bundled/in-process plugin heartbeat still not attempted |
+| 28 | Plugin health | ✅ Reactive health records, per-plugin retry/reset, a dedicated health-center page, and background heartbeat monitoring for both external and bundled/in-process plugins — no further named gaps |
 | 29 | Plugin updates | 🟡 Real update detection plus automatic/background checking; built from a genuine 0% start |
 | 30 | Marketplace/catalog | ✅ Real permission-confirmation install flow against a fetched `catalog.json` |
 

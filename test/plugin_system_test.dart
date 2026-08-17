@@ -18,6 +18,7 @@ import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Fake path_provider, same pattern as library_repository_test.dart — needed
 /// because the sandbox-bridged loadLibraryTracks() reads through the real
@@ -203,6 +204,39 @@ class _NetworkPlugin extends MusicPlugin {
   Future<void> dispose() async {}
 }
 
+/// A bundled (in-process) plugin whose [heartbeat] is caller-controlled —
+/// used to prove item 28's in-process heartbeat dispatch (default no-op
+/// unless overridden, exactly like [MusicPlugin.enable]/[disable]).
+class _HeartbeatPlugin extends MusicPlugin {
+  final Future<void> Function()? impl;
+  _HeartbeatPlugin({this.impl});
+
+  @override
+  String get id => 'heartbeat_test_plugin';
+  @override
+  String get name => 'Heartbeat Test Plugin';
+  @override
+  String get description => 'Caller-controlled heartbeat() for testing';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+
+  @override
+  Future<void> initialize() async {}
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<void> heartbeat() => impl?.call() ?? super.heartbeat();
+}
+
 /// A no-op stand-in for PluginContext — only used to give register() a
 /// non-null context so its attach()-guard path actually runs.
 class _FakeContext implements PluginContext {
@@ -257,6 +291,17 @@ class _RecordingPlaybackContext implements PluginContext {
 }
 
 void main() {
+  setUp(() {
+    // In-process plugin initialization warms PluginStorage.initialize()
+    // (see PluginManager.initPlugin) — a real SharedPreferences.
+    // getInstance() platform-channel call with nothing to answer it in a
+    // plain (non-widget) test() otherwise. Every test in this file that
+    // registers a real MusicPlugin and calls initializeAll() needs this,
+    // the same standard mock every other file touching PluginStorage
+    // already uses.
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('PluginManager isolation', () {
     test(
         'registerAll skips a throwing factory instead of crashing, and '
@@ -1554,6 +1599,117 @@ dynamic heartbeat(dynamic arg) => throw Exception('should never run');
       await manager.runHeartbeats();
 
       expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('a bundled (in-process) plugin with a working heartbeat() '
+        'produces no health record', () async {
+      final manager = PluginManager();
+      manager.register(_HeartbeatPlugin());
+      await manager.initializeAll();
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('a bundled plugin whose heartbeat() throws synchronously '
+        'produces exactly one health record tagged with the heartbeat '
+        'hook', () async {
+      final manager = PluginManager();
+      manager.register(
+        _HeartbeatPlugin(impl: () => throw StateError('unresponsive')),
+      );
+      await manager.initializeAll();
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      final rec = manager.sandbox.healthRecords.first;
+      expect(rec.pluginId, 'heartbeat_test_plugin');
+      expect(rec.hook, 'heartbeat');
+    });
+
+    test('a bundled plugin whose heartbeat() throws after a real await '
+        'also produces exactly one health record — proving the direct '
+        '"await plugin.inProcess!.heartbeat()" call genuinely awaits',
+        () async {
+      final manager = PluginManager();
+      manager.register(
+        _HeartbeatPlugin(impl: () async {
+          await Future<void>.delayed(Duration.zero);
+          throw StateError('unresponsive after async work');
+        }),
+      );
+      await manager.initializeAll();
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      expect(manager.sandbox.healthRecords.first.hook, 'heartbeat');
+    });
+
+    test('a bundled plugin that never overrides heartbeat() (the default '
+        'no-op) produces no record and no crash — the "always call it, '
+        "it's cheap\" design doesn't spam records for plugins that never "
+        'opted in', () async {
+      final manager = PluginManager();
+      manager.register(_RecordingPlugin());
+      await manager.initializeAll();
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('a disabled bundled plugin is skipped entirely', () async {
+      final manager = PluginManager();
+      manager.register(
+        _HeartbeatPlugin(impl: () => throw StateError('should never run')),
+      );
+      await manager.initializeAll();
+      await manager.disablePlugin(manager.byId('heartbeat_test_plugin')!);
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('one misbehaving bundled plugin and one misbehaving external '
+        'plugin each produce their own independent heartbeat record in a '
+        'single runHeartbeats() call — the dual-dispatch loop does not '
+        'let one kind block or short-circuit the other', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_heartbeat_mixed_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'mixed_external_beat',
+        permissions: [],
+        hooks: ['heartbeat'],
+        extraSource: '''
+dynamic heartbeat(dynamic arg) => throw Exception('external unresponsive');
+''',
+      );
+
+      final manager = PluginManager();
+      manager.register(
+        _HeartbeatPlugin(impl: () => throw StateError('in-process unresponsive')),
+      );
+      await manager.initializeAll();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      await manager.runHeartbeats();
+
+      final ids =
+          manager.sandbox.healthRecords.map((r) => r.pluginId).toSet();
+      expect(ids, {'heartbeat_test_plugin', 'mixed_external_beat'});
+      expect(manager.sandbox.healthRecords, hasLength(2));
+      expect(
+        manager.sandbox.healthRecords.every((r) => r.hook == 'heartbeat'),
+        isTrue,
+      );
     });
   });
 

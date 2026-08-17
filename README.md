@@ -12,11 +12,11 @@ lives in a plugin.
 
 ## Build progress
 
-**~70% complete, ~30% left to build** (a weighted estimate, not a
+**~71% complete, ~29% left to build** (a weighted estimate, not a
 precise metric — see the methodology in the status doc). Omnis 2.0 is
-under continuous, incremental development — 7 of 50 tracked feature
+under continuous, incremental development — 8 of 50 tracked feature
 areas are fully solid, 8 more are fully built but not yet verified
-against a live external service, and the remaining 35 are real and
+against a live external service, and the remaining 34 are real and
 working with specific, enumerated gaps left. None are starting from
 zero. See
 **[docs/OMNIS_2_0_STATUS.md](docs/OMNIS_2_0_STATUS.md)** for the

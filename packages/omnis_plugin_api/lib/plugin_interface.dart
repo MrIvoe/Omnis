@@ -109,4 +109,17 @@ abstract class MusicPlugin {
   /// effect the plugin has on playback (e.g. drop a gain contribution) so
   /// a disabled plugin leaves no trace behind.
   Future<void> disable() async {}
+
+  /// Periodic liveness check for background heartbeat monitoring
+  /// (item 28). Override to prove the plugin is still genuinely
+  /// responsive — e.g. a server-backed provider plugin pinging its
+  /// configured host. Default is a no-op: a plugin that doesn't override
+  /// this is simply never flagged unresponsive, the same "opt-in, zero
+  /// behavior change until an author asks for it" stance external
+  /// plugins' manifest `hooks: [heartbeat]` declaration already takes.
+  /// Called through `PluginSandbox.run` by `PluginManager.runHeartbeats`,
+  /// so a throw or a call that doesn't return within its timeout produces
+  /// an ordinary health record tagged `heartbeat`, feeding the existing
+  /// auto-disable/health-page machinery for free.
+  Future<void> heartbeat() async {}
 }

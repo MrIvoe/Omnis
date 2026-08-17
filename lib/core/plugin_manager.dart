@@ -560,45 +560,62 @@ class PluginManager {
   }
 
   /// Item 28's "no heartbeat for a silently-hung plugin" gap — pings
-  /// every enabled *external* (downloaded, dart_eval-sandboxed) plugin
-  /// that declares a `heartbeat` hook in its manifest, through
-  /// [PluginSandbox.run] with [timeout]. A plugin whose `heartbeat` call
-  /// throws, or doesn't return within [timeout], produces a
-  /// [PluginHealthRecord] exactly the same way any other failing hook
-  /// call would — so it automatically feeds [_checkAutoDisable] too, no
-  /// changes needed there. A plugin with no `heartbeat` hook declared is
-  /// silently skipped — zero behavior change for the entire existing
-  /// plugin ecosystem until an author opts in. Bundled (in-process)
-  /// plugins aren't covered — [MusicPlugin] has no string-keyed hook
-  /// mechanism to piggyback on the way external plugins' manifest
-  /// `hooks: [...]` list does; adding that is a separate,
-  /// `packages/omnis_plugin_api`-touching follow-on, not attempted here.
+  /// every enabled plugin, both kinds, through [PluginSandbox.run] with
+  /// [timeout]. A plugin whose heartbeat throws, or doesn't return within
+  /// [timeout], produces a [PluginHealthRecord] exactly the same way any
+  /// other failing hook call would — so it automatically feeds
+  /// [_checkAutoDisable] too, no changes needed there.
   ///
-  /// Deliberately awaits `callHook`'s result when it's a `Future` — unlike
-  /// `onTrackStart`/`_forwardEvent` above, which fire external hooks
-  /// without awaiting their async body (a slow "listener" plugin
-  /// shouldn't block dispatch to everyone else). A heartbeat's entire
-  /// purpose is detecting whether a plugin actually finishes in time, so
-  /// dropping the returned Future here would make [timeout] almost
-  /// meaningless for anything but a hook that throws synchronously.
+  /// Bundled (in-process) plugins call [MusicPlugin.heartbeat] directly —
+  /// unconditionally, with no "does it declare this" gate, since compiled
+  /// Dart has no manifest to introspect the way an external plugin's
+  /// `hooks: [...]` list does. The default no-op body (see that method's
+  /// own doc) makes this cheap enough that unconditionally calling it
+  /// every [PluginHeartbeatScheduler] tick for every bundled plugin that
+  /// hasn't opted in is a non-issue — the same reasoning [onTrackStart]/
+  /// [onLibraryScan] already apply to every in-process call above.
+  ///
+  /// External (downloaded, dart_eval-sandboxed) plugins only get pinged
+  /// when their manifest declares a `heartbeat` hook — silently skipped
+  /// otherwise, zero behavior change for the entire existing external
+  /// plugin ecosystem until an author opts in. Deliberately awaits
+  /// `callHook`'s result when it's a `Future` — unlike `onTrackStart`/
+  /// `_forwardEvent` above, which fire external hooks without awaiting
+  /// their async body (a slow "listener" plugin shouldn't block dispatch
+  /// to everyone else). A heartbeat's entire purpose is detecting whether
+  /// a plugin actually finishes in time, so dropping the returned Future
+  /// here would make [timeout] almost meaningless for anything but a
+  /// hook that throws synchronously.
   Future<void> runHeartbeats({
     Duration timeout = const Duration(seconds: 5),
   }) async {
     for (final plugin in _enabled()) {
-      final external = plugin.external;
-      if (external == null) continue;
-      if (!external.hasHook('heartbeat')) continue;
-      await _sandbox.run(
-        pluginId: plugin.id,
-        pluginName: plugin.name,
-        hook: 'heartbeat',
-        timeout: timeout,
-        operation: () async {
-          final result = external.callHook('heartbeat', const []);
-          if (result is Future) await result;
-          return null;
-        },
-      );
+      if (plugin.inProcess != null) {
+        await _sandbox.run(
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          hook: 'heartbeat',
+          timeout: timeout,
+          operation: () async {
+            await plugin.inProcess!.heartbeat();
+            return null;
+          },
+        );
+      } else if (plugin.external != null &&
+          plugin.external!.hasHook('heartbeat')) {
+        final external = plugin.external!;
+        await _sandbox.run(
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          hook: 'heartbeat',
+          timeout: timeout,
+          operation: () async {
+            final result = external.callHook('heartbeat', const []);
+            if (result is Future) await result;
+            return null;
+          },
+        );
+      }
     }
   }
 
