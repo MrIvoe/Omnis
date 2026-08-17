@@ -14,6 +14,7 @@ BaseTrack _track({
   String? codec,
   int? bitrateKbps,
   String? coverArt,
+  String? composer,
 }) =>
     BaseTrack(
       id: id,
@@ -29,6 +30,7 @@ BaseTrack _track({
       codec: codec,
       bitrateKbps: bitrateKbps,
       coverArt: coverArt,
+      composer: composer,
     );
 
 void main() {
@@ -165,6 +167,31 @@ void main() {
     test('mood: on a track with no mood never matches', () {
       final tracks = [_track(id: '1')];
       expect(filterTracks(tracks, 'mood:chill'), isEmpty);
+    });
+  });
+
+  group('filterTracks — composer field', () {
+    test('composer: substring-matches the composer field, '
+        'case-insensitively', () {
+      final tracks = [
+        _track(id: '1', composer: 'John Williams'),
+        _track(id: '2', composer: 'Hans Zimmer'),
+      ];
+      expect(filterTracks(tracks, 'composer:williams').map((t) => t.id),
+          ['1']);
+      expect(filterTracks(tracks, 'composer:WILLIAMS').map((t) => t.id),
+          ['1']);
+    });
+
+    test('composer: on a track with no composer never matches', () {
+      final tracks = [_track(id: '1')];
+      expect(filterTracks(tracks, 'composer:williams'), isEmpty);
+    });
+
+    test('composer: is not part of free-text matching — a bare query '
+        'never matches the composer field', () {
+      final tracks = [_track(id: '1', composer: 'John Williams')];
+      expect(filterTracks(tracks, 'williams'), isEmpty);
     });
   });
 

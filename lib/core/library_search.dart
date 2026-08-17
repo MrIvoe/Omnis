@@ -83,6 +83,15 @@ import 'package:omnis/core/base_track.dart';
 /// bitrate:128..320
 /// ```
 ///
+/// `composer:` reads straight off `BaseTrack.composer` (populated by
+/// `MediaScanner` from the same `TCOM`/`TXXX:COMPOSER` tag
+/// `TagEditorPlugin`'s "Composer" edit field already reads/writes) —
+/// substring match, same shape as `album:`/`title:`:
+///
+/// ```text
+/// composer:williams         -> matches "John Williams", "Williams, J.", ...
+/// ```
+///
 /// `lyrics:` needs a caller-supplied lookup — unlike [ratingOf]/
 /// [favoriteOf] (keyed by track id, since `RatingsPlugin`/
 /// `FavoritesPlugin` only ever need an id), [hasLyrics] takes the whole
@@ -274,6 +283,7 @@ class _SearchTerm {
       'lyrics',
       'missing',
       'duplicate',
+      'composer',
     };
     // An unrecognized "field:" prefix (or a bare word that happens to
     // contain a colon, e.g. a time-formatted title) is treated as plain
@@ -303,6 +313,8 @@ class _SearchTerm {
         return _contains(track.title, value);
       case 'mood':
         return _contains(track.mood ?? '', value);
+      case 'composer':
+        return _contains(track.composer ?? '', value);
       case 'year':
         return _matchesYear(track.year, value);
       case 'rating':

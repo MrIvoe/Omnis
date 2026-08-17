@@ -56,7 +56,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 14 | Favorites | 🟡 Real, wired into per-track and bulk actions |
 | 15 | Ratings | 🟡 Half-star precision, calculated album/artist averages; built from a genuine 0% start |
 | 16 | History | ✅ Play history, skip tracking, completion rate, favorite/rated aggregation — no further named gaps |
-| 17 | Tag editor | 🟡 ID3/Vorbis/MP4 editing, undo, find/replace, virtual/calculated tags — no further named gaps within Library Health Center scope |
+| 17 | Tag editor | 🟡 ID3/Vorbis/MP4 editing, undo, find/replace, virtual/calculated tags, composer now modeled/searchable too — no further named gaps within Library Health Center scope |
 
 ## Phase 3 — Audio
 

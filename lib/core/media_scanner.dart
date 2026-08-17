@@ -289,6 +289,7 @@ class MediaScanner {
     final trackNumber = int.tryParse((tags.track ?? '').trim());
     final discNumber = int.tryParse((tags.disc ?? '').trim());
     final rawAlbumArtist = tags.albumArtist?.trim();
+    final rawComposer = tags.composer?.trim();
 
     return BaseTrack(
       id: 'local:${file.path}',
@@ -316,6 +317,12 @@ class MediaScanner {
       // documents null as "unknown, fall back to artists.first."
       albumArtist: (rawAlbumArtist != null && rawAlbumArtist.isNotEmpty)
           ? rawAlbumArtist
+          : null,
+      // Picked up for free from the same tag read too — the composer
+      // edit field TagEditorDialog already exposes was previously
+      // edit-only, never scanned into the library model at all.
+      composer: (rawComposer != null && rawComposer.isNotEmpty)
+          ? rawComposer
           : null,
       fileModifiedAt: mtime,
       codec: format.codec,
