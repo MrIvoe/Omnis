@@ -468,6 +468,18 @@ enum TrackType {
   /// the same reasoning [subsonic]/[jellyfin]/[plex] already established
   /// for each other despite some of them sharing REST-API shape too.
   emby,
+
+  /// A track streamed from a self-hosted Ampache media server — see
+  /// `AmpachePlugin` in `Omnis-Plugins`. Directly playable, like every
+  /// other self-hosted type here: [BaseTrack.streamUrl] is the
+  /// pre-authenticated `url` Ampache's own `songs` API response already
+  /// embeds per track. A distinct value from [subsonic]/[jellyfin]/
+  /// [plex]/[emby] — a fourth genuinely different auth shape: a
+  /// handshake-issued session token exchanged through a single
+  /// `action=`-keyed endpoint, unlike Subsonic's per-request salted
+  /// token, Emby/Jellyfin's shared `X-Emby-Authorization` header, or
+  /// Plex's single account-scoped `X-Plex-Token`.
+  ampache,
 }
 
 /// ReleaseType represents the kind of release an album is.
