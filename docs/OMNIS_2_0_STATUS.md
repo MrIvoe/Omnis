@@ -102,7 +102,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 40 | Sonic similarity | 🟡 Real acoustic-feature distance/similarity scoring on top of Essentia's extracted features |
 | 41 | Radio | 🟡 Real client to the free Radio Browser directory; built from a genuine 0% start |
 | 42 | Smart playlists | 🟡 Real rule engine incl. BPM/duration/bitrate/codec conditions and JSON import/export — no further named gaps |
-| 43 | AI | 🟡 Real capability interface plus a first working provider; built from a genuine 0% start |
+| 43 | AI | 🟡 Real playlist generation and natural language search from a genuine 0% start; conversational assistant/voice control/tagging still 0% |
 | 44 | Themes | 🟡 Real declarative theme engine (URL/file import, closed-schema colors/typography); named-preset parity closed, more presets possible |
 
 ## Phase 7 — Advanced UX
