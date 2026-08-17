@@ -108,7 +108,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 
 | # | Item | Status |
 |---|------|--------|
-| 39 | Recommendations | 🟡 Data-driven "Moods" algorithm, Similar Artist, and a Deep Cuts preset all real; more algorithms possible |
+| 39 | Recommendations | 🟡 Data-driven "Moods" algorithm, Similar Artist, Deep Cuts, and now New Releases presets all real; Daily/Weekly Mix, Discovery, Energy Flow, and a provider-neutral recommendation framework still open |
 | 40 | Sonic similarity | 🟡 Real acoustic-feature distance/similarity scoring on top of Essentia's extracted features |
 | 41 | Radio | 🟡 Real client to the free Radio Browser directory; built from a genuine 0% start |
 | 42 | Smart playlists | 🟡 Real rule engine incl. BPM/duration/bitrate/codec conditions and JSON import/export — no further named gaps |
