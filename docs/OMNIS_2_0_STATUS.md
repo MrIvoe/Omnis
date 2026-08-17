@@ -74,7 +74,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 |---|------|--------|
 | 18 | DSP pipeline | 🟡 Flat named-multiplier gain composition; not yet the spec's staged, independently-reorderable pipeline |
 | 19 | ReplayGain | 🟡 Tag-based gain + user preamp; no on-device loudness analysis |
-| 20 | EQ | 🟡 Real Android hardware EQ + a virtual trim elsewhere, now with per-artist/album profiles too; no parametric EQ or selectable band count |
+| 20 | EQ | 🟡 Real Android hardware EQ + a virtual trim elsewhere, with per-artist/album profiles and now a selectable 3/5/10-band count too; no parametric EQ (needs a native platform channel this project doesn't have) |
 | 21 | Output devices | 🟡 Real device listing/selection plus per-device volume memory; exclusive/bit-perfect mode partial |
 | 22 | Bit-perfect | 🟡 Informational half fully real now (every recognized format/extension, including bare ADTS AAC); no verified bit-perfect output path |
 | 23 | Audio analysis | 🟡 Real BPM/key/mood/genre via a self-hosted Essentia service (user must run it — not bundled) |
