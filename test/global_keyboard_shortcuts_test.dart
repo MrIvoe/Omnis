@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/keyboard_shortcut_remap.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -253,5 +254,52 @@ void main() {
     await tester.pump();
 
     expect(engine.playCalled, isFalse);
+  });
+
+  group('item 48 remapping', () {
+    testWidgets('a remapped key (set before the widget is pumped) triggers '
+        'the action; the old default key no longer does', (tester) async {
+      await AppSettings.instance.setShortcutBinding(
+        ShortcutAction.toggleMute,
+        ShortcutBinding(keyId: LogicalKeyboardKey.keyN.keyId),
+      );
+      final engine = await pumpHarness(tester);
+      engine._volume = 0.7;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pump();
+      expect(engine.volumeSetTo, 0.0);
+
+      engine.volumeSetTo = null;
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(engine.volumeSetTo, isNull,
+          reason: 'M was reassigned away from mute, so it must no longer '
+              'trigger it');
+    });
+
+    testWidgets('a remap made *after* the widget is already live takes '
+        'effect on the next keypress, no rebuild needed from the caller',
+        (tester) async {
+      final engine = await pumpHarness(tester);
+      engine._volume = 0.7;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(engine.volumeSetTo, 0.0);
+
+      await AppSettings.instance.setShortcutBinding(
+        ShortcutAction.toggleMute,
+        ShortcutBinding(keyId: LogicalKeyboardKey.keyN.keyId),
+      );
+      await tester.pump();
+
+      engine.volumeSetTo = null;
+      engine._volume = 0.4;
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pump();
+      expect(engine.volumeSetTo, 0.0,
+          reason: 'the live remap to N should already be active');
+    });
   });
 }

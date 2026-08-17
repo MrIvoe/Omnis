@@ -122,7 +122,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 45 | Layout builder | 🟢 Solid for Now Playing (real drag-and-drop editor, 6 bundled layouts); Home now has reorder/hide too, but no free-form widget canvas or sidebar |
 | 46 | Car mode | 🟢 Dedicated minimal layout plus real GPS-speed auto-activation |
 | 47 | TV mode | 🟡 New TV-optimized Now Playing layout; built from a genuine 0% start |
-| 48 | Accessibility | 🟡 Keyboard shortcuts, tooltips, `Semantics` pass, reduce-motion/transparency, and now a Ctrl+K command palette (11 of 13 spec-named commands) all real; per-shortcut remapping and the "search everywhere" Ctrl+K overlay still open |
+| 48 | Accessibility | 🟡 Keyboard shortcuts (now with per-shortcut remapping and conflict detection), tooltips, `Semantics` pass, reduce-motion/transparency, and a Ctrl+K command palette (11 of 13 spec-named commands) all real; §37's "search everywhere" Ctrl+K overlay is the remaining named gap |
 | 49 | Widgets | 🟡 Real interactive Android home-screen widget; built from a genuine 0% start |
 | 50 | Automation | 🟡 GPS-speed and Bluetooth-connect triggers (now including a Car Mode layout switch), plus time-based playback scheduling; a general rules engine still deferred |
 

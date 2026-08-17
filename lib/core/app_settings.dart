@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnis/core/keyboard_shortcut_remap.dart';
 import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/core/text_scale.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -77,6 +78,7 @@ class AppSettings extends ChangeNotifier {
   static const _carModeControlsOnRightKey = 'app_car_mode_controls_on_right';
   static const _bottomNavAutoHideKey = 'app_bottom_nav_auto_hide';
   static const _keyboardShortcutsEnabledKey = 'app_keyboard_shortcuts_enabled';
+  static const _shortcutBindingOverridesKey = 'app_shortcut_binding_overrides';
   static const _songsViewModeKey = 'app_songs_view_mode';
   static const _songsGridColumnsKey = 'app_songs_grid_columns';
   static const _albumsViewModeKey = 'app_albums_view_mode';
@@ -952,6 +954,98 @@ class AppSettings extends ChangeNotifier {
     _prefs!.setBool(_keyboardShortcutsEnabledKey, value);
     notifyListeners();
   }
+
+  /// Item 48's "per-shortcut remapping/conflict detection" gap — every
+  /// [ShortcutAction] resolved to its current [ShortcutBinding]: starts
+  /// from [defaultShortcutBindings] and overlays any stored override.
+  /// An unrecognized action name or a malformed stored entry degrades
+  /// just that one action back to its default, not the whole map — the
+  /// same per-entry-defensive-decode stance [disabledPlugins]'
+  /// `StringList`-of-encoded-entries sibling doesn't need (a bare id
+  /// list can't be malformed the way an encoded binding can) but that
+  /// this richer encoding does.
+  Map<ShortcutAction, ShortcutBinding> get shortcutBindings {
+    final bindings = Map<ShortcutAction, ShortcutBinding>.of(
+      defaultShortcutBindings,
+    );
+    final stored = _prefs?.getStringList(_shortcutBindingOverridesKey) ??
+        const <String>[];
+    for (final entry in stored) {
+      final separator = entry.indexOf('=');
+      if (separator < 0) continue;
+      final actionName = entry.substring(0, separator);
+      final action = ShortcutAction.values
+          .where((a) => a.name == actionName)
+          .firstOrNull;
+      if (action == null) continue;
+      final binding =
+          ShortcutBinding.fromStorageString(entry.substring(separator + 1));
+      if (binding == null) continue;
+      bindings[action] = binding;
+    }
+    return bindings;
+  }
+
+  Future<void> _writeShortcutOverrides(
+      Map<ShortcutAction, ShortcutBinding> overrides) async {
+    _ensurePrefs();
+    await _prefs!.setStringList(
+      _shortcutBindingOverridesKey,
+      [
+        for (final entry in overrides.entries)
+          '${entry.key.name}=${entry.value.toStorageString()}',
+      ],
+    );
+    notifyListeners();
+  }
+
+  /// Only the actions with a *stored* override — [shortcutBindings]
+  /// itself always returns all 8, defaulted or not; this is what
+  /// [setShortcutBinding]/[resetShortcutBinding] actually read-modify-
+  /// write, so an action never touched by the user stays absent (and
+  /// thus tracks any future change to [defaultShortcutBindings]) rather
+  /// than being redundantly persisted as "override: same as default."
+  Map<ShortcutAction, ShortcutBinding> get _storedShortcutOverrides {
+    final overrides = <ShortcutAction, ShortcutBinding>{};
+    final stored = _prefs?.getStringList(_shortcutBindingOverridesKey) ??
+        const <String>[];
+    for (final entry in stored) {
+      final separator = entry.indexOf('=');
+      if (separator < 0) continue;
+      final action = ShortcutAction.values
+          .where((a) => a.name == entry.substring(0, separator))
+          .firstOrNull;
+      if (action == null) continue;
+      final binding =
+          ShortcutBinding.fromStorageString(entry.substring(separator + 1));
+      if (binding == null) continue;
+      overrides[action] = binding;
+    }
+    return overrides;
+  }
+
+  /// Remaps [action] to [binding]. Deliberately does **no** conflict
+  /// checking here — that's [findConflict]'s job, called by the
+  /// settings-page UI *before* this is called, so the user gets to
+  /// confirm a swap rather than this setter silently allowing (or
+  /// blocking) a collision.
+  Future<void> setShortcutBinding(
+      ShortcutAction action, ShortcutBinding binding) async {
+    final overrides = _storedShortcutOverrides;
+    overrides[action] = binding;
+    await _writeShortcutOverrides(overrides);
+  }
+
+  /// Restores [action] to its entry in [defaultShortcutBindings].
+  Future<void> resetShortcutBinding(ShortcutAction action) async {
+    final overrides = _storedShortcutOverrides;
+    if (overrides.remove(action) == null) return;
+    await _writeShortcutOverrides(overrides);
+  }
+
+  /// Restores every action to [defaultShortcutBindings].
+  Future<void> resetAllShortcutBindings() =>
+      _writeShortcutOverrides(const {});
 
   /// Whether Now Playing tints itself from the current track's artwork
   /// (`DynamicColorExtractor`) instead of the static preset scheme.

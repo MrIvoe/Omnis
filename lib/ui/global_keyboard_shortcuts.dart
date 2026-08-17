@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/keyboard_shortcut_remap.dart';
 import 'package:omnis/core/mute_toggle.dart';
 
 /// App-wide playback keyboard shortcuts (§45 UI spec's "Keyboard"
@@ -165,39 +166,53 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
     widget.engine.setVolume(result.newVolume);
   }
 
+  /// Dispatches to this class's own private handlers — item 48's
+  /// per-shortcut remapping only changes *which key* triggers an
+  /// action, never what the action itself does.
+  VoidCallback _callbackFor(ShortcutAction action) => switch (action) {
+        ShortcutAction.togglePlayPause => _togglePlayPause,
+        ShortcutAction.nextTrack => _next,
+        ShortcutAction.previousTrack => _previous,
+        ShortcutAction.seekForward => () => _seekBy(_seekStep),
+        ShortcutAction.seekBackward => () => _seekBy(-_seekStep),
+        ShortcutAction.volumeUp => () => _adjustVolume(_volumeStep),
+        ShortcutAction.volumeDown => () => _adjustVolume(-_volumeStep),
+        ShortcutAction.toggleMute => _toggleMute,
+      };
+
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.space): _togglePlayPause,
-        const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
-            _togglePlayPause,
-        const SingleActivator(LogicalKeyboardKey.mediaTrackNext): _next,
-        const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): _previous,
-        const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
-            _next,
-        const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
-            _previous,
-        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-            _seekBy(_seekStep),
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-            _seekBy(-_seekStep),
-        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-            _adjustVolume(_volumeStep),
-        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-            _adjustVolume(-_volumeStep),
-        // A plain letter key rather than a platform media-mute key
-        // constant — `LogicalKeyboardKey` has no `mediaMute` equivalent
-        // to `mediaPlayPause`/`mediaTrackNext` that's been verified to
-        // exist across the platforms this app targets, so this avoids
-        // relying on one that might not.
-        const SingleActivator(LogicalKeyboardKey.keyM): _toggleMute,
+    return ListenableBuilder(
+      // A remap made while this widget is already live (the Keyboard
+      // settings page can be reached without leaving HomePage's own
+      // widget subtree) must take effect on the very next keypress, not
+      // require an app restart — AppSettings is already a
+      // ChangeNotifier, so this is the same "listen and rebuild" shape
+      // every other live-settings-driven widget in this app already
+      // uses.
+      listenable: AppSettings.instance,
+      builder: (context, _) {
+        final bindings = <ShortcutActivator, VoidCallback>{
+          for (final entry in AppSettings.instance.shortcutBindings.entries)
+            entry.value.toActivator(): _callbackFor(entry.key),
+          // Hardware media keys are OS/device signals, not something a
+          // user remaps via a keyboard — always on regardless of the
+          // bindings above.
+          const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
+              _togglePlayPause,
+          const SingleActivator(LogicalKeyboardKey.mediaTrackNext): _next,
+          const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious):
+              _previous,
+        };
+        return CallbackShortcuts(
+          bindings: bindings,
+          child: Focus(
+            focusNode: _anchorFocusNode,
+            skipTraversal: true,
+            child: widget.child,
+          ),
+        );
       },
-      child: Focus(
-        focusNode: _anchorFocusNode,
-        skipTraversal: true,
-        child: widget.child,
-      ),
     );
   }
 }
