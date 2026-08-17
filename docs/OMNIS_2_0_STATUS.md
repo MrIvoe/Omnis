@@ -7,13 +7,23 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-16.
+> Last regenerated: 2026-08-16 (added the estimated-completion %).
 
 ## Overall
 
 | ✅ Solid | 🟢 Solid, unverified | 🟡 Partial / in progress | ⬜ Not started |
 |---|---|---|---|
 | 7 | 8 | 35 | 0 |
+
+### Estimated completion: ~70% (≈30% left to build)
+
+A rough, weighted estimate — not a precise metric, since "partial"
+areas vary in how much is actually left: ✅ counts as 100% done, 🟢
+counts as 90% (fully built, only live-service verification pending),
+🟡 counts as 60% (real, working functionality exists, but named gaps
+remain), ⬜ counts as 0%. `(7×100 + 8×90 + 35×60 + 0×0) / 50 ≈ 70%`.
+This will shift as items close out and as new gaps get discovered
+mid-build; it's refreshed alongside the rest of this file.
 
 **Every one of the 50 tracked areas already has real, working
 functionality — none are starting from zero.** The remaining work is
