@@ -102,7 +102,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 35 | DLNA/UPnP | 🟡 Real SSDP+SOAP/DIDL-Lite client; built from a genuine 0% start |
 | 36 | Spotify | 🟢 Real PKCE OAuth, playlist import, Connect remote control; unverified live |
 | 37 | YouTube | 🟢 Real OAuth, playlist import + search, in-app playback; unverified live |
-| 38 | Other providers | 🟡 Emby and Ampache closed (both self-hostable, keyless); other self-hosted providers (e.g. Koel) not attempted |
+| 38 | Other providers | 🟡 Emby, Ampache, and Koel closed (all self-hostable, keyless); Apple Music/SoundCloud/Bandcamp/Tidal/Qobuz remain judged not tractable (closed/paid developer gates) |
 
 ## Phase 6 — Discovery
 

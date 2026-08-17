@@ -480,6 +480,19 @@ enum TrackType {
   /// token, Emby/Jellyfin's shared `X-Emby-Authorization` header, or
   /// Plex's single account-scoped `X-Plex-Token`.
   ampache,
+
+  /// A track streamed from a self-hosted Koel media server — see
+  /// `KoelPlugin` in `Omnis-Plugins`. Directly playable, like every
+  /// other self-hosted type here: [BaseTrack.streamUrl] is Koel's own
+  /// `/play/{id}/{transcode}/{bitrate}` endpoint with its `api-token`
+  /// embedded as a query parameter, the same query-param-token shape
+  /// [subsonic] already uses for its own stream URLs. A distinct value
+  /// from [subsonic]/[jellyfin]/[plex]/[dlna]/[emby]/[ampache] — a
+  /// sixth genuinely different auth shape: a plain `POST /api/me` login
+  /// with an email/password body returns a short-lived `Bearer` token,
+  /// closer to a conventional web-app login than any sibling's own
+  /// handshake/salted-token/header-token scheme.
+  koel,
 }
 
 /// ReleaseType represents the kind of release an album is.

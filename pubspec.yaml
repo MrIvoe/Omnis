@@ -30,7 +30,7 @@ dependencies:
     git:
       url: https://github.com/MrIvoe/Omnis.git
       path: packages/omnis_plugin_api
-      ref: plugin-api-v0.22.0
+      ref: plugin-api-v0.23.0
   # --- The bundled plugins themselves, published at
   #     github.com/MrIvoe/Omnis-Plugins. A clean checkout (no
   #     pubspec_overrides.yaml present) resolves straight from GitHub;
