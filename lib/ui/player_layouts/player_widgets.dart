@@ -424,9 +424,15 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
 /// stays fixed (see [StandardLayout]).
 class PlayerLyricsPanel extends StatelessWidget {
   final PlayerLayoutData data;
-  final TextStyle? style;
+  final Color? color;
+  final FontWeight? fontWeight;
 
-  const PlayerLyricsPanel({super.key, required this.data, this.style});
+  const PlayerLyricsPanel({
+    super.key,
+    required this.data,
+    this.color,
+    this.fontWeight,
+  });
 
   /// Maps [LyricsTextSize] to an existing `Theme.textTheme` style rather
   /// than a raw font-size multiplier, so lyrics stay visually consistent
@@ -448,9 +454,10 @@ class PlayerLyricsPanel extends StatelessWidget {
     final text = plugin == null
         ? 'The Lyrics plugin is disabled — enable it in Settings.'
         : (data.lyricText ?? 'No lyrics added for this track yet.');
-    final effectiveStyle = style ??
-        _sizeStyle(theme, data.settings.lyricsTextSize) ??
-        theme.textTheme.bodyMedium;
+    final baseStyle =
+        _sizeStyle(theme, data.settings.lyricsTextSize) ?? theme.textTheme.bodyMedium;
+    final effectiveStyle =
+        baseStyle?.copyWith(color: color, fontWeight: fontWeight);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
