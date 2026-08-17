@@ -34,7 +34,7 @@ class HomeDashboardPage extends StatefulWidget {
   });
 
   @override
-  State<HomeDashboardPage> createState() => _HomeDashboardPageState();
+  HomeDashboardPageState createState() => HomeDashboardPageState();
 }
 
 class _HomeSection {
@@ -44,7 +44,7 @@ class _HomeSection {
   const _HomeSection(this.id, this.title, this.tracks);
 }
 
-class _HomeDashboardPageState extends State<HomeDashboardPage> {
+class HomeDashboardPageState extends State<HomeDashboardPage> {
   bool _loading = true;
   List<BaseTrack> _recentlyPlayed = const [];
   List<BaseTrack> _mostPlayed = const [];
@@ -156,7 +156,13 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
   /// freely-composable ones. Opens a modal sheet to reorder/hide the
   /// six known sections; on close, saves via [HomeLayoutStore] and
   /// reloads so [applyHomeLayout] picks up the change immediately.
-  Future<void> _openCustomize() async {
+  ///
+  /// Public (this class isn't private, unlike most page `State`s in this
+  /// app) so `HomePage`'s command palette (item 48/spec §38's "Customize
+  /// home") can trigger it via a `GlobalKey` from outside this file — the
+  /// sheet itself lives entirely here, [HomePage] never needs to know its
+  /// shape, only that opening it and reloading is one call away.
+  Future<void> openCustomizeSheet() async {
     final changed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -204,7 +210,7 @@ class _HomeDashboardPageState extends State<HomeDashboardPage> {
           IconButton(
             icon: const Icon(Icons.tune),
             tooltip: 'Customize',
-            onPressed: _openCustomize,
+            onPressed: openCustomizeSheet,
           ),
         ],
       ),

@@ -493,6 +493,23 @@ class MainCore {
     await LibraryRepository.instance.save([...stillPresent, ...newTracks]);
   }
 
+  /// An explicit, user-triggered rescan — item 48's command palette's
+  /// "Scan library" action. Unlike [_maybeRunScheduledScan], never gated
+  /// by [LibraryScanScheduler.isDue] (an explicit tap should always run,
+  /// not silently no-op because a background scan happened to fire
+  /// recently) and, unlike that method, lets a real failure propagate to
+  /// the caller instead of swallowing it — the palette action is
+  /// expected to catch it and tell the user, the same way a scheduled
+  /// scan's own silent "try again next tick" isn't appropriate for an
+  /// action the user is actively watching for a result from.
+  Future<void> rescanNow() async {
+    final current = LibraryRepository.instance.tracks;
+    final scanned =
+        await MediaScanner.instance.scanLibrary(knownTracks: current);
+    if (scanned.isEmpty) return;
+    await _mergeScanIntoLibrary(current, scanned);
+  }
+
   /// Item 5's "no scheduled scans" gap — a no-op unless the user has
   /// opted in ([AppSettings.autoScanEnabled] defaults false) and one is
   /// actually due. Unlike [_maybeStartLibraryWatcher] (desktop-only,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
@@ -9,6 +10,7 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/ui/command_palette_dialog.dart';
 import 'package:omnis/ui/forgotten_music_page.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:omnis/ui/home_dashboard_page.dart';
@@ -17,6 +19,7 @@ import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/radio_page.dart';
+import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/widgets/mini_player_bar.dart';
@@ -40,6 +43,12 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _coreReady = false;
+
+  /// Lets the command palette's "Customize home" action (item 48/spec
+  /// §38) reach [HomeDashboardPageState.openCustomizeSheet] from outside
+  /// `home_dashboard_page.dart` without either page needing to know the
+  /// other's internals beyond this one public method.
+  final _homeDashboardKey = GlobalKey<HomeDashboardPageState>();
 
   /// Whether the user has manually revealed the bottom nav during the
   /// current auto-hide episode (landscape or Car Mode layout, while
@@ -142,6 +151,52 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  /// Item 48/spec §38's command palette action list. A separate map from
+  /// [GlobalKeyboardShortcuts]'s own bindings — that class's whole
+  /// contract is playback key bindings operating on [AudioEngine] alone
+  /// (see its own doc comment); the palette needs [BuildContext]/
+  /// [MainCore]/the tab index/[AppSettings], a different action surface
+  /// entirely, so it stays a sibling rather than growing that class.
+  Map<String, VoidCallback> _paletteActions(BuildContext context, MainCore core) {
+    return {
+      'play': core.audioEngine.play,
+      'pause': core.audioEngine.pause,
+      'next': core.audioEngine.next,
+      'previous': core.audioEngine.previous,
+      'shuffle': () => core.audioEngine
+          .setShuffleEnabled(!core.audioEngine.shuffleEnabled),
+      'open_settings': () => setState(() => _selectedIndex = 5),
+      'enable_driving_mode': () =>
+          setState(() => AppSettings.instance.playerLayoutId = 'car_mode'),
+      'open_lyrics': () {
+        AppSettings.instance.karaokeMode = true;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const NowPlayingPage()),
+        );
+      },
+      'change_theme': () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => AppearanceSettingsPage(
+              layoutManager: locator<LayoutManager>(),
+              themeManager: locator<ThemeManager>(),
+            ),
+          )),
+      'customize_home': () {
+        setState(() => _selectedIndex = 0);
+        _homeDashboardKey.currentState?.openCustomizeSheet();
+      },
+      'scan_library': () async {
+        try {
+          await core.rescanNow();
+        } catch (e) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Library scan failed: $e')),
+          );
+        }
+      },
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_coreReady) {
@@ -155,7 +210,9 @@ class _HomePageState extends State<HomePage> {
 
     final pages = <Widget>[
       HomeDashboardPage(
-          engine: core.audioEngine, pluginManager: core.pluginManager),
+          key: _homeDashboardKey,
+          engine: core.audioEngine,
+          pluginManager: core.pluginManager),
       LibraryPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       PlaylistPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       _MoodsPage(
@@ -228,54 +285,68 @@ class _HomePageState extends State<HomePage> {
 
     return GlobalKeyboardShortcuts(
       engine: core.audioEngine,
-      child: Scaffold(
-        body: Stack(
-          children: [
-            IndexedStack(index: _selectedIndex, children: pages),
-            if (autoHideActive)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 28,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onVerticalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (velocity < -150) {
-                      setState(() => _navRevealed = true);
-                    } else if (velocity > 150) {
-                      setState(() => _navRevealed = false);
-                    }
-                  },
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+            if (!AppSettings.instance.keyboardShortcutsEnabled) return;
+            showCommandPalette(context,
+                actions: _paletteActions(context, core));
+          },
+          const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
+            if (!AppSettings.instance.keyboardShortcutsEnabled) return;
+            showCommandPalette(context,
+                actions: _paletteActions(context, core));
+          },
+        },
+        child: Scaffold(
+          body: Stack(
+            children: [
+              IndexedStack(index: _selectedIndex, children: pages),
+              if (autoHideActive)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 28,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onVerticalDragEnd: (details) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (velocity < -150) {
+                        setState(() => _navRevealed = true);
+                      } else if (velocity > 150) {
+                        setState(() => _navRevealed = false);
+                      }
+                    },
+                  ),
                 ),
-              ),
-            if (autoHideActive && !navVisible)
-              Positioned(
-                right: 12,
-                bottom: 12,
-                child: FloatingActionButton.small(
-                  heroTag: 'reveal_bottom_nav',
-                  tooltip: 'Show navigation',
-                  onPressed: () => setState(() => _navRevealed = true),
-                  child: const Icon(Icons.keyboard_arrow_up),
+              if (autoHideActive && !navVisible)
+                Positioned(
+                  right: 12,
+                  bottom: 12,
+                  child: FloatingActionButton.small(
+                    heroTag: 'reveal_bottom_nav',
+                    tooltip: 'Show navigation',
+                    onPressed: () => setState(() => _navRevealed = true),
+                    child: const Icon(Icons.keyboard_arrow_up),
+                  ),
                 ),
-              ),
-          ],
-        ),
-        bottomNavigationBar: AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeInOut,
-          alignment: Alignment.topCenter,
-          child: navVisible
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    MiniPlayerBar(engine: core.audioEngine),
-                    navBar,
-                  ],
-                )
-              : const SizedBox(width: double.infinity),
+            ],
+          ),
+          bottomNavigationBar: AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: navVisible
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      MiniPlayerBar(engine: core.audioEngine),
+                      navBar,
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ),
       ),
     );
