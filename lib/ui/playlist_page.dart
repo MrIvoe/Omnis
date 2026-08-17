@@ -6,8 +6,10 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/plugin_api/play_record.dart';
@@ -935,7 +937,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
   /// Shuffles everything after the currently-playing track, leaving
   /// what's already played and what's playing now untouched.
   Future<void> _shuffleRemainingQueue() async {
-    await widget.engine.shuffleRemaining();
+    final settings = AppSettings.instance;
+    await widget.engine.shuffleRemaining(
+      constraints: QueueRuleConstraints(
+        minArtistGap: settings.queueRuleAvoidRepeatArtist ? 1 : 0,
+        minAlbumGap: settings.queueRuleAvoidRepeatAlbum ? 1 : 0,
+      ),
+      groupByAlbumArtist: settings.groupArtistsByAlbumArtist,
+    );
     if (!mounted) return;
     setState(() {});
   }

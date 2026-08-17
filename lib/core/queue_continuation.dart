@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:omnis/core/artist_similarity.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/core/track_similarity.dart';
 
 /// Item 2 (Queue)'s "smart/rule-based continuation" gap: when the queue
@@ -38,6 +39,23 @@ List<BaseTrack> _shuffledMatches(
   return shuffled.take(limit).toList();
 }
 
+/// Shared by every [continuationTracks] branch's return path — applies
+/// item 2's "queue rules/exclusions" [constraints] (a pure no-op when
+/// [constraints] is [QueueRuleConstraints.none], the default) against
+/// [batch], with [queueTail] (typically the live queue's own tracks) as
+/// [applyQueueRules]'s `precedingContext` so a continuation batch never
+/// repeats an artist/album that's already about to finish playing.
+List<BaseTrack> _finalize(
+  List<BaseTrack> batch,
+  QueueRuleConstraints constraints,
+  List<BaseTrack> queueTail,
+  bool groupByAlbumArtist,
+) {
+  if (batch.isEmpty || !constraints.isActive) return batch;
+  return applyQueueRules(batch, constraints,
+      groupByAlbumArtist: groupByAlbumArtist, precedingContext: queueTail);
+}
+
 /// Picks up to [limit] tracks from [library] to extend the queue after
 /// [seed] finishes playing, according to [mode]. [excludeIds] is typically
 /// the current queue's own track ids, so a long auto-continued session
@@ -50,6 +68,14 @@ List<BaseTrack> _shuffledMatches(
 /// `track_similarity.dart`/`QueuePresetPlugin` already take. The caller is
 /// expected to simply let the queue end as it does today when this returns
 /// empty.
+///
+/// [constraints] applies item 2's "queue rules/exclusions" gap (a pure
+/// no-op when left at [QueueRuleConstraints.none], the default) to
+/// whatever batch a branch produces, with [queueTail] (typically the
+/// live queue's own already-queued tracks) as [applyQueueRules]'s
+/// `precedingContext` — so a continuation batch never repeats an
+/// artist/album that's already about to finish playing, not just tracks
+/// within the batch itself.
 List<BaseTrack> continuationTracks({
   required BaseTrack seed,
   required List<BaseTrack> library,
@@ -58,6 +84,8 @@ List<BaseTrack> continuationTracks({
   int limit = defaultContinuationLimit,
   bool groupByAlbumArtist = false,
   Random? random,
+  QueueRuleConstraints constraints = QueueRuleConstraints.none,
+  List<BaseTrack> queueTail = const [],
 }) {
   if (mode == QueueContinuationMode.off) return const [];
 
@@ -71,7 +99,8 @@ List<BaseTrack> continuationTracks({
       return const [];
 
     case QueueContinuationMode.similarTrack:
-      return findSimilarTracks(seed, pool, limit: limit);
+      return _finalize(findSimilarTracks(seed, pool, limit: limit),
+          constraints, queueTail, groupByAlbumArtist);
 
     case QueueContinuationMode.similarArtist:
       final seedArtist = groupByAlbumArtist
@@ -104,7 +133,8 @@ List<BaseTrack> continuationTracks({
           }
         }
       }
-      return _shuffledMatches(matches, limit, random);
+      return _finalize(_shuffledMatches(matches, limit, random), constraints,
+          queueTail, groupByAlbumArtist);
 
     case QueueContinuationMode.sameGenre:
       final seedGenres = seed.genres
@@ -119,7 +149,8 @@ List<BaseTrack> continuationTracks({
             .toSet();
         return genres.intersection(seedGenres).isNotEmpty;
       }).toList();
-      return _shuffledMatches(matches, limit, random);
+      return _finalize(_shuffledMatches(matches, limit, random), constraints,
+          queueTail, groupByAlbumArtist);
 
     case QueueContinuationMode.sameMood:
       final seedMood = seed.mood?.trim().toLowerCase();
@@ -127,7 +158,8 @@ List<BaseTrack> continuationTracks({
       final matches = pool
           .where((track) => track.mood?.trim().toLowerCase() == seedMood)
           .toList();
-      return _shuffledMatches(matches, limit, random);
+      return _finalize(_shuffledMatches(matches, limit, random), constraints,
+          queueTail, groupByAlbumArtist);
 
     case QueueContinuationMode.sameAlbum:
       final seedAlbum = seed.album.trim();
@@ -137,6 +169,7 @@ List<BaseTrack> continuationTracks({
               track.album.trim() == seedAlbum &&
               track.albumArtist == seed.albumArtist)
           .toList();
-      return _shuffledMatches(matches, limit, random);
+      return _finalize(_shuffledMatches(matches, limit, random), constraints,
+          queueTail, groupByAlbumArtist);
   }
 }

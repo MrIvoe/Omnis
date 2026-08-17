@@ -26,6 +26,7 @@ import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/core/queue_history_store.dart';
+import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/core/recovery_journal.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis_plugins/bundled_plugins.dart';
@@ -443,12 +444,18 @@ class MainCore {
       final library = LibraryRepository.instance.tracks;
       if (library.isEmpty) return;
       final existingQueue = _audioEngine.queue;
+      final settings = AppSettings.instance;
       final picked = continuationTracks(
         seed: seed,
         library: library,
         mode: mode,
         excludeIds: existingQueue.map((t) => t.id).toSet(),
-        groupByAlbumArtist: AppSettings.instance.groupArtistsByAlbumArtist,
+        groupByAlbumArtist: settings.groupArtistsByAlbumArtist,
+        constraints: QueueRuleConstraints(
+          minArtistGap: settings.queueRuleAvoidRepeatArtist ? 1 : 0,
+          minAlbumGap: settings.queueRuleAvoidRepeatAlbum ? 1 : 0,
+        ),
+        queueTail: existingQueue,
       );
       if (picked.isEmpty) return;
       await _audioEngine.setQueue(

@@ -283,6 +283,12 @@ class _SettingsPageState extends State<SettingsPage> {
             navigate: (c) =>
                 _openPlayback(c, highlightField: 'queue_continuation')),
         _SearchableSetting(
+            title: 'Queue rules',
+            category: 'Playback & Audio',
+            categoryIcon: Icons.tune,
+            highlightField: 'queue_rules',
+            navigate: (c) => _openPlayback(c, highlightField: 'queue_rules')),
+        _SearchableSetting(
             title: 'Skip forward/backward',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,

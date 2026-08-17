@@ -11,6 +11,7 @@ import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_operations.dart';
+import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_rule.dart';
@@ -97,8 +98,12 @@ class _FakeEngine implements AudioEngine {
   }
 
   @override
-  Future<void> shuffleRemaining() async {
-    fakeQueue = QueueOperations.shuffledRemaining(fakeQueue, fakeCurrentIndex);
+  Future<void> shuffleRemaining({
+    QueueRuleConstraints constraints = QueueRuleConstraints.none,
+    bool groupByAlbumArtist = false,
+  }) async {
+    fakeQueue = QueueOperations.shuffledRemaining(fakeQueue, fakeCurrentIndex,
+        constraints: constraints, groupByAlbumArtist: groupByAlbumArtist);
   }
 
   @override

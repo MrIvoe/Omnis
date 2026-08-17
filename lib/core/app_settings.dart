@@ -123,6 +123,10 @@ class AppSettings extends ChangeNotifier {
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
   static const _queueContinuationModeKey = 'app_queue_continuation_mode';
+  static const _queueRuleAvoidRepeatArtistKey =
+      'app_queue_rule_avoid_repeat_artist';
+  static const _queueRuleAvoidRepeatAlbumKey =
+      'app_queue_rule_avoid_repeat_album';
 
   SharedPreferences? _prefs;
   bool _initialized = false;
@@ -1151,6 +1155,33 @@ class AppSettings extends ChangeNotifier {
           QueueContinuationMode.sameMood => 'sameMood',
           QueueContinuationMode.sameAlbum => 'sameAlbum',
         });
+    notifyListeners();
+  }
+
+  /// Item 2 (Queue)'s "queue rules/exclusions" gap: avoid placing two
+  /// tracks by the same artist adjacent to each other in an *automatic*
+  /// shuffle or continuation batch — never a manual "Play next"/"Add to
+  /// queue" action, which stays exactly as the user chose it. Defaults
+  /// to `false` — an explicit opt-in, the same unattended-behavior-
+  /// change stance [queueContinuationMode] already takes, since this
+  /// silently changes what an automatic shuffle/continuation produces.
+  bool get queueRuleAvoidRepeatArtist =>
+      _prefs?.getBool(_queueRuleAvoidRepeatArtistKey) ?? false;
+
+  set queueRuleAvoidRepeatArtist(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_queueRuleAvoidRepeatArtistKey, value);
+    notifyListeners();
+  }
+
+  /// Same as [queueRuleAvoidRepeatArtist], for the album instead of the
+  /// artist.
+  bool get queueRuleAvoidRepeatAlbum =>
+      _prefs?.getBool(_queueRuleAvoidRepeatAlbumKey) ?? false;
+
+  set queueRuleAvoidRepeatAlbum(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_queueRuleAvoidRepeatAlbumKey, value);
     notifyListeners();
   }
 

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/queue_rules.dart';
 
 /// Pure index-selection logic for queue cleanup actions ("Remove
 /// duplicates", "Clear played"). Kept free of [AudioEngine] so it's
@@ -93,15 +94,28 @@ class QueueOperations {
   /// Shuffles everything after [currentIndex], leaving the current track
   /// and everything already played untouched. With no current track
   /// (`currentIndex < 0`), shuffles the whole queue.
+  ///
+  /// [constraints] defaults to [QueueRuleConstraints.none] (a pure
+  /// no-op) — item 2's "queue rules/exclusions" gap. When active, the
+  /// shuffled tail is repaired via [applyQueueRules] against itself and
+  /// [head] (the already-placed/played tracks, so a repeat right at the
+  /// shuffle boundary is caught too), never against the pre-shuffle
+  /// order.
   static List<BaseTrack> shuffledRemaining(
     List<BaseTrack> queue,
     int currentIndex, {
     math.Random? random,
+    QueueRuleConstraints constraints = QueueRuleConstraints.none,
+    bool groupByAlbumArtist = false,
   }) {
     final splitAt = currentIndex < 0 ? 0 : currentIndex + 1;
     if (splitAt >= queue.length) return List<BaseTrack>.of(queue);
     final head = queue.sublist(0, splitAt);
     final tail = queue.sublist(splitAt).toList()..shuffle(random);
-    return [...head, ...tail];
+    final repairedTail = constraints.isActive
+        ? applyQueueRules(tail, constraints,
+            groupByAlbumArtist: groupByAlbumArtist, precedingContext: head)
+        : tail;
+    return [...head, ...repairedTail];
   }
 }

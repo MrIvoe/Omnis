@@ -3,11 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/queue_operations.dart';
+import 'package:omnis/core/queue_rules.dart';
 
-BaseTrack _track(String id) => BaseTrack(
+BaseTrack _track(String id, {String artist = 'Artist'}) => BaseTrack(
       id: id,
       title: 'Title $id',
-      artists: const ['Artist'],
+      artists: [artist],
       album: 'Album',
       duration: 180,
       type: TrackType.local,
@@ -246,6 +247,51 @@ void main() {
 
     test('an empty queue returns empty', () {
       expect(QueueOperations.shuffledRemaining(const [], 0), isEmpty);
+    });
+
+    test('default (no constraints) behavior is unchanged — same set, same '
+        'head', () {
+      final queue = [
+        _track('a', artist: 'X'),
+        _track('b', artist: 'X'),
+        _track('c', artist: 'X'),
+        _track('d', artist: 'X'),
+      ];
+
+      final result = QueueOperations.shuffledRemaining(queue, 0,
+          random: math.Random(7));
+
+      expect(result.first.id, 'a');
+      expect(result.map((t) => t.id).toSet(), {'a', 'b', 'c', 'd'});
+    });
+
+    test('an active constraint reorders the shuffled tail to satisfy it',
+        () {
+      // Two of three remaining tracks share an artist — Random(127)'s raw
+      // shuffle lands a1/a2 adjacent ([a1, a2, b1]), which the constraint
+      // then repairs into [a1, b1, a2]. (Pinning a specific seed's exact
+      // output follows the same convention as the "deterministic Random
+      // produces a reproducible shuffle" test above.)
+      final queue = [
+        _track('head', artist: 'Head'),
+        _track('a1', artist: 'X'),
+        _track('a2', artist: 'X'),
+        _track('b1', artist: 'Y'),
+      ];
+
+      final unconstrained = QueueOperations.shuffledRemaining(queue, 0,
+          random: math.Random(127));
+      expect(unconstrained.map((t) => t.id).toList(),
+          ['head', 'a1', 'a2', 'b1']);
+
+      final result = QueueOperations.shuffledRemaining(
+        queue,
+        0,
+        random: math.Random(127),
+        constraints: const QueueRuleConstraints(minArtistGap: 1),
+      );
+
+      expect(result.map((t) => t.id).toList(), ['head', 'a1', 'b1', 'a2']);
     });
   });
 }

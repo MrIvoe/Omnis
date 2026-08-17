@@ -13,6 +13,7 @@ import 'package:omnis/core/playback_engine.dart';
 import 'package:omnis/core/playback_os_integration.dart';
 import 'package:omnis/core/playback_state.dart';
 import 'package:omnis/core/queue_operations.dart';
+import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis_plugin_api/hardware_eq_band.dart';
 
 // `HardwareEqBand` moved to `omnis_plugin_api` (see that package's
@@ -617,9 +618,15 @@ class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
   /// Shuffles every track after the current one, leaving what's already
   /// played and what's currently playing untouched. Index math lives in
   /// the pure, unit-tested `QueueOperations.shuffledRemaining`.
-  Future<void> shuffleRemaining() async {
+  /// [constraints]/[groupByAlbumArtist] forward straight through — item
+  /// 2's "queue rules/exclusions" gap, a pure no-op by default.
+  Future<void> shuffleRemaining({
+    QueueRuleConstraints constraints = QueueRuleConstraints.none,
+    bool groupByAlbumArtist = false,
+  }) async {
     final position = _player.position;
-    final newQueue = QueueOperations.shuffledRemaining(_queue, _currentIndex);
+    final newQueue = QueueOperations.shuffledRemaining(_queue, _currentIndex,
+        constraints: constraints, groupByAlbumArtist: groupByAlbumArtist);
     _queue
       ..clear()
       ..addAll(newQueue);
@@ -876,12 +883,26 @@ class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
     markLoopB(loop.end);
   }
 
+  /// Matches a Windows-style absolute path (`C:\...` or `C:/...`) so it can
+  /// be routed through [Uri.file] with `windows: true` explicitly, rather
+  /// than relying on `Uri.file`'s default of `Platform.isWindows` — which
+  /// is false on the Linux/macOS CI runners and on Android/iOS, even though
+  /// a track's `localPath` can still be a Windows path if the library was
+  /// scanned on Windows and the metadata carried over.
+  static final RegExp _windowsPathPattern = RegExp(r'^[a-zA-Z]:[\\/]');
+
   /// Resolve a track to a playable URI.
   ///
   /// Local paths must go through [Uri.file]: a Windows path such as
   /// `C:\Music\a.mp3` fed to `Uri.parse` yields a URI with scheme `c`,
   /// which just_audio cannot open. A single-letter scheme is therefore
   /// treated as a drive letter, not a real scheme.
+  ///
+  /// `Uri.file` itself isn't enough on its own: it defaults `windows` to
+  /// `Platform.isWindows`, so on a non-Windows host a drive-letter path
+  /// (which doesn't start with `/`) is parsed as a scheme-less *relative*
+  /// URI instead of `file://` — [_windowsPathPattern] forces the correct
+  /// parsing regardless of the host platform.
   static Uri? uriFor(BaseTrack track) {
     final local = track.localPath;
     if (local != null && local.isNotEmpty) {
@@ -890,8 +911,9 @@ class AudioEngine implements PlaybackEngine, HomeWidgetTrackSource {
         // Already a real URI (content://, file://, http://, asset://…).
         return parsed;
       }
+      final isWindowsPath = _windowsPathPattern.hasMatch(local);
       try {
-        return Uri.file(local);
+        return Uri.file(local, windows: isWindowsPath ? true : null);
       } catch (_) {
         return null;
       }

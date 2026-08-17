@@ -33,12 +33,15 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   bool _gapless = true;
   int _seekIncrement = 10;
   QueueContinuationMode _continuationMode = QueueContinuationMode.off;
+  bool _avoidRepeatArtist = false;
+  bool _avoidRepeatAlbum = false;
 
   final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
     for (final field in [
       'gapless',
       'crossfade',
       'queue_continuation',
+      'queue_rules',
       'seek_increment',
       'volume',
       'playback_speed',
@@ -61,6 +64,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _gapless = _settings.gaplessEnabled;
     _seekIncrement = _settings.seekIncrementSeconds;
     _continuationMode = _settings.queueContinuationMode;
+    _avoidRepeatArtist = _settings.queueRuleAvoidRepeatArtist;
+    _avoidRepeatAlbum = _settings.queueRuleAvoidRepeatAlbum;
     scrollToAndFlashSetting(_keys[widget.highlightField]);
   }
 
@@ -148,6 +153,38 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                   _settings.queueContinuationMode = v;
                 },
               ),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['queue_rules'],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  title: const Text('Avoid repeating artist'),
+                  subtitle: const Text(
+                      'Reorders shuffled and auto-continued tracks so the '
+                      'same artist never plays twice in a row. Applies to '
+                      'shuffle and queue continuation, not manual additions.'),
+                  value: _avoidRepeatArtist,
+                  onChanged: (v) {
+                    setState(() => _avoidRepeatArtist = v);
+                    _settings.queueRuleAvoidRepeatArtist = v;
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text('Avoid repeating album'),
+                  subtitle: const Text(
+                      'Reorders shuffled and auto-continued tracks so the '
+                      'same album never plays twice in a row. Applies to '
+                      'shuffle and queue continuation, not manual additions.'),
+                  value: _avoidRepeatAlbum,
+                  onChanged: (v) {
+                    setState(() => _avoidRepeatAlbum = v);
+                    _settings.queueRuleAvoidRepeatAlbum = v;
+                  },
+                ),
+              ],
             ),
           ),
           SettingsHighlight(

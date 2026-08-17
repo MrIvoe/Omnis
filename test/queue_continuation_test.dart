@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/queue_continuation.dart';
+import 'package:omnis/core/queue_rules.dart';
 
 void main() {
   BaseTrack track({
@@ -167,6 +168,33 @@ void main() {
         isEmpty,
       );
     });
+
+    test('an active constraint reorders the batch against queueTail — '
+        'Random(0)\'s raw order puts the queueTail-conflicting artist '
+        'first, which the constraint moves behind the other match', () {
+      final seed = track(id: 'seed', artist: 'A', genres: const ['Rock']);
+      final b1 = track(id: 'b1', artist: 'B', genres: const ['Rock']);
+      final c1 = track(id: 'c1', artist: 'C', genres: const ['Rock']);
+      final queueTailB = track(id: 'tail', artist: 'B');
+
+      final raw = continuationTracks(
+        seed: seed,
+        library: [seed, b1, c1],
+        mode: QueueContinuationMode.similarArtist,
+        random: Random(0),
+      );
+      expect(raw.map((t) => t.id).toList(), ['b1', 'c1']);
+
+      final result = continuationTracks(
+        seed: seed,
+        library: [seed, b1, c1],
+        mode: QueueContinuationMode.similarArtist,
+        random: Random(0),
+        constraints: const QueueRuleConstraints(minArtistGap: 1),
+        queueTail: [queueTailB],
+      );
+      expect(result.map((t) => t.id).toList(), ['c1', 'b1']);
+    });
   });
 
   group('continuationTracks — sameGenre', () {
@@ -195,6 +223,31 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('an active constraint reorders the batch against queueTail', () {
+      final seed = track(id: 'seed', genres: const ['Rock']);
+      final x = track(id: 'x', artist: 'X', genres: const ['Rock']);
+      final y = track(id: 'y', artist: 'Y', genres: const ['Rock']);
+      final queueTailX = track(id: 'tail', artist: 'X');
+
+      final raw = continuationTracks(
+        seed: seed,
+        library: [seed, x, y],
+        mode: QueueContinuationMode.sameGenre,
+        random: Random(0),
+      );
+      expect(raw.map((t) => t.id).toList(), ['x', 'y']);
+
+      final result = continuationTracks(
+        seed: seed,
+        library: [seed, x, y],
+        mode: QueueContinuationMode.sameGenre,
+        random: Random(0),
+        constraints: const QueueRuleConstraints(minArtistGap: 1),
+        queueTail: [queueTailX],
+      );
+      expect(result.map((t) => t.id).toList(), ['y', 'x']);
     });
   });
 
