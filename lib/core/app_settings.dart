@@ -104,6 +104,10 @@ class AppSettings extends ChangeNotifier {
       'app_auto_update_check_interval_days';
   static const _lastPluginUpdateCheckAtKey =
       'app_last_plugin_update_check_at';
+  static const _pluginHeartbeatEnabledKey = 'app_plugin_heartbeat_enabled';
+  static const _pluginHeartbeatIntervalMinutesKey =
+      'app_plugin_heartbeat_interval_minutes';
+  static const _lastPluginHeartbeatAtKey = 'app_last_plugin_heartbeat_at';
   static const _autoScanEnabledKey = 'app_auto_scan_enabled';
   static const _autoScanIntervalHoursKey = 'app_auto_scan_interval_hours';
   static const _lastAutoScanAtKey = 'app_last_auto_scan_at';
@@ -759,6 +763,55 @@ class AppSettings extends ChangeNotifier {
       _prefs!.remove(_lastPluginUpdateCheckAtKey);
     } else {
       _prefs!.setInt(_lastPluginUpdateCheckAtKey, value.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  /// Item 28's "no heartbeat for a silently-hung plugin" gap —
+  /// `PluginSandbox`'s health records were previously purely reactive, so
+  /// a plugin that goes silently unresponsive between real hook calls (or
+  /// is simply never invoked for a long stretch) looked identical to a
+  /// healthy one. Defaults to `false`, the same opt-in stance
+  /// [autoUpdateCheckEnabled]/[autoBackupEnabled] already take for
+  /// unattended background work.
+  bool get pluginHeartbeatEnabled =>
+      _prefs?.getBool(_pluginHeartbeatEnabledKey) ?? false;
+
+  set pluginHeartbeatEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_pluginHeartbeatEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// How often an automatic heartbeat check should run, in minutes.
+  /// Defaults to 15 — minutes, not days like [autoUpdateCheckIntervalDays]
+  /// or [autoBackupIntervalDays], since a hung plugin left undetected for
+  /// days is a much worse UX than a stale update/backup check left that
+  /// long.
+  int get pluginHeartbeatIntervalMinutes =>
+      _prefs?.getInt(_pluginHeartbeatIntervalMinutesKey) ?? 15;
+
+  set pluginHeartbeatIntervalMinutes(int value) {
+    _ensurePrefs();
+    _prefs!.setInt(_pluginHeartbeatIntervalMinutesKey, value < 1 ? 1 : value);
+    notifyListeners();
+  }
+
+  /// When the last automatic heartbeat check actually ran, or `null` if
+  /// one never has — [PluginHeartbeatScheduler.isDue] treats `null` as
+  /// due immediately, the same "don't wait a full interval for the first
+  /// one" convention [lastPluginUpdateCheckAt] already establishes.
+  DateTime? get lastPluginHeartbeatAt {
+    final ms = _prefs?.getInt(_lastPluginHeartbeatAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  set lastPluginHeartbeatAt(DateTime? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastPluginHeartbeatAtKey);
+    } else {
+      _prefs!.setInt(_lastPluginHeartbeatAtKey, value.millisecondsSinceEpoch);
     }
     notifyListeners();
   }

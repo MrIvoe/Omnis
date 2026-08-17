@@ -526,6 +526,17 @@ class _PluginsPageState extends State<PluginsPage> {
             onChanged: (value) => setState(
                 () => AppSettings.instance.autoUpdateCheckEnabled = value),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Heartbeat monitoring'),
+            subtitle: const Text(
+                'Periodically ping plugins in the background to detect '
+                'ones that have silently stopped responding'),
+            value: AppSettings.instance.pluginHeartbeatEnabled,
+            onChanged: (value) => setState(
+                () => AppSettings.instance.pluginHeartbeatEnabled = value),
+          ),
           if (_availableUpdates != null && _availableUpdates!.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),

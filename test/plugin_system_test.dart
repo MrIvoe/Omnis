@@ -1404,6 +1404,159 @@ dynamic onTrackStart(dynamic track) => null;
     });
   });
 
+  group('PluginManager.runHeartbeats (item 28, heartbeat)', () {
+    test('a plugin declaring a working heartbeat hook produces no health '
+        'record', () async {
+      final tempRoot =
+          (await Directory.systemTemp.createTemp('omnis_heartbeat_ok_test'))
+              .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'healthy_beat',
+        permissions: [],
+        hooks: ['heartbeat'],
+        extraSource: '''
+dynamic heartbeat(dynamic arg) => null;
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('a plugin whose heartbeat hook throws produces exactly one health '
+        'record tagged with the heartbeat hook', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_heartbeat_throw_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'crashy_beat',
+        permissions: [],
+        hooks: ['heartbeat'],
+        extraSource: '''
+dynamic heartbeat(dynamic arg) => throw Exception('unresponsive');
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      final rec = manager.sandbox.healthRecords.first;
+      expect(rec.pluginId, 'crashy_beat');
+      expect(rec.hook, 'heartbeat');
+    });
+
+    test('an async (not just sync) heartbeat hook that throws also produces '
+        'exactly one health record tagged with the heartbeat hook — proving '
+        'callHook\'s returned Future is actually awaited by runHeartbeats, '
+        'not fired and forgotten like onTrackStart/onPluginEvent (a dropped '
+        'Future would either miss this failure entirely or surface it as an '
+        'unhandled async error instead of a clean health record)', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_heartbeat_async_throw_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'async_crashy_beat',
+        permissions: [],
+        hooks: ['heartbeat'],
+        extraSource: '''
+dynamic heartbeat(dynamic arg) async {
+  throw Exception('unresponsive after async work');
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, hasLength(1));
+      final rec = manager.sandbox.healthRecords.first;
+      expect(rec.pluginId, 'async_crashy_beat');
+      expect(rec.hook, 'heartbeat');
+      expect(rec.message, contains('unresponsive after async work'));
+    });
+
+    test('a plugin without a heartbeat hook is never called', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_heartbeat_no_hook_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'no_heartbeat',
+        permissions: [],
+        hooks: ['onTrackStart', 'getCallCount'],
+        extraSource: '''
+class Counter {
+  int value = 0;
+}
+
+final counter = Counter();
+
+dynamic onTrackStart(dynamic track) {
+  counter.value += 1;
+  return null;
+}
+
+dynamic getCallCount(dynamic arg) => counter.value;
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      await manager.runHeartbeats();
+
+      final plugin = manager.byId('no_heartbeat')!;
+      expect(plugin.external!.callHook('getCallCount', [null]), 0);
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+
+    test('a disabled plugin is skipped entirely', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_heartbeat_disabled_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'disabled_beat',
+        permissions: [],
+        hooks: ['heartbeat'],
+        extraSource: '''
+dynamic heartbeat(dynamic arg) => throw Exception('should never run');
+''',
+      );
+
+      final manager = PluginManager();
+      final managed =
+          await manager.installFromPath(dir.path, sourceUrl: 'local');
+      await manager.disablePlugin(managed);
+
+      await manager.runHeartbeats();
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+    });
+  });
+
   group('PluginManager.uiSlot — plugin id stamping', () {
     test(
         'an external plugin\'s Map result gets stamped with its real '

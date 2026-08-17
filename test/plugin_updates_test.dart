@@ -267,6 +267,82 @@ void main() {
     });
   });
 
+  group('maybeRunHeartbeatsAutomatically (item 28, "no heartbeat for a '
+      'silently-hung plugin")', () {
+    // No external plugin needs to be installed for these — they cover the
+    // due/enabled gating and timestamp-stamping logic (identical shape to
+    // maybeCheckForUpdatesAutomatically's own group above), not what
+    // happens to an individual plugin's heartbeat call, which
+    // test/plugin_system_test.dart's dedicated "runHeartbeats" group
+    // already covers with real dart_eval plugin fixtures. With zero
+    // installed plugins, runHeartbeats() itself is a guaranteed no-op
+    // (nothing for _enabled() to loop over), so any records or timestamp
+    // changes observed here come purely from the gating logic.
+    test('is a no-op when disabled, even if due', () async {
+      AppSettings.instance.pluginHeartbeatEnabled = false;
+      final manager = PluginManager();
+
+      await manager.maybeRunHeartbeatsAutomatically(
+          settings: AppSettings.instance);
+
+      expect(AppSettings.instance.lastPluginHeartbeatAt, isNull);
+    });
+
+    test('runs and stamps the timestamp when enabled and never checked '
+        'before (first run is always due)', () async {
+      AppSettings.instance.pluginHeartbeatEnabled = true;
+      final manager = PluginManager();
+      final now = DateTime(2026, 8, 16);
+
+      await manager.maybeRunHeartbeatsAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(AppSettings.instance.lastPluginHeartbeatAt, now);
+    });
+
+    test('is a no-op when enabled but not yet due', () async {
+      AppSettings.instance.pluginHeartbeatEnabled = true;
+      AppSettings.instance.pluginHeartbeatIntervalMinutes = 15;
+      final now = DateTime(2026, 8, 16);
+      final lastCheck = now.subtract(const Duration(minutes: 5));
+      AppSettings.instance.lastPluginHeartbeatAt = lastCheck;
+      final manager = PluginManager();
+
+      await manager.maybeRunHeartbeatsAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(AppSettings.instance.lastPluginHeartbeatAt, lastCheck,
+          reason: 'not due yet, so the timestamp should be untouched');
+    });
+
+    test('runs again once the interval has actually elapsed', () async {
+      AppSettings.instance.pluginHeartbeatEnabled = true;
+      AppSettings.instance.pluginHeartbeatIntervalMinutes = 15;
+      final now = DateTime(2026, 8, 16);
+      AppSettings.instance.lastPluginHeartbeatAt =
+          now.subtract(const Duration(minutes: 20));
+      final manager = PluginManager();
+
+      await manager.maybeRunHeartbeatsAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(AppSettings.instance.lastPluginHeartbeatAt, now);
+    });
+
+    test('stamps lastPluginHeartbeatAt even when there is nothing to check '
+        '— "checked, found nothing" is still a completed check', () async {
+      AppSettings.instance.pluginHeartbeatEnabled = true;
+      final manager = PluginManager();
+      final now = DateTime(2026, 8, 16);
+
+      await manager.maybeRunHeartbeatsAutomatically(
+          settings: AppSettings.instance, now: now);
+
+      expect(manager.sandbox.healthRecords, isEmpty);
+      expect(AppSettings.instance.lastPluginHeartbeatAt, now);
+    });
+  });
+
   group('updatePlugin', () {
     test('throws for a plugin id that is not installed', () async {
       final manager = PluginManager(

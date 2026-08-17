@@ -7,11 +7,12 @@ PluginHealthRecord _record({
   String pluginName = 'Plugin',
   DateTime? timestamp,
   String reason = 'It failed.',
+  String hook = 'onTrackStart',
 }) =>
     PluginHealthRecord(
       pluginId: pluginId,
       pluginName: pluginName,
-      hook: 'onTrackStart',
+      hook: hook,
       message: 'boom',
       timestamp: timestamp ?? DateTime(2026, 8, 16, 12, 0),
       reason: reason,
@@ -118,6 +119,34 @@ void main() {
     final summaries = summarizeHealth(records, now: now);
 
     expect(summaries.first.pluginId, 'more');
+  });
+
+  group('isUnresponsive (item 28, heartbeat)', () {
+    test('true when the most recent record is a heartbeat failure', () {
+      final records = [
+        _record(pluginId: 'a', timestamp: now.subtract(const Duration(minutes: 2))),
+        _record(pluginId: 'a', timestamp: now, hook: 'heartbeat'),
+      ];
+      final summary = summarizeHealth(records, now: now).single;
+      expect(summary.isUnresponsive, isTrue);
+    });
+
+    test('false for a plain crash record', () {
+      final summary =
+          summarizeHealth([_record(pluginId: 'a', timestamp: now)], now: now)
+              .single;
+      expect(summary.isUnresponsive, isFalse);
+    });
+
+    test('false when a heartbeat failure is followed by a newer real hook '
+        'failure', () {
+      final records = [
+        _record(pluginId: 'a', timestamp: now.subtract(const Duration(minutes: 2)), hook: 'heartbeat'),
+        _record(pluginId: 'a', timestamp: now),
+      ];
+      final summary = summarizeHealth(records, now: now).single;
+      expect(summary.isUnresponsive, isFalse);
+    });
   });
 
   test('an unrelated plugin\'s records never affect another plugin\'s '

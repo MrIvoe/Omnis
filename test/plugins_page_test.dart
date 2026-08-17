@@ -348,6 +348,8 @@ dynamic createPlugin(dynamic api) {
         find.byType(ListView),
         const Offset(0, -300),
       );
+      await tester.ensureVisible(find.text('1 plugin with failures'));
+      await tester.pump();
       expect(find.text('1 plugin with failures'), findsOneWidget);
 
       await tester.tap(find.text('1 plugin with failures'));
@@ -514,6 +516,41 @@ dynamic createPlugin(dynamic api) {
             reason: 'the cached background-check result should be shown '
                 'immediately, not only after tapping the button');
       });
+    });
+  });
+
+  group('Heartbeat monitoring (item 28)', () {
+    testWidgets('the toggle renders, defaults off, and persists when '
+        'flipped', (tester) async {
+      final manager = PluginManager(
+          installer: PluginInstaller(client: _RoutingClient(
+              manifestVersion: '1.0.0', zipVersion: '1.0.0')));
+
+      await tester.pumpWidget(MaterialApp(
+        home: PluginsPage(pluginManager: manager, sandbox: PluginSandbox()),
+      ));
+      await tester.pump();
+
+      // Sits right below "Automatic update checks" — just past the
+      // default test viewport's ListView sliver cache extent, same
+      // `dragUntilVisible` pattern the Plugin Health summary link above
+      // already needs for the same underlying cause.
+      await tester.dragUntilVisible(
+        find.text('Heartbeat monitoring'),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      final tileBefore = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, 'Heartbeat monitoring'));
+      expect(tileBefore.value, isFalse);
+
+      await tester.tap(find.text('Heartbeat monitoring'));
+      await tester.pump();
+
+      expect(AppSettings.instance.pluginHeartbeatEnabled, isTrue);
+      final tileAfter = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, 'Heartbeat monitoring'));
+      expect(tileAfter.value, isTrue);
     });
   });
 

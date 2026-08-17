@@ -6,6 +6,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/event_bus.dart';
 import 'package:omnis/core/plugin_context.dart';
+import 'package:omnis/core/plugin_heartbeat_scheduler.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/core/plugin_installer.dart';
 import 'package:omnis/core/omnis_version.dart';
@@ -555,6 +556,83 @@ class PluginManager {
       // Best-effort; a failed check must never crash the app.
     } finally {
       appSettings.lastPluginUpdateCheckAt = effectiveNow;
+    }
+  }
+
+  /// Item 28's "no heartbeat for a silently-hung plugin" gap — pings
+  /// every enabled *external* (downloaded, dart_eval-sandboxed) plugin
+  /// that declares a `heartbeat` hook in its manifest, through
+  /// [PluginSandbox.run] with [timeout]. A plugin whose `heartbeat` call
+  /// throws, or doesn't return within [timeout], produces a
+  /// [PluginHealthRecord] exactly the same way any other failing hook
+  /// call would — so it automatically feeds [_checkAutoDisable] too, no
+  /// changes needed there. A plugin with no `heartbeat` hook declared is
+  /// silently skipped — zero behavior change for the entire existing
+  /// plugin ecosystem until an author opts in. Bundled (in-process)
+  /// plugins aren't covered — [MusicPlugin] has no string-keyed hook
+  /// mechanism to piggyback on the way external plugins' manifest
+  /// `hooks: [...]` list does; adding that is a separate,
+  /// `packages/omnis_plugin_api`-touching follow-on, not attempted here.
+  ///
+  /// Deliberately awaits `callHook`'s result when it's a `Future` — unlike
+  /// `onTrackStart`/`_forwardEvent` above, which fire external hooks
+  /// without awaiting their async body (a slow "listener" plugin
+  /// shouldn't block dispatch to everyone else). A heartbeat's entire
+  /// purpose is detecting whether a plugin actually finishes in time, so
+  /// dropping the returned Future here would make [timeout] almost
+  /// meaningless for anything but a hook that throws synchronously.
+  Future<void> runHeartbeats({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    for (final plugin in _enabled()) {
+      final external = plugin.external;
+      if (external == null) continue;
+      if (!external.hasHook('heartbeat')) continue;
+      await _sandbox.run(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'heartbeat',
+        timeout: timeout,
+        operation: () async {
+          final result = external.callHook('heartbeat', const []);
+          if (result is Future) await result;
+          return null;
+        },
+      );
+    }
+  }
+
+  /// Runs [runHeartbeats] automatically if [settings] (defaults to
+  /// [AppSettings.instance]) says it's enabled and due (via
+  /// [PluginHeartbeatScheduler.isDue]) — the background-check half of
+  /// item 28's heartbeat gap. A no-op when disabled or not yet due.
+  /// Stamps [AppSettings.lastPluginHeartbeatAt] regardless of whether any
+  /// plugin actually failed to respond — "checked and found nothing
+  /// wrong" is still a completed check, the same reasoning
+  /// [maybeCheckForUpdatesAutomatically] already documents. Never throws
+  /// — a failure here must never block startup, the same "denial
+  /// degrades, never blocks boot" contract this app's other background
+  /// tasks already follow.
+  Future<void> maybeRunHeartbeatsAutomatically({
+    AppSettings? settings,
+    DateTime? now,
+  }) async {
+    final appSettings = settings ?? AppSettings.instance;
+    if (!appSettings.pluginHeartbeatEnabled) return;
+    final effectiveNow = now ?? DateTime.now();
+    final due = PluginHeartbeatScheduler.isDue(
+      appSettings.lastPluginHeartbeatAt,
+      Duration(minutes: appSettings.pluginHeartbeatIntervalMinutes),
+      effectiveNow,
+    );
+    if (!due) return;
+
+    try {
+      await runHeartbeats();
+    } catch (_) {
+      // Best-effort; a failed check must never crash the app.
+    } finally {
+      appSettings.lastPluginHeartbeatAt = effectiveNow;
     }
   }
 

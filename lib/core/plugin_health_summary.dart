@@ -35,6 +35,13 @@ class PluginHealthSummary {
   final String mostRecentReason;
   final PluginHealthSeverity severity;
 
+  /// Whether the most recent record is a heartbeat timeout/failure
+  /// (item 28's heartbeat gap) rather than a real hook — a plugin that's
+  /// silently hung reads very differently to a user than one that's
+  /// erroring on every track, even though both produce ordinary
+  /// [PluginHealthRecord]s under the hood.
+  final bool isUnresponsive;
+
   const PluginHealthSummary({
     required this.pluginId,
     required this.pluginName,
@@ -43,6 +50,7 @@ class PluginHealthSummary {
     required this.mostRecentFailureAt,
     required this.mostRecentReason,
     required this.severity,
+    required this.isUnresponsive,
   });
 }
 
@@ -89,6 +97,7 @@ List<PluginHealthSummary> summarizeHealth(
       severity: recentCount >= criticalThreshold
           ? PluginHealthSeverity.critical
           : PluginHealthSeverity.degraded,
+      isUnresponsive: mostRecent.hook == 'heartbeat',
     ));
   }
 

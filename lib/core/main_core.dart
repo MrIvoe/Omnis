@@ -318,6 +318,13 @@ class MainCore {
     // ignore: unawaited_futures
     _pluginManager.maybeCheckForUpdatesAutomatically();
 
+    // Item 28's "no heartbeat for a silently-hung plugin" gap — a no-op
+    // unless the user has opted in (AppSettings.pluginHeartbeatEnabled
+    // defaults false) and one is actually due. Fire-and-forget, same
+    // "never block boot" contract as the calls above.
+    // ignore: unawaited_futures
+    _pluginManager.maybeRunHeartbeatsAutomatically();
+
     // Item 5/spec §8's "filesystem watchers" gap — see [_libraryWatcher]'s
     // own doc for the full gating logic (opt-in, desktop-only, dedicated
     // folder required).

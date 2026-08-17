@@ -196,6 +196,52 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('a heartbeat-timeout record renders as "Unresponsive", '
+      'distinct from a regular hook crash (item 28)', (tester) async {
+    final manager = PluginManager();
+    final plugin = _RecordingPlugin();
+    manager.register(plugin);
+    await manager.initializeAll();
+
+    await manager.sandbox.run(
+      pluginId: 'recording',
+      pluginName: 'Recording Plugin',
+      hook: 'heartbeat',
+      operation: () => throw StateError('boom'),
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: PluginHealthPage(pluginManager: manager, sandbox: manager.sandbox),
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('Unresponsive —'), findsOneWidget);
+    expect(find.byIcon(Icons.hourglass_disabled), findsOneWidget);
+  });
+
+  testWidgets('a regular hook crash does not render as "Unresponsive"',
+      (tester) async {
+    final manager = PluginManager();
+    final plugin = _RecordingPlugin();
+    manager.register(plugin);
+    await manager.initializeAll();
+
+    await manager.sandbox.run(
+      pluginId: 'recording',
+      pluginName: 'Recording Plugin',
+      hook: 'onTrackStart',
+      operation: () => throw StateError('boom'),
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: PluginHealthPage(pluginManager: manager, sandbox: manager.sandbox),
+    ));
+    await tester.pump();
+
+    expect(find.textContaining('Unresponsive —'), findsNothing);
+    expect(find.byIcon(Icons.hourglass_disabled), findsNothing);
+  });
+
   testWidgets('multiple failing plugins each get their own summary card',
       (tester) async {
     final manager = PluginManager();

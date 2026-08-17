@@ -107,11 +107,14 @@ class _PluginHealthPageState extends State<PluginHealthPage> {
                     children: [
                       ListTile(
                         leading: Icon(
-                          critical ? Icons.error : Icons.report,
+                          summary.isUnresponsive
+                              ? Icons.hourglass_disabled
+                              : (critical ? Icons.error : Icons.report),
                           color: theme.colorScheme.error,
                         ),
                         title: Text(summary.pluginName),
                         subtitle: Text(
+                          '${summary.isUnresponsive ? 'Unresponsive — ' : ''}'
                           '${summary.failureCount} failure'
                           '${summary.failureCount == 1 ? '' : 's'} total · '
                           '${summary.recentFailureCount} in the last 5 '
