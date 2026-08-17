@@ -267,4 +267,18 @@ abstract class IAIProvider {
     String prompt,
     List<BaseTrack> library,
   );
+
+  /// Finds tracks in [library] matching a plain-language [query] (e.g.
+  /// "upbeat songs from the 90s I haven't played in a while") — item
+  /// 43's "natural language search" gap, distinct from
+  /// [buildPlaylistFromPrompt]: a search returns whatever genuinely
+  /// matches in no particular order, not a curated listening sequence.
+  /// Same never-invents-a-track/never-throws contract as
+  /// [buildPlaylistFromPrompt]: an empty list on any failure — no
+  /// credential configured, a network error, an unparseable response,
+  /// or a provider that found nothing matching.
+  Future<List<BaseTrack>> searchLibrary(
+    String query,
+    List<BaseTrack> library,
+  );
 }
