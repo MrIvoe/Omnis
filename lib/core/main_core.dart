@@ -8,6 +8,7 @@ import 'package:omnis/core/app_update_checker.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_scan_scheduler.dart';
@@ -352,14 +353,19 @@ class MainCore {
   /// Checks whether any saved [PlaybackSchedule] is due right now — the
   /// [_scheduleTimer]'s once-a-minute callback. A due
   /// [PlaybackScheduleAction.stop] schedule just pauses playback,
-  /// ignoring [PlaybackSchedule.playlistId] entirely (meaningless for a
-  /// stop). A due [PlaybackScheduleAction.play] schedule with a
-  /// [PlaybackSchedule.playlistId] resolves that playlist against the
-  /// current library and replaces the queue with it; one with no
-  /// playlist just resumes whatever's already queued. Never throws — a
-  /// scheduling failure must never crash the app, the same "denial
-  /// degrades" contract every other best-effort background task in this
-  /// file already follows.
+  /// ignoring [PlaybackSchedule.playlistId]/[PlaybackSchedule.
+  /// radioStationId] entirely (meaningless for a stop). A due
+  /// [PlaybackScheduleAction.play] schedule resolves, in order: a
+  /// [PlaybackSchedule.playlistId] against the current library and
+  /// replaces the queue with it; otherwise a [PlaybackSchedule.
+  /// radioStationId] against `CustomRadioStationStore` (item 50's
+  /// "scheduled radio" gap) and replaces the queue with that station's
+  /// track; one with neither just resumes whatever's already queued. A
+  /// referenced playlist/station that's since been deleted degrades the
+  /// same way — the queue is simply left untouched before playing.
+  /// Never throws — a scheduling failure must never crash the app, the
+  /// same "denial degrades" contract every other best-effort background
+  /// task in this file already follows.
   Future<void> _checkPlaybackSchedules() async {
     try {
       final schedules = await PlaybackScheduleStore.instance.load();
@@ -394,6 +400,26 @@ class MainCore {
             ];
             if (tracks.isNotEmpty) {
               await _audioEngine.setQueue(tracks);
+            }
+          }
+        } else {
+          // Item 50's "scheduled radio" gap — deliberately scoped to a
+          // saved *custom* station only (see PlaybackSchedule.
+          // radioStationId's own doc): CustomRadioStation.toTrack()
+          // resolves to a playable BaseTrack with no network call,
+          // unlike a Radio-Browser-searched station.
+          final radioStationId = schedule.radioStationId;
+          if (radioStationId != null) {
+            final stations = await CustomRadioStationStore.instance.load();
+            CustomRadioStation? station;
+            for (final s in stations) {
+              if (s.id == radioStationId) {
+                station = s;
+                break;
+              }
+            }
+            if (station != null) {
+              await _audioEngine.setQueue([station.toTrack()]);
             }
           }
         }

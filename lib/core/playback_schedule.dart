@@ -51,6 +51,22 @@ class PlaybackSchedule {
   /// [PlaybackScheduleAction.play].
   final String? playlistId;
 
+  /// A specific saved custom radio station (`CustomRadioStationStore`)
+  /// to play instead of a playlist — item 50's "scheduled radio" gap,
+  /// deliberately scoped to *custom* stations only: they're the only
+  /// radio source with a stable, locally-resolvable id → playable-track
+  /// lookup (`CustomRadioStation.toTrack()`, no network call). A
+  /// Radio-Browser-searched station has no local id-keyed cache to
+  /// resolve against at fire time, so scheduling one would need a live
+  /// network round-trip from the background scheduler — a materially
+  /// riskier addition not attempted here. Only meaningful when [action]
+  /// is [PlaybackScheduleAction.play]; mutually exclusive with
+  /// [playlistId] in the editor UI, but the model itself stays
+  /// permissive about a record with both set — `MainCore` resolves that
+  /// precedence deterministically ([playlistId] wins) rather than the
+  /// model enforcing it.
+  final String? radioStationId;
+
   /// Defaults to [PlaybackScheduleAction.play] — every schedule this
   /// class supported before [PlaybackScheduleAction] existed was
   /// implicitly a start schedule, so a fresh instance keeps that
@@ -66,6 +82,7 @@ class PlaybackSchedule {
     required this.weekdays,
     required this.enabled,
     this.playlistId,
+    this.radioStationId,
     this.action = PlaybackScheduleAction.play,
     required this.createdAt,
   });
@@ -77,6 +94,8 @@ class PlaybackSchedule {
     bool? enabled,
     String? playlistId,
     bool clearPlaylistId = false,
+    String? radioStationId,
+    bool clearRadioStationId = false,
     PlaybackScheduleAction? action,
   }) =>
       PlaybackSchedule(
@@ -87,6 +106,9 @@ class PlaybackSchedule {
         enabled: enabled ?? this.enabled,
         playlistId:
             clearPlaylistId ? null : (playlistId ?? this.playlistId),
+        radioStationId: clearRadioStationId
+            ? null
+            : (radioStationId ?? this.radioStationId),
         action: action ?? this.action,
         createdAt: createdAt,
       );
@@ -98,6 +120,7 @@ class PlaybackSchedule {
         'weekdays': weekdays.toList(),
         'enabled': enabled,
         if (playlistId != null) 'playlistId': playlistId,
+        if (radioStationId != null) 'radioStationId': radioStationId,
         'action': action.name,
         'createdAt': createdAt.toIso8601String(),
       };
@@ -112,6 +135,7 @@ class PlaybackSchedule {
             .toSet(),
         enabled: json['enabled'] as bool? ?? true,
         playlistId: json['playlistId'] as String?,
+        radioStationId: json['radioStationId'] as String?,
         // A record persisted before this field existed has no 'action'
         // key at all — decodes as `play`, the only kind of schedule
         // that could have existed then, so every pre-existing schedule

@@ -175,6 +175,70 @@ void main() {
     expect(cleared.playlistId, isNull);
   });
 
+  group('radioStationId (item 50, "scheduled radio")', () {
+    test('round-trips when set, and is omitted (not written as null) '
+        'when absent', () async {
+      final withStation =
+          _schedule('a').copyWith(radioStationId: 'station_1');
+      await PlaybackScheduleStore.instance.add(withStation);
+      await PlaybackScheduleStore.instance.add(_schedule('b'));
+
+      final loaded = await PlaybackScheduleStore.instance.load();
+
+      expect(
+          loaded.firstWhere((s) => s.id == 'a').radioStationId, 'station_1');
+      expect(loaded.firstWhere((s) => s.id == 'b').radioStationId, isNull);
+    });
+
+    test('a legacy record persisted before this field existed decodes as '
+        'null, not a throw — additive field, not a breaking one',
+        () async {
+      final file = File('$tempDir/omnis_playback_schedules.json');
+      await file.writeAsString(jsonEncode({
+        'schemaVersion': 1,
+        'data': [
+          {
+            'id': 'legacy',
+            'name': 'Legacy',
+            'minuteOfDay': 450,
+            'weekdays': [1, 2, 3, 4, 5],
+            'enabled': true,
+            'createdAt': DateTime(2024, 1, 1).toIso8601String(),
+          },
+        ],
+      }));
+
+      final loaded = await PlaybackScheduleStore.instance.load();
+
+      expect(loaded.single.radioStationId, isNull);
+    });
+
+    test('copyWith clearRadioStationId actually clears it, distinct from '
+        'passing null (which keeps the existing value)', () async {
+      final schedule = _schedule('a').copyWith(radioStationId: 'station_1');
+
+      final unchanged = schedule.copyWith();
+      final cleared = schedule.copyWith(clearRadioStationId: true);
+
+      expect(unchanged.radioStationId, 'station_1');
+      expect(cleared.radioStationId, isNull);
+    });
+
+    test('a hand-constructed record with both playlistId and '
+        'radioStationId set round-trips both faithfully — the model '
+        'itself stays permissive, precedence is a MainCore concern, not '
+        'a model-level one', () async {
+      final schedule = _schedule('a')
+          .copyWith(playlistId: 'playlist_1', radioStationId: 'station_1');
+      await PlaybackScheduleStore.instance.add(schedule);
+
+      final loaded = await PlaybackScheduleStore.instance.load();
+
+      expect(loaded.single.playlistId, 'playlist_1');
+      expect(loaded.single.radioStationId, 'station_1');
+    });
+  });
+
   group('PlaybackScheduleAction (item 50, "stop playback at a time")', () {
     test('a fresh PlaybackSchedule defaults to action: play', () {
       expect(_schedule('a').action, PlaybackScheduleAction.play);

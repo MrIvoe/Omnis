@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/playback_schedule.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/ui/settings/playback_schedule_page.dart';
@@ -39,6 +40,7 @@ void main() {
     PathProviderPlatform.instance = _FakePathProvider(tempDir);
     await PlaybackScheduleStore.instance.save([]);
     await PlaylistStore.instance.save([]);
+    await CustomRadioStationStore.instance.save([]);
   });
 
   Future<void> pumpPage(WidgetTester tester) async {
@@ -189,7 +191,7 @@ void main() {
         await tester.tap(find.byIcon(Icons.add));
         await _settle(tester);
 
-        expect(find.text('Playlist (optional)'), findsOneWidget);
+        expect(find.text('Playlist or station (optional)'), findsOneWidget);
       });
     });
 
@@ -202,7 +204,7 @@ void main() {
         await tester.tap(find.text('Stop'));
         await tester.pump();
 
-        expect(find.text('Playlist (optional)'), findsNothing);
+        expect(find.text('Playlist or station (optional)'), findsNothing);
       });
     });
 
@@ -261,11 +263,119 @@ void main() {
         await tester.tap(find.text('Bedtime'));
         await _settle(tester);
 
-        expect(find.text('Playlist (optional)'), findsNothing);
+        expect(find.text('Playlist or station (optional)'), findsNothing);
         final segmentedButton =
             tester.widget<SegmentedButton<PlaybackScheduleAction>>(
                 find.byType(SegmentedButton<PlaybackScheduleAction>));
         expect(segmentedButton.selected, {PlaybackScheduleAction.stop});
+      });
+    });
+  });
+
+  group('scheduled radio (item 50, "scheduled radio")', () {
+    testWidgets('the editor lists a saved custom station, selecting it '
+        'and saving persists radioStationId and leaves playlistId null',
+        (tester) async {
+      await tester.runAsync(() async {
+        await CustomRadioStationStore.instance
+            .add('Chill FM', 'https://example.com/stream.mp3');
+
+        await pumpPage(tester);
+        await tester.tap(find.byIcon(Icons.add));
+        await _settle(tester);
+        await tester.enterText(find.byType(TextField), 'Wake to radio');
+        await tester.pump();
+
+        await tester.tap(find.text('Playlist or station (optional)'));
+        await _settle(tester);
+        await tester.tap(find.text('Chill FM (radio)').last);
+        await _settle(tester);
+        await tester.tap(find.text('Save'));
+        await _settle(tester);
+
+        final saved = await PlaybackScheduleStore.instance.load();
+        expect(saved.single.radioStationId, isNotNull);
+        expect(saved.single.playlistId, isNull);
+      });
+    });
+
+    testWidgets('a schedule with a radio station shows "Plays radio: '
+        '<name>" in its subtitle', (tester) async {
+      await tester.runAsync(() async {
+        final stations = await CustomRadioStationStore.instance
+            .add('Chill FM', 'https://example.com/stream.mp3');
+        await PlaybackScheduleStore.instance.add(PlaybackSchedule(
+          id: 's1',
+          name: 'Morning',
+          minuteOfDay: 450,
+          weekdays: const {1},
+          enabled: true,
+          radioStationId: stations.single.id,
+          createdAt: DateTime(2026, 1, 1),
+        ));
+
+        await pumpPage(tester);
+
+        expect(find.textContaining('Plays radio: Chill FM'), findsOneWidget);
+      });
+    });
+
+    testWidgets('a schedule whose radio station has since been deleted '
+        'shows a "(deleted station)" placeholder instead of crashing',
+        (tester) async {
+      await tester.runAsync(() async {
+        await PlaybackScheduleStore.instance.add(PlaybackSchedule(
+          id: 's1',
+          name: 'Morning',
+          minuteOfDay: 450,
+          weekdays: const {1},
+          enabled: true,
+          radioStationId: 'no-longer-exists',
+          createdAt: DateTime(2026, 1, 1),
+        ));
+
+        await pumpPage(tester);
+
+        expect(find.textContaining('(deleted station)'), findsOneWidget);
+      });
+    });
+
+    testWidgets('switching the picker from a radio station to a playlist '
+        'clears the radio station selection', (tester) async {
+      await tester.runAsync(() async {
+        await PlaylistStore.instance.save([
+          Playlist(
+            id: 'p1',
+            name: 'Road Trip',
+            trackIds: const [],
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ]);
+        final stations = await CustomRadioStationStore.instance
+            .add('Chill FM', 'https://example.com/stream.mp3');
+        await PlaybackScheduleStore.instance.add(PlaybackSchedule(
+          id: 's1',
+          name: 'Morning',
+          minuteOfDay: 450,
+          weekdays: const {1},
+          enabled: true,
+          radioStationId: stations.single.id,
+          createdAt: DateTime(2026, 1, 1),
+        ));
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Morning'));
+        await _settle(tester);
+        await tester.tap(find.text('Playlist or station (optional)'));
+        await _settle(tester);
+        await tester.tap(find.text('Road Trip').last);
+        await _settle(tester);
+        await tester.tap(find.text('Save'));
+        await _settle(tester);
+
+        final saved = await PlaybackScheduleStore.instance.load();
+        expect(saved.single.playlistId, 'p1');
+        expect(saved.single.radioStationId, isNull);
       });
     });
   });

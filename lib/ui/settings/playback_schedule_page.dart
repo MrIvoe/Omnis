@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/playback_schedule.dart';
 import 'package:omnis/core/playlist_store.dart';
 
@@ -42,6 +43,7 @@ class PlaybackSchedulePage extends StatefulWidget {
 class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
   List<PlaybackSchedule> _schedules = const [];
   List<Playlist> _playlists = const [];
+  List<CustomRadioStation> _stations = const [];
   bool _loading = true;
 
   @override
@@ -53,10 +55,12 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
   Future<void> _load() async {
     final schedules = await PlaybackScheduleStore.instance.load();
     final playlists = await PlaylistStore.instance.load();
+    final stations = await CustomRadioStationStore.instance.load();
     if (!mounted) return;
     setState(() {
       _schedules = schedules;
       _playlists = playlists;
+      _stations = stations;
       _loading = false;
     });
   }
@@ -69,8 +73,17 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
     return null;
   }
 
+  String? _stationName(String? radioStationId) {
+    if (radioStationId == null) return null;
+    for (final s in _stations) {
+      if (s.id == radioStationId) return s.name;
+    }
+    return null;
+  }
+
   Future<void> _addSchedule() async {
-    final created = await _openEditor(context, playlists: _playlists);
+    final created = await _openEditor(context,
+        playlists: _playlists, stations: _stations);
     if (created == null) return;
     final updated = await PlaybackScheduleStore.instance.add(created);
     if (!mounted) return;
@@ -78,8 +91,8 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
   }
 
   Future<void> _editSchedule(PlaybackSchedule schedule) async {
-    final result =
-        await _openEditor(context, existing: schedule, playlists: _playlists);
+    final result = await _openEditor(context,
+        existing: schedule, playlists: _playlists, stations: _stations);
     if (result == null) return;
     final updated = await PlaybackScheduleStore.instance.update(result);
     if (!mounted) return;
@@ -129,12 +142,16 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
                   itemBuilder: (context, index) {
                     final schedule = _schedules[index];
                     final playlistName = _playlistName(schedule.playlistId);
+                    final stationName = _stationName(schedule.radioStationId);
                     final actionLabel =
                         schedule.action == PlaybackScheduleAction.stop
                             ? 'Stops playback'
                             : playlistName != null
                                 ? 'Plays $playlistName'
-                                : 'Resumes current queue';
+                                : schedule.radioStationId != null
+                                    ? 'Plays radio: '
+                                        '${stationName ?? '(deleted station)'}'
+                                    : 'Resumes current queue';
                     return Card(
                       child: ListTile(
                         title: Text(schedule.name),
@@ -166,19 +183,22 @@ Future<PlaybackSchedule?> _openEditor(
   BuildContext context, {
   PlaybackSchedule? existing,
   required List<Playlist> playlists,
+  required List<CustomRadioStation> stations,
 }) {
   return showDialog<PlaybackSchedule>(
     context: context,
-    builder: (context) =>
-        _ScheduleEditorDialog(existing: existing, playlists: playlists),
+    builder: (context) => _ScheduleEditorDialog(
+        existing: existing, playlists: playlists, stations: stations),
   );
 }
 
 class _ScheduleEditorDialog extends StatefulWidget {
   final PlaybackSchedule? existing;
   final List<Playlist> playlists;
+  final List<CustomRadioStation> stations;
 
-  const _ScheduleEditorDialog({this.existing, required this.playlists});
+  const _ScheduleEditorDialog(
+      {this.existing, required this.playlists, required this.stations});
 
   @override
   State<_ScheduleEditorDialog> createState() => _ScheduleEditorDialogState();
@@ -189,6 +209,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   late int _minuteOfDay;
   late Set<int> _weekdays;
   String? _playlistId;
+  String? _radioStationId;
   late PlaybackScheduleAction _action;
 
   @override
@@ -199,6 +220,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     _minuteOfDay = existing?.minuteOfDay ?? (8 * 60);
     _weekdays = Set<int>.of(existing?.weekdays ?? const {1, 2, 3, 4, 5});
     _playlistId = existing?.playlistId;
+    _radioStationId = existing?.radioStationId;
     _action = existing?.action ?? PlaybackScheduleAction.play;
   }
 
@@ -228,10 +250,12 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
       minuteOfDay: _minuteOfDay,
       weekdays: _weekdays,
       enabled: existing?.enabled ?? true,
-      // playlistId is meaningless for a stop schedule — never persisted
-      // for one, so a schedule switched from Play to Stop doesn't carry
-      // a stale, unused playlist reference along with it.
+      // playlistId/radioStationId are meaningless for a stop schedule —
+      // never persisted for one, so a schedule switched from Play to
+      // Stop doesn't carry a stale, unused reference along with it.
       playlistId: _action == PlaybackScheduleAction.stop ? null : _playlistId,
+      radioStationId:
+          _action == PlaybackScheduleAction.stop ? null : _radioStationId,
       action: _action,
       createdAt: existing?.createdAt ?? DateTime.now(),
     );
@@ -300,23 +324,48 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
             ),
             // Meaningless for a Stop schedule — there's no queue to
             // replace when the action is just "pause," so the picker
-            // only shows up for Play.
+            // only shows up for Play. One flat dropdown covers all
+            // three kinds of target (resume/playlist/radio station) via
+            // prefixed values, rather than a second selector widget —
+            // selecting one always clears the other, enforcing mutual
+            // exclusivity here even though the model itself
+            // (PlaybackSchedule) stays permissive about both being set.
             if (_action == PlaybackScheduleAction.play) ...[
               const SizedBox(height: 16),
               DropdownButtonFormField<String?>(
-                value: _playlistId,
-                decoration:
-                    const InputDecoration(labelText: 'Playlist (optional)'),
+                value: _playlistId != null
+                    ? 'playlist:$_playlistId'
+                    : _radioStationId != null
+                        ? 'radio:$_radioStationId'
+                        : null,
+                decoration: const InputDecoration(
+                    labelText: 'Playlist or station (optional)'),
                 items: [
                   const DropdownMenuItem<String?>(
                       value: null, child: Text('Resume current queue')),
                   for (final playlist in widget.playlists)
                     DropdownMenuItem<String?>(
-                      value: playlist.id,
+                      value: 'playlist:${playlist.id}',
                       child: Text(playlist.name),
                     ),
+                  for (final station in widget.stations)
+                    DropdownMenuItem<String?>(
+                      value: 'radio:${station.id}',
+                      child: Text('${station.name} (radio)'),
+                    ),
                 ],
-                onChanged: (value) => setState(() => _playlistId = value),
+                onChanged: (value) => setState(() {
+                  if (value == null) {
+                    _playlistId = null;
+                    _radioStationId = null;
+                  } else if (value.startsWith('playlist:')) {
+                    _playlistId = value.substring('playlist:'.length);
+                    _radioStationId = null;
+                  } else if (value.startsWith('radio:')) {
+                    _radioStationId = value.substring('radio:'.length);
+                    _playlistId = null;
+                  }
+                }),
               ),
             ],
           ],
