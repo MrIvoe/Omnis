@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/ui/settings/output_devices_page.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
@@ -31,11 +32,13 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   double _crossfadeSec = 0;
   bool _gapless = true;
   int _seekIncrement = 10;
+  QueueContinuationMode _continuationMode = QueueContinuationMode.off;
 
   final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
     for (final field in [
       'gapless',
       'crossfade',
+      'queue_continuation',
       'seek_increment',
       'volume',
       'playback_speed',
@@ -57,6 +60,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _crossfadeSec = _settings.crossfadeSeconds;
     _gapless = _settings.gaplessEnabled;
     _seekIncrement = _settings.seekIncrementSeconds;
+    _continuationMode = _settings.queueContinuationMode;
     scrollToAndFlashSetting(_keys[widget.highlightField]);
   }
 
@@ -105,6 +109,43 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
                   widget.engine
                       .setCrossfadeDuration(Duration(seconds: v.round()));
                   _settings.crossfadeSeconds = v;
+                },
+              ),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['queue_continuation'],
+            child: ListTile(
+              title: const Text('Queue continuation'),
+              subtitle: Text(_continuationMode == QueueContinuationMode.off
+                  ? 'Off — the queue just stops when it runs out.'
+                  : 'Automatically extends the queue with more tracks '
+                      'when it runs out.'),
+              trailing: DropdownButton<QueueContinuationMode>(
+                value: _continuationMode,
+                items: const [
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.off, child: Text('Off')),
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.similarTrack,
+                      child: Text('Similar track')),
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.similarArtist,
+                      child: Text('Similar artist')),
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.sameGenre,
+                      child: Text('Same genre')),
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.sameMood,
+                      child: Text('Same mood')),
+                  DropdownMenuItem(
+                      value: QueueContinuationMode.sameAlbum,
+                      child: Text('Same album')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _continuationMode = v);
+                  _settings.queueContinuationMode = v;
                 },
               ),
             ),

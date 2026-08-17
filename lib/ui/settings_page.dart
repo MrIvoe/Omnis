@@ -276,6 +276,13 @@ class _SettingsPageState extends State<SettingsPage> {
             highlightField: 'crossfade',
             navigate: (c) => _openPlayback(c, highlightField: 'crossfade')),
         _SearchableSetting(
+            title: 'Queue continuation',
+            category: 'Playback & Audio',
+            categoryIcon: Icons.tune,
+            highlightField: 'queue_continuation',
+            navigate: (c) =>
+                _openPlayback(c, highlightField: 'queue_continuation')),
+        _SearchableSetting(
             title: 'Skip forward/backward',
             category: 'Playback & Audio',
             categoryIcon: Icons.tune,

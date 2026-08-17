@@ -46,7 +46,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | # | Item | Status |
 |---|------|--------|
 | 1 | Playback engine | 🟡 Core playback (gapless, crossfade, speed/pitch, shuffle/repeat) works end-to-end; the bigger Queue/Output/Session controller split is still owed |
-| 2 | Queue | 🟡 Manual queue, play-next, reorder, history/snapshots, cleanup all real; smart/rule-based continuation and multiple queue sources not started |
+| 2 | Queue | 🟡 Manual queue, play-next, reorder, history/snapshots, cleanup, and now smart/rule-based continuation (similar track/artist, same genre/mood/album) all real; queue rules/exclusions and multiple queue sources not started |
 | 3 | Recovery | ✅ Watchdog + crash/power-loss recovery wired end-to-end |
 | 4 | Database | 🟡 Atomic writes, corruption detection, schema versioning, and scheduled backups all real; still JSON files, no indexed DB or multi-source libraries |
 | 5 | Library scanning | 🟡 Incremental rescan, desktop filesystem watcher, and scheduled background scans all real; no fingerprint-based track identity |

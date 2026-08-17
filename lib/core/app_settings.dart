@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/core/text_scale.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -115,6 +116,7 @@ class AppSettings extends ChangeNotifier {
       'app_last_known_app_update_version';
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
+  static const _queueContinuationModeKey = 'app_queue_continuation_mode';
 
   SharedPreferences? _prefs;
   bool _initialized = false;
@@ -969,6 +971,39 @@ class AppSettings extends ChangeNotifier {
     } else {
       _prefs!.setString(_customThemeIdKey, id);
     }
+    notifyListeners();
+  }
+
+  /// Item 2 (Queue)'s "smart/rule-based continuation" gap: what rule, if
+  /// any, `MainCore` should use to auto-extend the queue when it naturally
+  /// runs out. Defaults to [QueueContinuationMode.off] — an explicit
+  /// opt-in, the same unattended-behavior-change stance
+  /// [autoBackupEnabled] already takes, since silently changing what plays
+  /// next isn't something to turn on without asking.
+  QueueContinuationMode get queueContinuationMode {
+    final value = _prefs?.getString(_queueContinuationModeKey) ?? 'off';
+    return switch (value) {
+      'similarTrack' => QueueContinuationMode.similarTrack,
+      'similarArtist' => QueueContinuationMode.similarArtist,
+      'sameGenre' => QueueContinuationMode.sameGenre,
+      'sameMood' => QueueContinuationMode.sameMood,
+      'sameAlbum' => QueueContinuationMode.sameAlbum,
+      _ => QueueContinuationMode.off,
+    };
+  }
+
+  set queueContinuationMode(QueueContinuationMode mode) {
+    _ensurePrefs();
+    _prefs!.setString(
+        _queueContinuationModeKey,
+        switch (mode) {
+          QueueContinuationMode.off => 'off',
+          QueueContinuationMode.similarTrack => 'similarTrack',
+          QueueContinuationMode.similarArtist => 'similarArtist',
+          QueueContinuationMode.sameGenre => 'sameGenre',
+          QueueContinuationMode.sameMood => 'sameMood',
+          QueueContinuationMode.sameAlbum => 'sameAlbum',
+        });
     notifyListeners();
   }
 

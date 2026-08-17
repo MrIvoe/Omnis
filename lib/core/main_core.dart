@@ -23,6 +23,7 @@ import 'package:omnis/core/playback_watchdog.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/core/recovery_journal.dart';
 import 'package:omnis/core/sandbox.dart';
@@ -72,6 +73,8 @@ class MainCore {
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<BaseTrack?>? _trackForHistorySub;
   StreamSubscription<List<BaseTrack>>? _queueHistorySub;
+  StreamSubscription<PlayerState>? _continuationSub;
+  String? _lastContinuationSeedId;
   Duration _lastPosition = Duration.zero;
   Duration _lastDuration = Duration.zero;
   BaseTrack? _trackBeingTracked;
@@ -237,6 +240,26 @@ class MainCore {
       QueueHistoryStore.instance.recordAutoHistory(queue);
     });
 
+    // Item 2 (Queue)'s "smart/rule-based continuation" gap. A separate
+    // subscription from [_playerStateSub] above — that one early-returns
+    // whenever `state.playing` is true, but on natural queue completion
+    // `playing` isn't guaranteed false, so folding this in would risk
+    // missing the event. `_lastContinuationSeedId` guards against firing
+    // twice for the same completed track if the stream emits `completed`
+    // more than once before a new track becomes current; it self-clears
+    // the moment `currentTrack` changes (from this continuation or a
+    // manual skip), so a later genuine queue-end fires again.
+    _continuationSub = _audioEngine.playerStateStream.listen((state) {
+      if (state.processingState != ProcessingState.completed) return;
+      final mode = AppSettings.instance.queueContinuationMode;
+      if (mode == QueueContinuationMode.off) return;
+      final seed = _audioEngine.currentTrack;
+      if (seed == null || _lastContinuationSeedId == seed.id) return;
+      _lastContinuationSeedId = seed.id;
+      // ignore: unawaited_futures
+      _continueQueue(seed, mode);
+    });
+
     // Belt-and-suspenders periodic snapshot — see [_journalTimer]'s doc.
     _journalTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (_audioEngine.currentTrack == null) return;
@@ -374,6 +397,38 @@ class MainCore {
     }
   }
 
+  /// Item 2 (Queue)'s "smart/rule-based continuation" gap — extends the
+  /// queue with [continuationTracks] chosen by [mode] once it naturally
+  /// finishes playing [seed], instead of just stopping. Appends rather
+  /// than replaces, so the growing queue itself doubles as the
+  /// `excludeIds` anti-repeat set across a whole auto-continued session
+  /// with no extra state to track. A no-op (queue just ends, same as
+  /// today) whenever the library is empty or [continuationTracks] has
+  /// nothing real to base a pick on.
+  Future<void> _continueQueue(BaseTrack seed, QueueContinuationMode mode) async {
+    try {
+      final library = LibraryRepository.instance.tracks;
+      if (library.isEmpty) return;
+      final existingQueue = _audioEngine.queue;
+      final picked = continuationTracks(
+        seed: seed,
+        library: library,
+        mode: mode,
+        excludeIds: existingQueue.map((t) => t.id).toSet(),
+        groupByAlbumArtist: AppSettings.instance.groupArtistsByAlbumArtist,
+      );
+      if (picked.isEmpty) return;
+      await _audioEngine.setQueue(
+        [...existingQueue, ...picked],
+        startIndex: existingQueue.length,
+      );
+      await _audioEngine.play();
+    } catch (e) {
+      // Best-effort; a continuation failure must never crash the app —
+      // the queue simply ends, same as if this feature didn't exist.
+    }
+  }
+
   /// Starts [_libraryWatcher] when every condition [_libraryWatcher]'s
   /// own doc names is met: [AppSettings.libraryWatcherEnabled], not
   /// Android/web, a dedicated folder actually selected. Any other
@@ -477,6 +532,7 @@ class MainCore {
     await _playerStateSub?.cancel();
     await _trackForHistorySub?.cancel();
     await _queueHistorySub?.cancel();
+    await _continuationSub?.cancel();
     await HomeWidgetService.instance.dispose();
     await _watchdog.dispose();
     await _pluginManager.dispose();
