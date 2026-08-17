@@ -377,24 +377,106 @@ void main() {
       );
     });
 
-    testWidgets('an explicit style override always wins over the setting',
+    // Regression coverage for the bug where a caller-supplied `style:`
+    // fully replaced the size-driven TextStyle instead of layering on top
+    // of it, silently disabling the Settings lyrics-text-size picker under
+    // the default (Standard) layout. `PlayerLyricsPanel` no longer accepts
+    // a raw `style:` override at all — only `color` and `fontWeight`,
+    // which must always compose with `_sizeStyle(...)` via `.copyWith()`.
+    for (final size in LyricsTextSize.values) {
+      testWidgets(
+          'lyricsTextSize.$size drives the actual rendered font size',
+          (tester) async {
+        AppSettings.instance.lyricsTextSize = size;
+        ThemeData? resolvedTheme;
+        await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: Builder(builder: (context) {
+              resolvedTheme = Theme.of(context);
+              return PlayerLyricsPanel(
+                data: _dataFor(
+                  lyricsPlugin: _FakeLyricsProvider(),
+                  lyricText: 'La la la',
+                ),
+              );
+            }),
+          ),
+        ));
+        await tester.pump();
+
+        final expectedFontSize = switch (size) {
+          LyricsTextSize.small => resolvedTheme!.textTheme.bodySmall?.fontSize,
+          LyricsTextSize.medium =>
+            resolvedTheme!.textTheme.bodyMedium?.fontSize,
+          LyricsTextSize.large =>
+            resolvedTheme!.textTheme.titleMedium?.fontSize,
+          LyricsTextSize.extraLarge =>
+            resolvedTheme!.textTheme.headlineSmall?.fontSize,
+        };
+
+        final text = tester.widget<Text>(find.text('La la la'));
+        expect(text.style?.fontSize, expectedFontSize,
+            reason: 'the $size setting must actually change the rendered '
+                'font size, not just be stored/loaded correctly');
+      });
+    }
+
+    testWidgets('passing color does not affect the size-driven font size',
         (tester) async {
-      AppSettings.instance.lyricsTextSize = LyricsTextSize.extraLarge;
+      AppSettings.instance.lyricsTextSize = LyricsTextSize.large;
+      ThemeData? resolvedTheme;
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: PlayerLyricsPanel(
-            data: _dataFor(
-              lyricsPlugin: _FakeLyricsProvider(),
-              lyricText: 'La la la',
-            ),
-            style: const TextStyle(fontSize: 42),
-          ),
+          body: Builder(builder: (context) {
+            resolvedTheme = Theme.of(context);
+            return PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeLyricsProvider(),
+                lyricText: 'La la la',
+              ),
+              color: Colors.white,
+            );
+          }),
         ),
       ));
       await tester.pump();
 
       final text = tester.widget<Text>(find.text('La la la'));
-      expect(text.style?.fontSize, 42);
+      expect(text.style?.fontSize,
+          resolvedTheme!.textTheme.titleMedium?.fontSize,
+          reason: 'color must layer on top of the size-driven base style, '
+              'not replace it');
+      expect(text.style?.color, Colors.white);
+    });
+
+    testWidgets(
+        'karaoke-mode bold composes with a non-default text size — bold '
+        'AND larger, not one replacing the other', (tester) async {
+      AppSettings.instance.lyricsTextSize = LyricsTextSize.extraLarge;
+      ThemeData? resolvedTheme;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (context) {
+            resolvedTheme = Theme.of(context);
+            return PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeLyricsProvider(),
+                lyricText: 'La la la',
+              ),
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            );
+          }),
+        ),
+      ));
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.text('La la la'));
+      expect(text.style?.fontSize,
+          resolvedTheme!.textTheme.headlineSmall?.fontSize,
+          reason: 'the extraLarge size must still take effect with bold on');
+      expect(text.style?.fontWeight, FontWeight.bold);
+      expect(text.style?.color, Colors.white);
     });
   });
 

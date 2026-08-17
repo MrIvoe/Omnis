@@ -107,12 +107,10 @@ class StandardLayout extends PlayerLayout {
                               Expanded(
                                 child: PlayerLyricsPanel(
                                   data: data,
-                                  style: (data.settings.karaokeMode
-                                          ? theme.textTheme.titleMedium
-                                              ?.copyWith(
-                                                  fontWeight: FontWeight.bold)
-                                          : theme.textTheme.bodyMedium)
-                                      ?.copyWith(color: Colors.white),
+                                  color: Colors.white,
+                                  fontWeight: data.settings.karaokeMode
+                                      ? FontWeight.bold
+                                      : null,
                                 ),
                               ),
                               if (data.visualizerPlugin != null)
