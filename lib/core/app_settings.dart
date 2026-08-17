@@ -106,6 +106,13 @@ class AppSettings extends ChangeNotifier {
   static const _autoScanEnabledKey = 'app_auto_scan_enabled';
   static const _autoScanIntervalHoursKey = 'app_auto_scan_interval_hours';
   static const _lastAutoScanAtKey = 'app_last_auto_scan_at';
+  static const _autoAppUpdateCheckEnabledKey =
+      'app_auto_app_update_check_enabled';
+  static const _autoAppUpdateCheckIntervalDaysKey =
+      'app_auto_app_update_check_interval_days';
+  static const _lastAppUpdateCheckAtKey = 'app_last_app_update_check_at';
+  static const _lastKnownAppUpdateVersionKey =
+      'app_last_known_app_update_version';
   static const _libraryDensityKey = 'app_library_density';
   static const _customThemeIdKey = 'app_custom_theme_id';
 
@@ -797,6 +804,68 @@ class AppSettings extends ChangeNotifier {
       _prefs!.remove(_lastAutoScanAtKey);
     } else {
       _prefs!.setInt(_lastAutoScanAtKey, value.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  /// The About page's "auto updater" toggle — whether Omnis should
+  /// periodically check GitHub for a newer app release on its own.
+  /// Defaults to `false`, the same opt-in stance every other unattended
+  /// background-check setting here already takes.
+  bool get autoAppUpdateCheckEnabled =>
+      _prefs?.getBool(_autoAppUpdateCheckEnabledKey) ?? false;
+
+  set autoAppUpdateCheckEnabled(bool value) {
+    _ensurePrefs();
+    _prefs!.setBool(_autoAppUpdateCheckEnabledKey, value);
+    notifyListeners();
+  }
+
+  /// How often an automatic app-update check should run, in days.
+  /// Defaults to 3 — matches [autoUpdateCheckIntervalDays]'s own default
+  /// for the same reason: a read-only network check, no reason to space
+  /// it out as far as [autoBackupIntervalDays]'s weekly default.
+  int get autoAppUpdateCheckIntervalDays =>
+      _prefs?.getInt(_autoAppUpdateCheckIntervalDaysKey) ?? 3;
+
+  set autoAppUpdateCheckIntervalDays(int value) {
+    _ensurePrefs();
+    _prefs!.setInt(_autoAppUpdateCheckIntervalDaysKey, value < 1 ? 1 : value);
+    notifyListeners();
+  }
+
+  /// When the last app-update check actually ran, or `null` if one
+  /// never has — `AppUpdateScheduler.isDue` treats `null` as due
+  /// immediately, the same convention every other `lastXAt` field here
+  /// already establishes.
+  DateTime? get lastAppUpdateCheckAt {
+    final ms = _prefs?.getInt(_lastAppUpdateCheckAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  set lastAppUpdateCheckAt(DateTime? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastAppUpdateCheckAtKey);
+    } else {
+      _prefs!.setInt(_lastAppUpdateCheckAtKey, value.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  /// The version string [AppUpdateService] last found available (or
+  /// `null` — up to date, or never checked) — cached here so the About
+  /// page can show an "Update available" banner immediately on open,
+  /// without waiting for a fresh network check.
+  String? get lastKnownAppUpdateVersion =>
+      _prefs?.getString(_lastKnownAppUpdateVersionKey);
+
+  set lastKnownAppUpdateVersion(String? value) {
+    _ensurePrefs();
+    if (value == null) {
+      _prefs!.remove(_lastKnownAppUpdateVersionKey);
+    } else {
+      _prefs!.setString(_lastKnownAppUpdateVersionKey, value);
     }
     notifyListeners();
   }

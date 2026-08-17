@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/ui/about_page.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
@@ -135,6 +136,11 @@ class _SettingsPageState extends State<SettingsPage> {
   void _openPlaybackSchedule(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const PlaybackSchedulePage(),
+      ));
+
+  void _openAbout(BuildContext context) =>
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const AboutPage(),
       ));
 
   void _openPluginHealth(BuildContext context) =>
@@ -409,6 +415,11 @@ class _SettingsPageState extends State<SettingsPage> {
             category: 'Plugins',
             categoryIcon: Icons.extension_outlined,
             navigate: _openPluginHealth),
+        _SearchableSetting(
+            title: 'About',
+            category: 'About',
+            categoryIcon: Icons.info_outline,
+            navigate: _openAbout),
       ];
 
   @override
@@ -523,6 +534,12 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: 'Start playback automatically at a set time, on '
                   'chosen days',
               onTap: () => _openPlaybackSchedule(context),
+            ),
+            _CategoryCard(
+              icon: Icons.info_outline,
+              title: 'About',
+              subtitle: 'Version, updates, GitHub, Discord, and support',
+              onTap: () => _openAbout(context),
             ),
             OmnisSpacing.gapSm,
             // A generic extension point: any plugin can inject something

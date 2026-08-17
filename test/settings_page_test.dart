@@ -4,6 +4,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/ui/about_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/settings/accessibility_settings_page.dart';
 import 'package:omnis/ui/settings/backup_settings_page.dart';
@@ -63,6 +64,13 @@ void main() {
     );
     expect(find.text('Plugins'), findsOneWidget);
     expect(find.text('Backup'), findsOneWidget);
+
+    await tester.dragUntilVisible(
+      find.text('About'),
+      find.byType(ListView),
+      const Offset(0, -400),
+    );
+    expect(find.text('About'), findsOneWidget);
   });
 
   testWidgets('tapping Accessibility opens AccessibilitySettingsPage',
@@ -116,6 +124,24 @@ void main() {
     expect(find.byType(BackupSettingsPage), findsOneWidget);
     expect(find.text('Backup Omnis'), findsOneWidget);
     expect(find.text('Restore Omnis'), findsOneWidget);
+  });
+
+  testWidgets('tapping About opens AboutPage — the bottom-most category, '
+      'per its own placement', (tester) async {
+    await pumpSettings(tester);
+
+    await tester.dragUntilVisible(
+      find.text('About'),
+      find.byType(ListView),
+      const Offset(0, -400),
+    );
+    await tester.ensureVisible(find.text('About'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AboutPage), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
   });
 
   testWidgets(

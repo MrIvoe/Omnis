@@ -4,6 +4,7 @@ import 'dart:io' show File, Platform;
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/app_update_checker.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
@@ -306,6 +307,14 @@ class MainCore {
     // minute thereafter via [_scheduleTimer].
     // ignore: unawaited_futures
     _maybeRunScheduledScan();
+
+    // The About page's "auto updater" toggle — a no-op unless the user
+    // has opted in (AppSettings.autoAppUpdateCheckEnabled defaults
+    // false) and one is actually due. Fire-and-forget, same "never
+    // block boot" contract as the backup/plugin-update-check calls
+    // above.
+    // ignore: unawaited_futures
+    AppUpdateService().maybeCheckForUpdateAutomatically();
 
     debugPrint('Omnis Core initialized successfully');
   }
