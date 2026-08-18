@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/plugin_api/lyric_line.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
@@ -425,13 +427,17 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
   }
 }
 
-/// Shows the current track's lyrics. `LyricsPlugin.currentLyricFor` returns
-/// the *whole* stored lyric block for a plain (untimed) lyric, not one
-/// line at a time — a full song's lyrics can easily be taller than the
-/// screen, so the text scrolls internally on its own rather than pushing
-/// the rest of Now Playing off-screen or clipping silently. This is the
-/// one part of Now Playing that's meant to scroll; everything around it
-/// stays fixed (see [StandardLayout]).
+/// Shows the current track's lyrics. When the registered provider has
+/// synced (time-stamped) lyrics for this track, every line renders at
+/// once in a [SyncedLyricsView] — Spotify-style — with the active line
+/// highlighted and kept scrolled into view. Otherwise this falls back to
+/// `LyricsPlugin.currentLyricFor`'s existing behavior: the *whole* stored
+/// lyric block for a plain (untimed) lyric, not one line at a time — a
+/// full song's lyrics can easily be taller than the screen, so the text
+/// scrolls internally on its own rather than pushing the rest of Now
+/// Playing off-screen or clipping silently. This is the one part of Now
+/// Playing that's meant to scroll; everything around it stays fixed (see
+/// [StandardLayout]).
 class PlayerLyricsPanel extends StatelessWidget {
   final PlayerLayoutData data;
   final Color? color;
@@ -461,13 +467,50 @@ class PlayerLyricsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final plugin = data.lyricsPlugin;
-    final text = plugin == null
-        ? 'The Lyrics plugin is disabled — enable it in Settings.'
-        : (data.lyricText ?? 'No lyrics added for this track yet.');
     final baseStyle =
         _sizeStyle(theme, data.settings.lyricsTextSize) ?? theme.textTheme.bodyMedium;
     final effectiveStyle =
         baseStyle?.copyWith(color: color, fontWeight: fontWeight);
+    // `ISyncedLyricsProvider` is a separate, optional capability a
+    // registered `ILyricsProvider` may or may not also implement — see
+    // that interface's own doc for why it isn't just a method on
+    // `ILyricsProvider` itself. `null` (not just empty) is its explicit
+    // "nothing synced for this track" signal. Only a non-null, non-empty
+    // list switches this panel into the scrolling-list rendering;
+    // anything else falls back to today's single-block text exactly as
+    // before.
+    List<LyricLine>? syncedLines;
+    if (plugin is ISyncedLyricsProvider) {
+      syncedLines = (plugin as ISyncedLyricsProvider).syncedLyricsFor(data.track);
+    }
+
+    final Widget body;
+    if (syncedLines != null && syncedLines.isNotEmpty) {
+      final activeColor = color ?? theme.colorScheme.primary;
+      final inactiveColor = (color ?? theme.colorScheme.onSurface)
+          .withValues(alpha: 0.55);
+      body = SyncedLyricsView(
+        lines: syncedLines,
+        position: data.position,
+        activeStyle: effectiveStyle?.copyWith(
+          color: activeColor,
+          fontWeight: FontWeight.bold,
+        ),
+        inactiveStyle: effectiveStyle?.copyWith(color: inactiveColor),
+      );
+    } else {
+      final text = plugin == null
+          ? 'The Lyrics plugin is disabled — enable it in Settings.'
+          : (data.lyricText ?? 'No lyrics added for this track yet.');
+      body = SingleChildScrollView(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: effectiveStyle,
+        ),
+      );
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -479,13 +522,7 @@ class PlayerLyricsPanel extends StatelessWidget {
                   .withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: SingleChildScrollView(
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                style: effectiveStyle,
-              ),
-            ),
+            child: body,
           ),
         ),
         if (plugin != null)
@@ -495,6 +532,193 @@ class PlayerLyricsPanel extends StatelessWidget {
             onPressed: data.onEditLyrics,
           ),
       ],
+    );
+  }
+}
+
+/// The synced-lyric line active at [position], mirroring
+/// `LyricsPlugin.currentLyricFor`'s own comparison *exactly* (in the
+/// `Omnis-Plugins` repo's `lyrics_plugin.dart`) so the scrolling list and
+/// any single-line block computed the same way never disagree: the last
+/// line whose timestamp is at or before [position], or `null` when
+/// nothing has started yet (a position before the first synced line's own
+/// timestamp — an intro before the lyrics begin must not highlight that
+/// first line early).
+int? activeLyricLineIndex(List<LyricLine> lines, Duration position) {
+  if (lines.isEmpty) return null;
+  if (position < lines.first.timestamp) return null;
+  final index = lines.lastIndexWhere((line) => line.timestamp <= position);
+  // Unreachable given the guard above (mirrors `currentLyricFor`'s own
+  // defensive `orElse` for the same reason), but kept rather than assuming
+  // `lastIndexWhere` can never return -1 here.
+  return index >= 0 ? index : 0;
+}
+
+/// Renders one synced lyric line: word-by-word highlighted up to
+/// [position] when [line.wordTimings] is populated (lrclib.net's
+/// "enhanced" per-word LRC — see `LyricLine.wordTimings`'s own doc for
+/// why this is usually `null` today), or as one plain styled block
+/// otherwise. Deliberately never interpolates word timing when
+/// [LyricLine.wordTimings] is `null` — an evenly-spaced guess reads as a
+/// bug, not a feature, so an inactive or timing-less line always falls
+/// back to whole-line styling.
+class LyricLineText extends StatelessWidget {
+  final LyricLine line;
+  final Duration position;
+  final bool active;
+  final TextStyle? activeStyle;
+  final TextStyle? inactiveStyle;
+  final TextAlign textAlign;
+
+  const LyricLineText({
+    super.key,
+    required this.line,
+    required this.position,
+    required this.active,
+    this.activeStyle,
+    this.inactiveStyle,
+    this.textAlign = TextAlign.center,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final wordTimings = line.wordTimings;
+    if (active && wordTimings != null && wordTimings.isNotEmpty) {
+      final sungStyle = activeStyle?.copyWith(
+        decoration: TextDecoration.underline,
+        decorationColor: activeStyle?.color,
+      );
+      final upcomingStyle = (activeStyle ?? inactiveStyle)?.copyWith(
+        color: (activeStyle ?? inactiveStyle)
+            ?.color
+            ?.withValues(alpha: 0.5),
+      );
+      return Text.rich(
+        TextSpan(children: [
+          for (var i = 0; i < wordTimings.length; i++)
+            TextSpan(
+              text: i == wordTimings.length - 1
+                  ? wordTimings[i].$2
+                  : '${wordTimings[i].$2} ',
+              style: wordTimings[i].$1 <= position ? sungStyle : upcomingStyle,
+            ),
+        ]),
+        textAlign: textAlign,
+      );
+    }
+    return Text(
+      line.text,
+      textAlign: textAlign,
+      style: active ? activeStyle : inactiveStyle,
+    );
+  }
+}
+
+/// Spotify-style scrolling view of every synced lyric line in [lines],
+/// the line active at [position] highlighted via [activeStyle] and kept
+/// vertically centered in the viewport as [position] advances — an
+/// animated [ScrollController.animateTo] on every change, never a hard
+/// jump. Shared by [PlayerLyricsPanel] (compact) and
+/// `KaraokeGesturesLayout` (large, lyrics-as-primary-content) so the
+/// scroll/highlight math lives in exactly one place.
+class SyncedLyricsView extends StatefulWidget {
+  final List<LyricLine> lines;
+  final Duration position;
+  final TextStyle? activeStyle;
+  final TextStyle? inactiveStyle;
+  final TextAlign textAlign;
+  final EdgeInsetsGeometry padding;
+
+  /// Fixed per-line height. A fixed `itemExtent` (rather than measuring
+  /// each line's real, variable wrapped height) is what makes "the target
+  /// scroll offset for a given active index" a direct, cheap computation
+  /// instead of needing a layout pass's results — worth the trade of
+  /// long lines not getting extra vertical room.
+  final double lineExtent;
+
+  const SyncedLyricsView({
+    super.key,
+    required this.lines,
+    required this.position,
+    this.activeStyle,
+    this.inactiveStyle,
+    this.textAlign = TextAlign.center,
+    this.padding = EdgeInsets.zero,
+    this.lineExtent = 44,
+  });
+
+  @override
+  State<SyncedLyricsView> createState() => _SyncedLyricsViewState();
+}
+
+class _SyncedLyricsViewState extends State<SyncedLyricsView> {
+  final _controller = ScrollController();
+  int? _lastScrolledIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeScrollToActive());
+  }
+
+  @override
+  void didUpdateWidget(covariant SyncedLyricsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A genuinely different line list (new track, or lyrics that just
+    // finished fetching) must re-scroll even if the newly computed active
+    // index happens to numerically match the last one scrolled to for the
+    // old list.
+    if (!identical(oldWidget.lines, widget.lines)) _lastScrolledIndex = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeScrollToActive());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _maybeScrollToActive() {
+    if (!mounted || !_controller.hasClients) return;
+    final active = activeLyricLineIndex(widget.lines, widget.position);
+    if (active == null || active == _lastScrolledIndex) return;
+    _lastScrolledIndex = active;
+
+    final viewport = _controller.position.viewportDimension;
+    final target = (active * widget.lineExtent) -
+        (viewport / 2) +
+        (widget.lineExtent / 2);
+    final clamped =
+        target.clamp(0.0, _controller.position.maxScrollExtent);
+    _controller.animateTo(
+      clamped,
+      duration: OmnisMotion.durationFor(OmnisMotion.medium),
+      curve: OmnisMotion.standardCurve,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active = activeLyricLineIndex(widget.lines, widget.position);
+    return ListView.builder(
+      controller: _controller,
+      padding: widget.padding,
+      itemExtent: widget.lineExtent,
+      itemCount: widget.lines.length,
+      itemBuilder: (context, index) {
+        final line = widget.lines[index];
+        final isActive = index == active;
+        return Center(
+          child: LyricLineText(
+            line: line,
+            position: widget.position,
+            active: isActive,
+            activeStyle: widget.activeStyle,
+            inactiveStyle: widget.inactiveStyle,
+            textAlign: widget.textAlign,
+          ),
+        );
+      },
     );
   }
 }

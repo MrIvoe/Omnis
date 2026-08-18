@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/lyric_line.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
@@ -17,6 +18,35 @@ class _FakeLyricsProvider implements ILyricsProvider {
   @override
   String currentLyricFor(BaseTrack track, Duration position) => 'La la la';
 }
+
+/// A provider that also implements the separate, optional
+/// `ISyncedLyricsProvider` capability — see that interface's own doc in
+/// `service_interfaces.dart` for why it's a second interface rather than
+/// a method added onto `ILyricsProvider` itself.
+class _FakeSyncedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvider {
+  final List<LyricLine> lines;
+
+  _FakeSyncedLyricsProvider(this.lines);
+
+  @override
+  String currentLyricFor(BaseTrack track, Duration position) =>
+      'single-block fallback text — should not render when synced lines exist';
+
+  @override
+  List<LyricLine>? syncedLyricsFor(BaseTrack track) => lines;
+}
+
+/// Fifteen lines, five seconds apart (0s..70s) — enough total content
+/// (15 * 44px default line extent = 660px) to genuinely overflow a modest
+/// test viewport, so the auto-scroll-to-center assertions exercise a real
+/// non-zero scroll rather than a no-op on unscrollable content.
+List<LyricLine> _manySyncedLines() => [
+      for (var i = 0; i < 15; i++)
+        LyricLine(
+          timestamp: Duration(seconds: i * 5),
+          text: 'Line $i',
+        ),
+    ];
 
 class _FakeVisualizerProvider implements IVisualizerProvider {
   final _controller = StreamController<List<double>>.broadcast();
@@ -544,6 +574,161 @@ void main() {
           reason: 'the extraLarge size must still take effect with bold on');
       expect(text.style?.fontWeight, FontWeight.bold);
       expect(text.style?.color, Colors.white);
+    });
+  });
+
+  group('activeLyricLineIndex', () {
+    // First line starts at 10s, not 0s — representing a real intro before
+    // the synced lyrics begin, so "before the first line's own timestamp"
+    // is actually reachable (a first line at 0s can never have a position
+    // "before" it).
+    final lines = [
+      const LyricLine(timestamp: Duration(seconds: 10), text: 'a'),
+      const LyricLine(timestamp: Duration(seconds: 20), text: 'b'),
+      const LyricLine(timestamp: Duration(seconds: 30), text: 'c'),
+    ];
+
+    test('null before the first line\'s own timestamp — nothing has '
+        'started yet, matching LyricsPlugin.currentLyricFor\'s own guard',
+        () {
+      expect(activeLyricLineIndex(lines, const Duration(seconds: 5)), null);
+    });
+
+    test('the exact timestamp of a line selects that line', () {
+      expect(activeLyricLineIndex(lines, const Duration(seconds: 20)), 1);
+    });
+
+    test('between two timestamps selects the earlier (still-active) line',
+        () {
+      expect(activeLyricLineIndex(lines, const Duration(seconds: 25)), 1);
+    });
+
+    test('past the last line\'s timestamp selects the last line', () {
+      expect(activeLyricLineIndex(lines, const Duration(seconds: 999)), 2);
+    });
+
+    test('an empty list is always null', () {
+      expect(activeLyricLineIndex(const [], const Duration(seconds: 5)), null);
+    });
+  });
+
+  group('PlayerLyricsPanel synced lyrics', () {
+    testWidgets(
+        'renders every synced line at once, not just the current one',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeSyncedLyricsProvider(_manySyncedLines()),
+                position: const Duration(seconds: 32),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Every line is a real widget in the tree — a `ListView` lazily
+      // builds only what's near the viewport, so this only asserts on
+      // lines close to the (centered) active one rather than every one
+      // of the 15.
+      expect(find.text('Line 6'), findsOneWidget); // the active line itself
+      expect(find.text('Line 5'), findsOneWidget);
+      expect(find.text('Line 7'), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget,
+          reason: 'synced lyrics render as a scrolling list, not the old '
+              'single Text block');
+    });
+
+    testWidgets('highlights the line active at the given position',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeSyncedLyricsProvider(_manySyncedLines()),
+                // 32s: line index 6 starts at 30s, index 7 at 35s — 6 is
+                // active.
+                position: const Duration(seconds: 32),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final active = tester.widget<Text>(find.text('Line 6'));
+      final inactive = tester.widget<Text>(find.text('Line 5'));
+
+      expect(active.style?.fontWeight, FontWeight.bold);
+      expect(inactive.style?.fontWeight, isNot(FontWeight.bold));
+      expect(active.style?.color, isNot(equals(inactive.style?.color)),
+          reason: 'the active line must read as visually distinct from '
+              'every inactive one');
+    });
+
+    testWidgets(
+        'auto-scrolls so the active line lands vertically centered in '
+        'the viewport', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 300,
+            child: PlayerLyricsPanel(
+              data: _dataFor(
+                lyricsPlugin: _FakeSyncedLyricsProvider(_manySyncedLines()),
+                position: const Duration(seconds: 32), // active index 6
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final listView = tester.widget<ListView>(find.byType(ListView));
+      final controller = listView.controller!;
+      expect(controller.hasClients, isTrue);
+
+      const lineExtent = 44.0;
+      const activeIndex = 6;
+      final viewport = controller.position.viewportDimension;
+      final expectedTarget = ((activeIndex * lineExtent) -
+              (viewport / 2) +
+              (lineExtent / 2))
+          .clamp(0.0, controller.position.maxScrollExtent);
+
+      expect(controller.offset, closeTo(expectedTarget, 0.5));
+      expect(expectedTarget, greaterThan(0),
+          reason: 'the fixture is set up so the active line is genuinely '
+              'below the fold — a target of 0 here would mean the test '
+              'can\'t actually distinguish "scrolled correctly" from '
+              '"never scrolled at all"');
+    });
+
+    testWidgets(
+        'falls back to the existing single-block rendering when nothing '
+        'is synced for this track', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerLyricsPanel(
+            data: _dataFor(
+              lyricsPlugin: _FakeLyricsProvider(),
+              lyricText: 'La la la',
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('La la la'), findsOneWidget);
+      expect(find.byType(ListView), findsNothing,
+          reason: 'a provider with no ISyncedLyricsProvider capability '
+              'must render exactly like before this feature existed');
     });
   });
 

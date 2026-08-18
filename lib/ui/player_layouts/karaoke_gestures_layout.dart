@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:omnis/plugin_api/lyric_line.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
@@ -35,6 +37,19 @@ class KaraokeGesturesLayout extends PlayerLayout {
         : (data.lyricText ??
             'No lyrics added for this track yet — swipe for the next one, '
                 'or add lyrics from another layout.');
+    // `ISyncedLyricsProvider` is a separate, optional capability a
+    // registered `ILyricsProvider` may or may not also implement — see
+    // that interface's own doc. `null` means "nothing synced for this
+    // track" — this layout's whole premise is lyrics-as-primary-content,
+    // so whenever a synced list genuinely exists it gets the biggest,
+    // most prominent version of the scrolling+highlighting treatment
+    // `PlayerLyricsPanel` also uses, rather than only ever showing one
+    // line the way this layout used to.
+    List<LyricLine>? syncedLines;
+    if (lyricsPlugin is ISyncedLyricsProvider) {
+      syncedLines =
+          (lyricsPlugin as ISyncedLyricsProvider).syncedLyricsFor(data.track);
+    }
 
     // Unlike full_art_gestures_layout, this layout's primary content (the
     // lyric line) is already real, readable text — so this uses `hint`,
@@ -73,18 +88,33 @@ class KaraokeGesturesLayout extends PlayerLayout {
               child: PlayerTrackInfo(data: data, large: false),
             ),
             Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    text,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: syncedLines != null && syncedLines.isNotEmpty
+                    ? SyncedLyricsView(
+                        lines: syncedLines,
+                        position: data.position,
+                        lineExtent: 72,
+                        activeStyle: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                        inactiveStyle: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color:
+                              theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          text,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
               ),
             ),
             Padding(
