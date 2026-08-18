@@ -113,7 +113,21 @@ dev_dependencies:
   # PlatformInterface-mixin pattern, is already declared above).
   # Already a transitive dependency via url_launcher.
   url_launcher_platform_interface: ^2.3.2
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
   generate: true
+
+# Regenerates Android/Windows launcher icons from the app's real icon —
+# `dart run flutter_launcher_icons` (only Android/Windows exist as
+# platform folders in this repo; iOS/macOS/web/Linux config keys are
+# deliberately omitted rather than left pointing at platforms this repo
+# doesn't build for).
+flutter_launcher_icons:
+  image_path: "omnis_official_icon.png"
+  android: true
+  windows:
+    generate: true
+    image_path: "omnis_official_icon.png"
+    icon_size: 256
