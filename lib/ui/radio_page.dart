@@ -14,9 +14,15 @@ import 'package:omnis_plugins/radio_plugin.dart';
 /// needs no special-casing at all to play it (`AudioEngine.uriFor`
 /// already plays any track with a `streamUrl`).
 ///
-/// Shows the most-voted stations by default (before the user has typed
-/// anything), the same "something to look at immediately" pattern
-/// `_MoodsPage` and `HomeDashboardPage` already use elsewhere.
+/// A thin `Scaffold`+`AppBar` wrapper around [RadioBody] — the actual
+/// station list/search/custom-station logic lives there so the
+/// "Online" tab (`lib/ui/online_page.dart`) can embed the same content
+/// under its own shared AppBar and provider-selector bar, without a
+/// second nested toolbar. This split exists purely for that reuse;
+/// `RadioPage`'s own rendered widget tree — Scaffold, "Radio" title,
+/// the "Add station" action, everything [RadioBody] itself renders —
+/// is unchanged from before the split, so every existing test here
+/// still exercises the exact same structure.
 class RadioPage extends StatefulWidget {
   final AudioEngine engine;
   final PluginManager pluginManager;
@@ -32,6 +38,59 @@ class RadioPage extends StatefulWidget {
 }
 
 class _RadioPageState extends State<RadioPage> {
+  final _bodyKey = GlobalKey<RadioBodyState>();
+
+  RadioPlugin? get _plugin =>
+      widget.pluginManager.bundled<RadioPlugin>(onlyEnabled: true);
+
+  @override
+  Widget build(BuildContext context) {
+    final plugin = _plugin;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Radio'),
+        actions: plugin == null
+            ? null
+            : [
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'Add station',
+                  onPressed: () => _bodyKey.currentState?.addStation(),
+                ),
+              ],
+      ),
+      body: RadioBody(
+        key: _bodyKey,
+        engine: widget.engine,
+        pluginManager: widget.pluginManager,
+      ),
+    );
+  }
+}
+
+/// The actual Radio content — search box, top/searched stations, "My
+/// stations" — with no `Scaffold`/`AppBar` of its own, so a host page
+/// ([RadioPage] or the "Online" tab) can place it under whatever
+/// chrome it already has. [addStation] is public so a host's own
+/// AppBar action can trigger the add-station dialog via a
+/// `GlobalKey<RadioBodyState>`, the same "public method reached
+/// through a GlobalKey" pattern `HomeDashboardPageState.
+/// openCustomizeSheet` already established in this codebase.
+class RadioBody extends StatefulWidget {
+  final AudioEngine engine;
+  final PluginManager pluginManager;
+
+  const RadioBody({
+    super.key,
+    required this.engine,
+    required this.pluginManager,
+  });
+
+  @override
+  State<RadioBody> createState() => RadioBodyState();
+}
+
+class RadioBodyState extends State<RadioBody> {
   final _searchController = TextEditingController();
   List<BaseTrack> _stations = const [];
   List<CustomRadioStation> _customStations = const [];
@@ -136,8 +195,9 @@ class _RadioPageState extends State<RadioPage> {
   /// no attempt to actually reach the stream first, the same
   /// "trust what's entered, fail at play time if it's wrong" stance a
   /// Radio Browser-fetched URL already gets), persists it via
-  /// [CustomRadioStationStore].
-  Future<void> _addCustomStation() async {
+  /// [CustomRadioStationStore]. Public so a host page's own AppBar
+  /// action can trigger it through a `GlobalKey<RadioBodyState>`.
+  Future<void> addStation() async {
     final nameController = TextEditingController();
     final urlController = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -200,108 +260,93 @@ class _RadioPageState extends State<RadioPage> {
   Widget build(BuildContext context) {
     final plugin = _plugin;
     if (plugin == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Radio')),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'The Internet Radio plugin is disabled in Settings.',
-              textAlign: TextAlign.center,
-            ),
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'The Internet Radio plugin is disabled in Settings.',
+            textAlign: TextAlign.center,
           ),
         ),
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Radio'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add station',
-            onPressed: _addCustomStation,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Search stations (e.g. "jazz", "BBC")',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _loadTopStations();
-                        },
-                      )
-                    : null,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search stations (e.g. "jazz", "BBC")',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              onSubmitted: _search,
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _loadTopStations();
+                      },
+                    )
+                  : null,
             ),
+            onSubmitted: _search,
           ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    children: [
-                      if (_customStations.isNotEmpty) ...[
-                        Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'My stations',
-                              style: Theme.of(context).textTheme.labelLarge,
-                            ),
+        ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  children: [
+                    if (_customStations.isNotEmpty) ...[
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'My stations',
+                            style: Theme.of(context).textTheme.labelLarge,
                           ),
                         ),
-                        for (final custom in _customStations)
-                          _buildCustomStationTile(custom),
-                        const Divider(),
-                      ],
-                      if (_stations.isNotEmpty)
-                        Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _searched ? 'Search results' : 'Top stations',
-                              style: Theme.of(context).textTheme.labelLarge,
-                            ),
-                          ),
-                        ),
-                      if (_stations.isEmpty && _customStations.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 48),
-                          child: Center(
-                            child: Text(
-                              _searched
-                                  ? 'No stations found.'
-                                  : 'No stations available right now.',
-                            ),
-                          ),
-                        ),
-                      for (var index = 0; index < _stations.length; index++)
-                        _buildStationTile(_stations[index], index),
+                      ),
+                      for (final custom in _customStations)
+                        _buildCustomStationTile(custom),
+                      const Divider(),
                     ],
-                  ),
-          ),
-        ],
-      ),
+                    if (_stations.isNotEmpty)
+                      Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _searched ? 'Search results' : 'Top stations',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                        ),
+                      ),
+                    if (_stations.isEmpty && _customStations.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 48),
+                        child: Center(
+                          child: Text(
+                            _searched
+                                ? 'No stations found.'
+                                : 'No stations available right now.',
+                          ),
+                        ),
+                      ),
+                    for (var index = 0; index < _stations.length; index++)
+                      _buildStationTile(_stations[index], index),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 
