@@ -9,6 +9,8 @@ import 'package:omnis/ui/theme/declarative/theme_installer.dart'
     show ThemeInstallException;
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/theme/omnis_typography.dart';
 import 'package:omnis/ui/widgets/color_picker_dialog.dart';
 
@@ -84,6 +86,7 @@ class _ThemeEditorPageState extends State<ThemeEditorPage> {
   double _textScale = 1.0;
   double _cornerRadius = 16.0;
   ThemeMotionStyle _motionStyle = ThemeMotionStyle.standard;
+  String _iconStyle = OmnisIconStyle.defaultStyleKey;
 
   bool _backgroundEnabled = false;
   String _backgroundType = 'color'; // 'color' | 'gradient'
@@ -132,6 +135,7 @@ class _ThemeEditorPageState extends State<ThemeEditorPage> {
       textScale: _textScale,
       cornerRadius: _cornerRadius,
       motionStyle: _motionStyle,
+      iconStyle: _iconStyle,
       background: _backgroundJson(),
       sourceUrl: 'local',
     );
@@ -166,6 +170,7 @@ class _ThemeEditorPageState extends State<ThemeEditorPage> {
           ThemeMotionStyle.standard => 'standard',
         },
       },
+      'icons': {'style': _iconStyle},
       if (_backgroundJson() case final background?) 'background': background,
     };
   }
@@ -369,6 +374,30 @@ class _ThemeEditorPageState extends State<ThemeEditorPage> {
                         setState(() => _motionStyle = value.first),
                   ),
                 ),
+                const _SectionHeader('Icons'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SegmentedButton<String>(
+                    key: const ValueKey('icon_style_selector'),
+                    segments: [
+                      for (final key in OmnisIconStyle.allowedStyles.keys)
+                        ButtonSegment(
+                            value: key, label: Text(_titleFromCamel(key))),
+                    ],
+                    selected: {_iconStyle},
+                    onSelectionChanged: (value) =>
+                        setState(() => _iconStyle = value.first),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'Picks between the same glyph\'s bundled renderings '
+                    '(Flutter\'s own Material Icons already ship all '
+                    'four) rather than any downloaded icon pack.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
                 const _SectionHeader('Background'),
                 SwitchListTile(
                   key: const ValueKey('background_toggle'),
@@ -488,6 +517,12 @@ class _ThemePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    // The manifest's own `iconStyle`, not the app-wide
+    // `OmnisIconStyle.current` global — this preview must reflect the
+    // in-progress (possibly not-yet-installed) manifest being edited,
+    // exactly like every other control on this page.
+    final iconStyleKind = OmnisIconStyle.allowedStyles[manifest.iconStyle] ??
+        OmnisIconStyleKind.filled;
 
     final content = Padding(
       padding: const EdgeInsets.symmetric(vertical: 20),
@@ -499,7 +534,7 @@ class _ThemePreview extends StatelessWidget {
             child: SizedBox(
               width: 88,
               height: 88,
-              child: Icon(Icons.music_note,
+              child: Icon(OmnisIconCatalog.musicNote.resolve(iconStyleKind),
                   size: 36, color: scheme.onSurfaceVariant),
             ),
           ),
@@ -523,14 +558,16 @@ class _ThemePreview extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.skip_previous, color: scheme.onSurface),
+              Icon(OmnisIconCatalog.skipPrevious.resolve(iconStyleKind),
+                  color: scheme.onSurface),
               const SizedBox(width: 20),
               FilledButton(
                 onPressed: () {},
                 child: const Icon(Icons.play_arrow),
               ),
               const SizedBox(width: 20),
-              Icon(Icons.skip_next, color: scheme.onSurface),
+              Icon(OmnisIconCatalog.skipNext.resolve(iconStyleKind),
+                  color: scheme.onSurface),
             ],
           ),
         ],

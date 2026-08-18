@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/theme/omnis_theme.dart';
 
@@ -41,6 +42,14 @@ class DeclarativeOmnisTheme {
       ThemeMotionStyle.gentle => 1.6,
       ThemeMotionStyle.standard => 1.0,
     };
+  }
+
+  /// Applies [manifest]'s icon style globally (see
+  /// `OmnisIconStyle.current`) — same "call this when the theme actually
+  /// becomes active, not from [build]" contract as [applyMotionStyle].
+  static void applyIconStyle(ThemeManifest manifest) {
+    OmnisIconStyle.current = OmnisIconStyle.allowedStyles[manifest.iconStyle] ??
+        OmnisIconStyleKind.filled;
   }
 
   /// Builds a full [ColorScheme] from [manifest]'s (partial, closed-set)

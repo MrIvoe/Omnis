@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/theme/omnis_typography.dart';
 import 'package:yaml/yaml.dart';
 
@@ -45,6 +46,8 @@ enum ThemeMotionStyle { standard, snappy, gentle }
 ///   cornerRadius: 16               # clamped to 0–32
 /// motion:
 ///   style: standard                # 'standard' | 'snappy' | 'gentle'
+/// icons:
+///   style: filled                  # 'filled' | 'outlined' | 'rounded' | 'sharp'
 /// background:                      # optional
 ///   type: gradient                 # 'color' | 'gradient'
 ///   colors: ["#16213E", "#0F0F1E"]
@@ -69,6 +72,15 @@ class ThemeManifest {
   final double cornerRadius;
   final ThemeMotionStyle motionStyle;
 
+  /// A key of [OmnisIconStyle.allowedStyles] — which of a glyph's four
+  /// bundled renderings (filled/outlined/rounded/sharp) `icons.style`
+  /// selects for [OmnisIconCatalog]-driven call sites. Closed vocabulary,
+  /// same discipline as [fontKey]: any value [parse] doesn't recognize
+  /// falls back to [OmnisIconStyle.defaultStyleKey] rather than being
+  /// rejected outright, and never opens the door to a "custom icon pack"
+  /// field — see this class's own doc comment.
+  final String iconStyle;
+
   /// `{'type': 'color'|'gradient', 'colors': ['#...', ...]}` — same shape
   /// `LayoutManifest.background` already uses, reused rather than
   /// reinvented. Interpreted by whatever renders Now Playing's
@@ -90,6 +102,7 @@ class ThemeManifest {
     required this.textScale,
     required this.cornerRadius,
     required this.motionStyle,
+    required this.iconStyle,
     required this.background,
     required this.sourceUrl,
   });
@@ -152,6 +165,13 @@ class ThemeManifest {
         _ => ThemeMotionStyle.standard,
       };
 
+      final icons = doc['icons'];
+      final rawIconStyle = icons is Map ? _asString(icons['style']) : null;
+      final iconStyle = (rawIconStyle != null &&
+              OmnisIconStyle.allowedStyles.containsKey(rawIconStyle))
+          ? rawIconStyle
+          : OmnisIconStyle.defaultStyleKey;
+
       return ThemeManifest(
         id: id,
         name: name,
@@ -166,6 +186,7 @@ class ThemeManifest {
         textScale: textScale.toDouble(),
         cornerRadius: cornerRadius.toDouble(),
         motionStyle: motionStyle,
+        iconStyle: iconStyle,
         background: _asMap(doc['background']),
         sourceUrl: sourceUrl,
       );

@@ -8,6 +8,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/widgets/seek_position_visualizer.dart';
 import 'package:omnis_plugins/sleep_timer_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -184,6 +185,72 @@ void main() {
       // scaleDown shrinks the row, it doesn't drop any of its children.
       expect(find.byIcon(Icons.skip_previous), findsOneWidget);
       expect(find.byIcon(Icons.skip_next), findsOneWidget);
+    });
+  });
+
+  group('PlayerControlsRow icon style (OmnisIconStyle.current)', () {
+    // OmnisIconStyle.current is a plain global static (mirrors
+    // OmnisMotion.styleMultiplier — see that class's own doc comment for
+    // why this codebase deliberately has no BuildContext-based theme
+    // lookup), so any test that changes it must restore the default
+    // before the next test runs, or it leaks into unrelated tests in
+    // this same file that assume the default `Icons.xxx` (filled) glyphs.
+    testWidgets(
+        'transport row glyphs (prev/next/repeat/seek) switch to the '
+        'outlined variant when OmnisIconStyle.current is outlined',
+        (tester) async {
+      addTearDown(() => OmnisIconStyle.current = OmnisIconStyleKind.filled);
+      OmnisIconStyle.current = OmnisIconStyleKind.outlined;
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerControlsRow(
+            data: _dataFor(repeatMode: RepeatMode.one),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.skip_previous_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.skip_next_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.repeat_one_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.replay_10_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.forward_10_outlined), findsOneWidget);
+      // The filled defaults must be genuinely gone, not just
+      // additionally present alongside the outlined ones.
+      expect(find.byIcon(Icons.skip_previous), findsNothing);
+      expect(find.byIcon(Icons.skip_next), findsNothing);
+      expect(find.byIcon(Icons.repeat_one), findsNothing);
+    });
+
+    testWidgets(
+        'play/pause stays an AnimatedIcon regardless of OmnisIconStyle.'
+        'current — it has no outlined/rounded/sharp counterpart to switch '
+        'to', (tester) async {
+      addTearDown(() => OmnisIconStyle.current = OmnisIconStyleKind.filled);
+      OmnisIconStyle.current = OmnisIconStyleKind.sharp;
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: PlayerControlsRow(data: _dataFor())),
+      ));
+      await tester.pump();
+
+      expect(find.byType(AnimatedIcon), findsOneWidget);
+      final animatedIcon = tester.widget<AnimatedIcon>(find.byType(AnimatedIcon));
+      expect(animatedIcon.icon, AnimatedIcons.play_pause);
+    });
+
+    testWidgets(
+        'defaults to the plain filled Icons.xxx constants when '
+        'OmnisIconStyle.current is left untouched', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: PlayerControlsRow(data: _dataFor())),
+      ));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.skip_previous), findsOneWidget);
+      expect(find.byIcon(Icons.skip_next), findsOneWidget);
+      expect(find.byIcon(Icons.repeat), findsOneWidget);
     });
   });
 

@@ -33,6 +33,7 @@ import 'package:omnis/ui/library_statistics_page.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
 import 'package:omnis/ui/tag_editor_dialog.dart';
 import 'package:omnis/ui/tag_find_replace_dialog.dart';
+import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/artist_avatar.dart';
 import 'package:omnis/ui/widgets/library_shimmer.dart';
@@ -2422,27 +2423,37 @@ class _LibraryPageState extends State<LibraryPage> {
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: SegmentedButton<LibraryViewMode>(
-                                  segments: const [
+                                  // Icons resolved through OmnisIconCatalog
+                                  // (not `const Icon(Icons.xxx)`) so this
+                                  // segmented button follows the active
+                                  // theme's `icons.style` like the other
+                                  // high-visibility icon call sites.
+                                  segments: [
                                     ButtonSegment(
                                         value: LibraryViewMode.songs,
-                                        label: Text('Songs'),
-                                        icon: Icon(Icons.music_note)),
+                                        label: const Text('Songs'),
+                                        icon: Icon(
+                                            OmnisIconCatalog.musicNote.resolve())),
                                     ButtonSegment(
                                         value: LibraryViewMode.albums,
-                                        label: Text('Albums'),
-                                        icon: Icon(Icons.album)),
+                                        label: const Text('Albums'),
+                                        icon: Icon(
+                                            OmnisIconCatalog.album.resolve())),
                                     ButtonSegment(
                                         value: LibraryViewMode.artists,
-                                        label: Text('Artists'),
-                                        icon: Icon(Icons.person)),
+                                        label: const Text('Artists'),
+                                        icon: Icon(
+                                            OmnisIconCatalog.person.resolve())),
                                     ButtonSegment(
                                         value: LibraryViewMode.genres,
-                                        label: Text('Genres'),
-                                        icon: Icon(Icons.tag)),
+                                        label: const Text('Genres'),
+                                        icon: Icon(
+                                            OmnisIconCatalog.tag.resolve())),
                                     ButtonSegment(
                                         value: LibraryViewMode.folders,
-                                        label: Text('Folders'),
-                                        icon: Icon(Icons.folder)),
+                                        label: const Text('Folders'),
+                                        icon: Icon(
+                                            OmnisIconCatalog.folder.resolve())),
                                   ],
                                   selected: {_viewMode},
                                   onSelectionChanged: (value) {
@@ -2484,8 +2495,10 @@ class _LibraryPageState extends State<LibraryPage> {
                                           : 'Grid view',
                                       icon: Icon(
                                           _displayMode == LibraryDisplayMode.grid
-                                              ? Icons.view_list
-                                              : Icons.grid_view),
+                                              ? OmnisIconCatalog.viewList
+                                                  .resolve()
+                                              : OmnisIconCatalog.gridView
+                                                  .resolve()),
                                       onPressed: () => _setDisplayMode(
                                           _displayMode == LibraryDisplayMode.grid
                                               ? LibraryDisplayMode.list

@@ -23,6 +23,7 @@ import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
+import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
 import 'package:omnis/ui/widgets/mini_player_bar.dart';
 
 /// Home shell with navigation tabs.
@@ -255,13 +256,18 @@ class _HomePageState extends State<HomePage> {
     // only *where* they render (bottom bar vs. side rail) is responsive.
     // See `home_navigation.dart` for the breakpoint/rail-vs-drawer
     // reasoning.
-    const destinations = [
-      HomeDestinationInfo(Icons.home, 'Home'),
-      HomeDestinationInfo(Icons.library_music, 'Library'),
-      HomeDestinationInfo(Icons.playlist_play, 'Playlist'),
-      HomeDestinationInfo(Icons.mood, 'Moods'),
-      HomeDestinationInfo(Icons.cloud_queue, 'Online'),
-      HomeDestinationInfo(Icons.settings, 'Settings'),
+    // Icons resolved through OmnisIconCatalog rather than bare `Icons.xxx`
+    // constants (so this list can no longer be `const`) — every glyph
+    // here follows the active theme's `icons.style`
+    // (OmnisIconStyle.current), the same closed-vocabulary
+    // filled/outlined/rounded/sharp switch ThemeEditorPage exposes.
+    final destinations = [
+      HomeDestinationInfo(OmnisIconCatalog.home.resolve(), 'Home'),
+      HomeDestinationInfo(OmnisIconCatalog.libraryMusic.resolve(), 'Library'),
+      HomeDestinationInfo(OmnisIconCatalog.playlistPlay.resolve(), 'Playlist'),
+      HomeDestinationInfo(OmnisIconCatalog.mood.resolve(), 'Moods'),
+      HomeDestinationInfo(OmnisIconCatalog.cloudQueue.resolve(), 'Online'),
+      HomeDestinationInfo(OmnisIconCatalog.settings.resolve(), 'Settings'),
     ];
     final isWideLayout = isWideHomeLayout(context);
     final homeNav = HomeNavigationBar(

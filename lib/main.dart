@@ -9,6 +9,7 @@ import 'package:omnis/ui/onboarding/onboarding_page.dart';
 import 'package:omnis/ui/theme/declarative/declarative_omnis_theme.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/theme/omnis_theme.dart';
 
@@ -83,8 +84,10 @@ class _OmnisAppState extends State<OmnisApp> {
 
     if (customTheme != null) {
       DeclarativeOmnisTheme.applyMotionStyle(customTheme);
+      DeclarativeOmnisTheme.applyIconStyle(customTheme);
     } else {
       OmnisMotion.styleMultiplier = 1.0;
+      OmnisIconStyle.current = OmnisIconStyleKind.filled;
     }
 
     // A declarative theme commits to one brightness (its `brightness:`

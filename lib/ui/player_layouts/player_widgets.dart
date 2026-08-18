@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
+import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/ui/widgets/seek_position_visualizer.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
@@ -298,9 +299,18 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
     final playSize = compact ? playIconSize * 0.8 : playIconSize;
     final seekIncrement = data.settings.seekIncrementSeconds;
     final seekIcons = switch (seekIncrement) {
-      15 => (Icons.replay_10, Icons.forward_10), // no dedicated 15s glyph
-      30 => (Icons.replay_30, Icons.forward_30),
-      _ => (Icons.replay_10, Icons.forward_10),
+      15 => (
+          OmnisIconCatalog.replay10.resolve(),
+          OmnisIconCatalog.forward10.resolve()
+        ), // no dedicated 15s glyph
+      30 => (
+          OmnisIconCatalog.replay30.resolve(),
+          OmnisIconCatalog.forward30.resolve()
+        ),
+      _ => (
+          OmnisIconCatalog.replay10.resolve(),
+          OmnisIconCatalog.forward10.resolve()
+        ),
     };
     void skip(int deltaSeconds) {
       final current = data.position;
@@ -318,10 +328,10 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
     // the glyph choice since the two states are mutually exclusive by the
     // time this renders.
     final playModeIcon = data.shuffleEnabled
-        ? Icons.shuffle
+        ? OmnisIconCatalog.shuffle.resolve()
         : data.repeatMode == RepeatMode.one
-            ? Icons.repeat_one
-            : Icons.repeat;
+            ? OmnisIconCatalog.repeatOne.resolve()
+            : OmnisIconCatalog.repeat.resolve();
     final playModeActive =
         data.shuffleEnabled || data.repeatMode != RepeatMode.off;
     final playModeTooltip = data.shuffleEnabled
@@ -361,7 +371,7 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
                 tooltip: playModeTooltip,
                 iconColor: playModeActive ? activeColor : inactiveColor),
           if (layout != ButtonLayout.minimal)
-            iconButton(Icons.skip_previous,
+            iconButton(OmnisIconCatalog.skipPrevious.resolve(),
                 onPressed: data.onPrevious,
                 size: compact ? iconSize * 0.8 : iconSize,
                 tooltip: 'Previous'),
@@ -405,7 +415,7 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
                 tooltip: 'Forward $seekIncrement seconds'),
           ],
           if (layout != ButtonLayout.minimal)
-            iconButton(Icons.skip_next,
+            iconButton(OmnisIconCatalog.skipNext.resolve(),
                 onPressed: data.onNext,
                 size: compact ? iconSize * 0.8 : iconSize,
                 tooltip: 'Next'),

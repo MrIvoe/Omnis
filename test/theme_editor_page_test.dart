@@ -6,6 +6,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/ui/theme/declarative/theme_editor_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/theme/omnis_typography.dart';
 import 'package:omnis/ui/widgets/color_picker_dialog.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -137,6 +138,42 @@ void main() {
     expect(offered, OmnisTypography.allowedFonts.keys.toSet());
     expect(dropdown.value, OmnisTypography.defaultFont,
         reason: 'defaults to the same fallback ThemeManifest.parse uses');
+  });
+
+  testWidgets(
+      'icon style selector offers exactly OmnisIconStyle.allowedStyles, '
+      'defaulting to OmnisIconStyle.defaultStyleKey', (tester) async {
+    await pumpEditor(tester);
+
+    final finder = await scrollTo(
+        tester, find.byKey(const ValueKey('icon_style_selector')));
+    final selector = tester.widget<SegmentedButton<String>>(finder);
+    final offered = selector.segments.map((s) => s.value).toSet();
+
+    expect(offered, OmnisIconStyle.allowedStyles.keys.toSet());
+    expect(selector.selected, {OmnisIconStyle.defaultStyleKey},
+        reason: 'defaults to the same fallback ThemeManifest.parse uses');
+  });
+
+  testWidgets(
+      "selecting an icon style updates the live preview's transport icons",
+      (tester) async {
+    await pumpEditor(tester);
+
+    expect(find.byIcon(Icons.skip_previous), findsOneWidget);
+    expect(find.byIcon(Icons.skip_previous_outlined), findsNothing);
+
+    await tester.tap(await scrollTo(
+        tester,
+        find.descendant(
+            of: find.byKey(const ValueKey('icon_style_selector')),
+            matching: find.text('Outlined'))));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.skip_previous_outlined), findsOneWidget,
+        reason: 'the live preview reads the in-progress manifest, not '
+            'the app-wide OmnisIconStyle.current global');
+    expect(find.byIcon(Icons.skip_previous), findsNothing);
   });
 
   testWidgets('choosing a preset color for Primary updates the live preview',
@@ -347,6 +384,14 @@ void main() {
             matching: find.text('Snappy'))));
     await tester.pump();
 
+    // Icon style -> rounded.
+    await tester.tap(await scrollTo(
+        tester,
+        find.descendant(
+            of: find.byKey(const ValueKey('icon_style_selector')),
+            matching: find.text('Rounded'))));
+    await tester.pump();
+
     // Background -> gradient, two stops with their own distinct hexes.
     await tester.tap(await scrollTo(
         tester, find.byKey(const ValueKey('background_toggle'))));
@@ -407,6 +452,7 @@ void main() {
     expect(saved.textScale, closeTo(expectedScale, 0.001));
     expect(saved.cornerRadius, closeTo(expectedRadius, 0.001));
     expect(saved.motionStyle, ThemeMotionStyle.snappy);
+    expect(saved.iconStyle, 'rounded');
     expect(saved.background, isNotNull);
     expect(saved.background!['type'], 'gradient');
     final bgColors = (saved.background!['colors'] as List).cast<String>();
