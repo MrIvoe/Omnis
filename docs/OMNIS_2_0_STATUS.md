@@ -7,7 +7,7 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-18 (item 45's pop-out sidebar gap closed).
+> Last regenerated: 2026-08-18 (item 30's GitHub-URL install default-branch bug fixed).
 
 ## Overall
 
@@ -89,7 +89,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 27 | Permissions | ✅ Manifest permissions map to real `dart_eval` grants, shown before any plugin code runs |
 | 28 | Plugin health | ✅ Reactive health records, per-plugin retry/reset, a dedicated health-center page, and background heartbeat monitoring for both external and bundled/in-process plugins — no further named gaps |
 | 29 | Plugin updates | 🟡 Real update detection plus automatic/background checking; built from a genuine 0% start |
-| 30 | Marketplace/catalog | ✅ Real permission-confirmation install flow against a fetched `catalog.json` |
+| 30 | Marketplace/catalog | ✅ Real permission-confirmation install flow against a fetched `catalog.json`; a bare `github.com/user/repo` URL now tries both `main` and `master` before failing (previously hardcoded to `main` only, so any `master`-default repo failed install with a misleading "missing omnis_plugin.yaml" error even though the file was really there) |
 
 ## Phase 5 — Connectivity
 

@@ -128,45 +128,67 @@ class PluginInstaller {
     // size cap can be enforced as bytes arrive instead of only after the
     // whole (potentially huge) response has already been buffered in
     // memory.
-    try {
-      final request = http.Request('GET', resolved.downloadUri);
-      final response = await _client.send(request).timeout(_downloadTimeout);
-      if (response.statusCode != 200) {
-        throw PluginInstallException(
-            'Download failed (HTTP ${response.statusCode})');
-      }
-      final declaredLength = response.contentLength;
-      if (declaredLength != null && declaredLength > maxDownloadBytes) {
-        throw PluginInstallException(
-          'Plugin download is too large '
-          '(${_formatBytes(declaredLength)}, limit is '
-          '${_formatBytes(maxDownloadBytes)}).',
-        );
-      }
-      final sink = zipFile.openWrite();
-      var received = 0;
+    //
+    // Tries each of resolved.downloadUriCandidates in turn (more than one
+    // only for a bare-repo URL, whose branch is unknown — see
+    // _bareRepoBranchCandidates), moving to the next candidate ONLY on a
+    // 404 (that ref genuinely doesn't exist, worth guessing again) —
+    // any other failure (a different HTTP error, a network timeout, the
+    // size cap) surfaces immediately rather than being masked by a
+    // pointless retry against a different branch guess.
+    Object? lastError;
+    for (var i = 0; i < resolved.downloadUriCandidates.length; i++) {
+      final candidate = resolved.downloadUriCandidates[i];
+      final isLastCandidate = i == resolved.downloadUriCandidates.length - 1;
       try {
-        await response.stream.timeout(_downloadTimeout).forEach((chunk) {
-          received += chunk.length;
-          if (received > maxDownloadBytes) {
-            throw PluginInstallException(
-              'Plugin download exceeded the '
-              '${_formatBytes(maxDownloadBytes)} size limit.',
-            );
-          }
-          sink.add(chunk);
-        });
-      } finally {
-        await sink.close();
-      }
-    } catch (e) {
-      if (await zipFile.exists()) {
+        final request = http.Request('GET', candidate);
+        final response =
+            await _client.send(request).timeout(_downloadTimeout);
+        if (response.statusCode == 404 && !isLastCandidate) {
+          continue;
+        }
+        if (response.statusCode != 200) {
+          throw PluginInstallException(
+              'Download failed (HTTP ${response.statusCode})');
+        }
+        final declaredLength = response.contentLength;
+        if (declaredLength != null && declaredLength > maxDownloadBytes) {
+          throw PluginInstallException(
+            'Plugin download is too large '
+            '(${_formatBytes(declaredLength)}, limit is '
+            '${_formatBytes(maxDownloadBytes)}).',
+          );
+        }
+        final sink = zipFile.openWrite();
+        var received = 0;
         try {
-          await zipFile.delete();
-        } catch (_) {}
+          await response.stream.timeout(_downloadTimeout).forEach((chunk) {
+            received += chunk.length;
+            if (received > maxDownloadBytes) {
+              throw PluginInstallException(
+                'Plugin download exceeded the '
+                '${_formatBytes(maxDownloadBytes)} size limit.',
+              );
+            }
+            sink.add(chunk);
+          });
+        } finally {
+          await sink.close();
+        }
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        if (await zipFile.exists()) {
+          try {
+            await zipFile.delete();
+          } catch (_) {}
+        }
+        if (e is PluginInstallException) rethrow;
       }
-      if (e is PluginInstallException) rethrow;
-      throw PluginInstallException('Could not download plugin: $e');
+    }
+    if (lastError != null) {
+      throw PluginInstallException('Could not download plugin: $lastError');
     }
 
     // Extract
@@ -332,16 +354,19 @@ class PluginInstaller {
   /// an update check is inherently best-effort, and one plugin's source
   /// URL not supporting it must not abort checking the rest.
   Future<PluginManifest?> fetchRemoteManifest(String sourceUrl) async {
-    final rawUri = _resolveManifestRawUrl(sourceUrl);
-    if (rawUri == null) return null;
-    try {
-      final response =
-          await _client.get(rawUri).timeout(_downloadTimeout);
-      if (response.statusCode != 200) return null;
-      return PluginManifest.parse(response.body, sourceUrl: sourceUrl);
-    } catch (_) {
-      return null;
+    final candidates = _resolveManifestRawUrl(sourceUrl);
+    if (candidates == null) return null;
+    for (final rawUri in candidates) {
+      try {
+        final response =
+            await _client.get(rawUri).timeout(_downloadTimeout);
+        if (response.statusCode != 200) continue;
+        return PluginManifest.parse(response.body, sourceUrl: sourceUrl);
+      } catch (_) {
+        continue;
+      }
     }
+    return null;
   }
 
   /// Fetches Omnis's own plugin catalog — item 30's "nothing queries
@@ -385,12 +410,15 @@ class PluginInstaller {
   }
 
   /// Resolves a GitHub repo URL (the same shapes [_resolveDownloadUrl]
-  /// accepts) to a direct `raw.githubusercontent.com` URL for its
-  /// `omnis_plugin.yaml`. Returns `null` for a direct `.zip` URL — there
-  /// is no general way to derive a single raw file's location from an
-  /// arbitrary zip download link, so those plugins simply aren't
+  /// accepts) to every candidate `raw.githubusercontent.com` URL for its
+  /// `omnis_plugin.yaml`, in order of preference — more than one only for
+  /// a bare-repo URL, whose branch is unknown (see
+  /// [_bareRepoBranchCandidates], the same list [_resolveDownloadUrl]'s
+  /// bare-repo case tries). Returns `null` for a direct `.zip` URL —
+  /// there is no general way to derive a single raw file's location from
+  /// an arbitrary zip download link, so those plugins simply aren't
   /// update-checkable this way.
-  static Uri? _resolveManifestRawUrl(String input) {
+  static List<Uri>? _resolveManifestRawUrl(String input) {
     final url = input.trim();
 
     final treeMatch =
@@ -404,9 +432,11 @@ class PluginInstaller {
       final manifestPath = subPath == null || subPath.isEmpty
           ? 'omnis_plugin.yaml'
           : '$subPath/omnis_plugin.yaml';
-      return Uri.parse(
-        'https://raw.githubusercontent.com/$user/$repo/$branch/$manifestPath',
-      );
+      return [
+        Uri.parse(
+          'https://raw.githubusercontent.com/$user/$repo/$branch/$manifestPath',
+        ),
+      ];
     }
 
     final bareMatch =
@@ -414,13 +444,12 @@ class PluginInstaller {
     if (bareMatch != null) {
       final user = bareMatch.group(1)!;
       final repo = bareMatch.group(2)!;
-      // Same "main" assumption _resolveDownloadUrl's bare-repo case
-      // already makes — a repo whose default branch is actually
-      // "master" (or anything else) isn't resolvable here either way,
-      // a pre-existing simplification this doesn't newly introduce.
-      return Uri.parse(
-        'https://raw.githubusercontent.com/$user/$repo/main/omnis_plugin.yaml',
-      );
+      return [
+        for (final branch in _bareRepoBranchCandidates)
+          Uri.parse(
+            'https://raw.githubusercontent.com/$user/$repo/$branch/omnis_plugin.yaml',
+          ),
+      ];
     }
 
     return null;
@@ -545,8 +574,21 @@ class PluginInstaller {
   /// Resolves a user-friendly GitHub URL into a direct zip download URL,
   /// plus (for a `.../tree/branch/subfolder` catalog link) the subfolder
   /// within the extracted zip that actually holds the plugin.
-  static ({Uri downloadUri, String? subPath}) _resolveDownloadUrl(
-      String input) {
+  /// Branches tried, in order, for a bare `https://github.com/user/repo`
+  /// URL — the caller doesn't say which branch it means, and this app
+  /// deliberately never calls GitHub's REST API to ask (see
+  /// [fetchCatalog]'s own "no GitHub API call, no auth, no rate limit to
+  /// manage" doc comment for why: the unauthenticated REST API is capped
+  /// at 60 requests/hour per IP, `raw.githubusercontent.com`/
+  /// `codeload.github.com` aren't). `main` covers every repo created
+  /// since GitHub changed its default in 2020; `master` covers everything
+  /// older, which is still common — trying both is a full fix for the
+  /// "install failed: missing omnis_plugin.yaml" report this used to
+  /// produce for any `master`-default repo, not just a partial patch.
+  static const _bareRepoBranchCandidates = ['main', 'master'];
+
+  static ({List<Uri> downloadUriCandidates, String? subPath})
+      _resolveDownloadUrl(String input) {
     var url = input.trim();
     if (url.isEmpty) {
       throw PluginInstallException('URL is empty.');
@@ -563,9 +605,11 @@ class PluginInstaller {
       final branch = treeMatch.group(3)!;
       final subPath = treeMatch.group(4);
       return (
-        downloadUri: Uri.parse(
-          'https://codeload.github.com/$user/$repo/zip/refs/heads/$branch',
-        ),
+        downloadUriCandidates: [
+          Uri.parse(
+            'https://codeload.github.com/$user/$repo/zip/refs/heads/$branch',
+          ),
+        ],
         subPath: subPath,
       );
     }
@@ -573,18 +617,22 @@ class PluginInstaller {
     // https://github.com/user/repo/archive/refs/heads/main.zip → direct
     final archiveMatch = RegExp(r'^(https?://.*\.zip)$').firstMatch(url);
     if (archiveMatch != null) {
-      return (downloadUri: Uri.parse(url), subPath: null);
+      return (downloadUriCandidates: [Uri.parse(url)], subPath: null);
     }
 
-    // https://github.com/user/repo → default branch zip
+    // https://github.com/user/repo → default branch zip, branch unknown —
+    // try every candidate in _bareRepoBranchCandidates.
     final bareMatch =
         RegExp(r'^https?://github\.com/([^/]+)/([^/]+)/?$').firstMatch(url);
     if (bareMatch != null) {
       final user = bareMatch.group(1)!;
       final repo = bareMatch.group(2)!;
       return (
-        downloadUri: Uri.parse(
-            'https://codeload.github.com/$user/$repo/zip/refs/heads/main'),
+        downloadUriCandidates: [
+          for (final branch in _bareRepoBranchCandidates)
+            Uri.parse(
+                'https://codeload.github.com/$user/$repo/zip/refs/heads/$branch'),
+        ],
         subPath: null,
       );
     }

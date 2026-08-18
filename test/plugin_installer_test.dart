@@ -247,6 +247,86 @@ hooks:
     });
   });
 
+  group('bare-repo default-branch fallback (main -> master)', () {
+    test('a bare repo URL tries the codeload main zip first, and only '
+        'falls back to master on a 404 for that specific ref', () async {
+      final zip = _buildZip({
+        'repo-master/omnis_plugin.yaml': _validManifest,
+        'repo-master/plugin.dart': '// entrypoint',
+      });
+      final requestedUrls = <Uri>[];
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          requestedUrls.add(request.url);
+          if (request.url.toString().contains('/main')) {
+            return http.Response('Not Found', 404);
+          }
+          return http.Response.bytes(zip, 200);
+        }),
+      );
+
+      final result =
+          await installer.installFromUrl('https://github.com/user/repo');
+
+      expect(result.manifest.id, 'sample_plugin');
+      expect(requestedUrls, [
+        Uri.parse('https://codeload.github.com/user/repo/zip/refs/heads/main'),
+        Uri.parse(
+            'https://codeload.github.com/user/repo/zip/refs/heads/master'),
+      ]);
+    });
+
+    test('a bare repo URL never tries master when main already succeeds',
+        () async {
+      final zip = _buildZip({
+        'repo-main/omnis_plugin.yaml': _validManifest,
+        'repo-main/plugin.dart': '// entrypoint',
+      });
+      final requestedUrls = <Uri>[];
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          requestedUrls.add(request.url);
+          return http.Response.bytes(zip, 200);
+        }),
+      );
+
+      await installer.installFromUrl('https://github.com/user/repo');
+
+      expect(requestedUrls, hasLength(1));
+      expect(requestedUrls.single.toString(), contains('/main'));
+    });
+
+    test('a 404 on both main and master surfaces as a real download '
+        'failure, not silently as "missing manifest"', () async {
+      final installer = PluginInstaller(
+        client: MockClient((request) async => http.Response('Not Found', 404)),
+      );
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo'),
+        throwsA(isA<PluginInstallException>().having(
+            (e) => e.message, 'message', contains('404'))),
+      );
+    });
+
+    test('an explicit .../tree/branch URL never tries a second branch — '
+        'the caller already said exactly which one it means', () async {
+      final requestedUrls = <Uri>[];
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          requestedUrls.add(request.url);
+          return http.Response('Not Found', 404);
+        }),
+      );
+
+      await expectLater(
+        installer.installFromUrl('https://github.com/user/repo/tree/develop'),
+        throwsA(isA<PluginInstallException>()),
+      );
+      expect(requestedUrls, hasLength(1));
+    });
+  });
+
   group('validation failures', () {
     test('an empty zip is rejected', () async {
       final zip = _buildZip({});
@@ -523,6 +603,31 @@ hooks:
           .fetchRemoteManifest('https://github.com/user/repo');
 
       expect(manifest, isNull);
+    });
+
+    test('a bare repo URL falls back to the master raw manifest URL when '
+        'main 404s — same fallback installFromUrl uses', () async {
+      final requestedUrls = <Uri>[];
+      final installer = PluginInstaller(
+        client: MockClient((request) async {
+          requestedUrls.add(request.url);
+          if (request.url.toString().endsWith('/main/omnis_plugin.yaml')) {
+            return http.Response('Not Found', 404);
+          }
+          return http.Response(_validManifest, 200);
+        }),
+      );
+
+      final manifest =
+          await installer.fetchRemoteManifest('https://github.com/user/repo');
+
+      expect(manifest?.id, 'sample_plugin');
+      expect(requestedUrls, [
+        Uri.parse(
+            'https://raw.githubusercontent.com/user/repo/main/omnis_plugin.yaml'),
+        Uri.parse(
+            'https://raw.githubusercontent.com/user/repo/master/omnis_plugin.yaml'),
+      ]);
     });
   });
 
