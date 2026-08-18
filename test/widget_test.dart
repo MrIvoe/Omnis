@@ -129,6 +129,40 @@ void main() {
     expect(AppSettings.instance.libraryWatcherEnabled, isTrue);
   });
 
+  group('AppSettings persists libraryVisibleColumns', () {
+    test('defaults to artist/album/genre — exactly what the Library '
+        'page\'s subtitle always showed before this setting existed',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppSettings.instance.initialize();
+
+      expect(AppSettings.instance.libraryVisibleColumns,
+          {'artist', 'album', 'genre'});
+    });
+
+    test('a real persistence round-trip through setLibraryVisibleColumns',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppSettings.instance.initialize();
+
+      await AppSettings.instance
+          .setLibraryVisibleColumns({'rating', 'playCount'});
+
+      expect(AppSettings.instance.libraryVisibleColumns,
+          {'rating', 'playCount'});
+    });
+
+    test('an empty set is a real, distinct choice — not silently treated '
+        'as "use the default"', () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppSettings.instance.initialize();
+
+      await AppSettings.instance.setLibraryVisibleColumns(const {});
+
+      expect(AppSettings.instance.libraryVisibleColumns, isEmpty);
+    });
+  });
+
   // Kept last in this file deliberately: OmnisTheme.build pulls in
   // google_fonts (via OmnisTypography.build), which kicks off a
   // fire-and-forget real font-fetch Future that always fails under

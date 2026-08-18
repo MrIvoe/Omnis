@@ -7,7 +7,7 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-16 (item 28 closed).
+> Last regenerated: 2026-08-18 (item 10's Library display-columns gap closed).
 
 ## Overall
 
@@ -59,7 +59,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 
 | # | Item | Status |
 |---|------|--------|
-| 10 | Search | 🟡 Real full-text + field qualifiers (`rating:`, `bpm:`, `missing:`, etc.), built this project from a genuine 0% start |
+| 10 | Search | 🟡 Real full-text + field qualifiers (`rating:`, `bpm:`, `missing:`, etc.), built this project from a genuine 0% start; Library page now also has UI_SPEC §11's toggleable song-row metadata columns (Artist/Album/Year/Genre/Bitrate/Format/Rating/Play count/ReplayGain) — not reorderable spreadsheet columns, a scoped subset |
 | 11 | Metadata | 🟡 MusicBrainz/Last.fm enrichment, pre-existing and real |
 | 12 | Artwork | 🟡 Embedded + MediaStore artwork; bulk "look up artwork for the whole library" added |
 | 13 | Playlists | 🟡 Static playlists with M3U/PLS/XSPF/CSV/JSON export, fairly complete |

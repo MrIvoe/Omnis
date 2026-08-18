@@ -127,6 +127,7 @@ class AppSettings extends ChangeNotifier {
       'app_queue_rule_avoid_repeat_artist';
   static const _queueRuleAvoidRepeatAlbumKey =
       'app_queue_rule_avoid_repeat_album';
+  static const _libraryVisibleColumnsKey = 'app_library_visible_columns';
 
   SharedPreferences? _prefs;
   bool _initialized = false;
@@ -1182,6 +1183,29 @@ class AppSettings extends ChangeNotifier {
   set queueRuleAvoidRepeatAlbum(bool value) {
     _ensurePrefs();
     _prefs!.setBool(_queueRuleAvoidRepeatAlbumKey, value);
+    notifyListeners();
+  }
+
+  /// UI_SPEC §11's "Library customization" gap: which metadata fields
+  /// show in each song row's subtitle line on the Library page — a
+  /// closed set of keys (`_LibraryColumnsSheet._columns` in
+  /// `library_page.dart`),
+  /// the same "closed map, anything else falls back to the default"
+  /// discipline `OmnisTypography.allowedFonts`/`OmnisIconStyle
+  /// .allowedStyles` already use. Defaults to `{artist, album, genre}`
+  /// — exactly what `_subtitle` always showed before this setting
+  /// existed (modulo mood-over-genre preference, which stays
+  /// unconditional), so nothing changes for anyone who never opens this.
+  /// Same [disabledPlugins] `getStringList`/`setStringList` persistence
+  /// idiom.
+  Set<String> get libraryVisibleColumns =>
+      (_prefs?.getStringList(_libraryVisibleColumnsKey) ??
+              const ['artist', 'album', 'genre'])
+          .toSet();
+
+  Future<void> setLibraryVisibleColumns(Set<String> columns) async {
+    _ensurePrefs();
+    await _prefs!.setStringList(_libraryVisibleColumnsKey, columns.toList());
     notifyListeners();
   }
 

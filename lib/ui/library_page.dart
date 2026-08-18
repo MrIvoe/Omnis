@@ -1432,6 +1432,23 @@ class _LibraryPageState extends State<LibraryPage> {
     ));
   }
 
+  /// UI_SPEC §11: which metadata fields show in each song row's
+  /// subtitle. Persists via [AppSettings.setLibraryVisibleColumns] and
+  /// triggers a rebuild on close (a change takes effect the moment
+  /// `_subtitle` re-reads the setting on the next frame — `AppSettings`
+  /// is itself a `ChangeNotifier`, but this page doesn't listen to it
+  /// directly, so an explicit `setState` here is what actually repaints
+  /// the currently-visible rows immediately rather than waiting for some
+  /// unrelated rebuild).
+  Future<void> _openDisplayColumnsSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _LibraryColumnsSheet(),
+    );
+    if (mounted) setState(() {});
+  }
+
   /// Drops [track] from the library without attempting to delete
   /// anything from disk — unlike [_deleteTracks], which is for a file
   /// that still exists. Used by the cleanup report's "missing files"
@@ -1489,6 +1506,15 @@ class _LibraryPageState extends State<LibraryPage> {
       widget.pluginManager.bundled<RatingsPlugin>(onlyEnabled: true);
 
   int _ratingOf(String trackId) => _ratingsPlugin?.ratingOf(trackId) ?? 0;
+
+  /// Looked up by interface, not concrete plugin type — whatever is
+  /// currently registered as `IPlayHistoryProvider` (today, always
+  /// `ScrobblePlugin`) answers "how many times has this played," the
+  /// same pattern `PlaylistPage._playHistory` already establishes.
+  IPlayHistoryProvider? get _playHistory =>
+      widget.pluginManager.services.get<IPlayHistoryProvider>();
+
+  int _playCountOf(String trackId) => _playHistory?.playCountFor(trackId) ?? 0;
 
   /// [RatingsPlugin] also implements [IThumbsProvider] — same plugin
   /// instance, an independent signal from the star rating above (§36:
@@ -2280,6 +2306,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     if (value == 'statistics') _openStatistics();
                     if (value == 'auto_tag') _autoTagLibrary();
                     if (value == 'retag_all') _autoTagLibrary(force: true);
+                    if (value == 'display_columns') _openDisplayColumnsSheet();
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
@@ -2320,6 +2347,11 @@ class _LibraryPageState extends State<LibraryPage> {
                     PopupMenuItem(
                       value: 'statistics',
                       child: Text('Library statistics'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'display_columns',
+                      child: Text('Display columns…'),
                     ),
                   ],
                 ),
@@ -3014,20 +3046,51 @@ class _LibraryPageState extends State<LibraryPage> {
     return const SizedBox.shrink();
   }
 
+  /// UI_SPEC §11's "Library customization" gap: which of these appear is
+  /// driven by [AppSettings.libraryVisibleColumns] — everything below
+  /// that isn't in the spec's own named 9-field list (mood/BPM/key) stays
+  /// exactly as unconditional as it always was, unaffected by this
+  /// setting; only Artist/Album/Genre/Year/Bitrate/Format/Rating/Play
+  /// count/ReplayGain are gated by it. Not true reorderable spreadsheet
+  /// columns (a `ListTile` row has one subtitle line, not a per-field
+  /// grid) — a scoped, still-real subset of the spec's ask: which fields
+  /// show, not which order/width they render at.
   String _subtitle(BaseTrack track) {
+    final visible = AppSettings.instance.libraryVisibleColumns;
     final parts = <String>[];
-    if (track.artists.isNotEmpty) {
+    if (visible.contains('artist') && track.artists.isNotEmpty) {
       parts.add(track.artists.join(', '));
     }
-    if (track.album.isNotEmpty) {
+    if (visible.contains('album') && track.album.isNotEmpty) {
       parts.add(track.album);
+    }
+    if (visible.contains('year') && track.year != null) {
+      parts.add('${track.year}');
     }
     // Surfaces what enrichment/analysis actually found — otherwise a
     // successful lookup would have no visible effect on this screen at all.
+    // Mood itself isn't one of this setting's 9 named columns, so it stays
+    // unconditional; only the genre fallback is gated.
     if (track.mood != null && track.mood!.isNotEmpty) {
       parts.add(track.mood!);
-    } else if (track.genres.isNotEmpty) {
+    } else if (visible.contains('genre') && track.genres.isNotEmpty) {
       parts.add(track.genres.first);
+    }
+    if (visible.contains('bitrate') && track.bitrateKbps != null) {
+      parts.add('${track.bitrateKbps} kbps');
+    }
+    if (visible.contains('format') && track.codec != null && track.codec!.isNotEmpty) {
+      parts.add(track.codec!);
+    }
+    if (visible.contains('rating') && _ratingOf(track.id) > 0) {
+      parts.add('★' * _ratingOf(track.id));
+    }
+    if (visible.contains('playCount') && _playCountOf(track.id) > 0) {
+      final count = _playCountOf(track.id);
+      parts.add('$count play${count == 1 ? '' : 's'}');
+    }
+    if (visible.contains('replayGain') && track.replayGain?.trackGain != null) {
+      parts.add('${track.replayGain!.trackGain!.toStringAsFixed(1)} dB');
     }
     if (track.bpm != null) {
       parts.add('${track.bpm!.round()} BPM');
@@ -3237,6 +3300,79 @@ class _StarPicker extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(0.0),
           ),
       ],
+    );
+  }
+}
+
+/// UI_SPEC §11's "Library customization" checkbox list — one entry per
+/// closed key [AppSettings.libraryVisibleColumns] recognizes. Not true
+/// reorderable spreadsheet columns (see [_LibraryPageState._subtitle]'s
+/// own doc comment for the scoping reasoning) — just which of these
+/// appear in each song row's subtitle line, in a fixed order.
+class _LibraryColumnsSheet extends StatefulWidget {
+  const _LibraryColumnsSheet();
+
+  @override
+  State<_LibraryColumnsSheet> createState() => _LibraryColumnsSheetState();
+}
+
+class _LibraryColumnsSheetState extends State<_LibraryColumnsSheet> {
+  static const _columns = [
+    ('artist', 'Artist'),
+    ('album', 'Album'),
+    ('year', 'Year'),
+    ('genre', 'Genre'),
+    ('bitrate', 'Bitrate'),
+    ('format', 'Format'),
+    ('rating', 'Rating'),
+    ('playCount', 'Play count'),
+    ('replayGain', 'ReplayGain'),
+  ];
+
+  late Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set.of(AppSettings.instance.libraryVisibleColumns);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Display columns', style: theme.textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text(
+              'Choose which details show under each song\'s title.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            for (final (key, label) in _columns)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(label),
+                value: _selected.contains(key),
+                onChanged: (checked) async {
+                  setState(() {
+                    if (checked == true) {
+                      _selected.add(key);
+                    } else {
+                      _selected.remove(key);
+                    }
+                  });
+                  await AppSettings.instance.setLibraryVisibleColumns(_selected);
+                },
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
