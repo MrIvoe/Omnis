@@ -27,6 +27,7 @@ import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/omnis_icon_catalog.dart';
+import 'package:omnis/ui/widgets/global_sidebar_drawer.dart';
 import 'package:omnis/ui/widgets/mini_player_bar.dart';
 
 /// Home shell with navigation tabs.
@@ -62,6 +63,7 @@ class _HomePageState extends State<HomePage> {
   /// open/build/play logic instead of duplicating it here.
   final _playlistKey = GlobalKey<PlaylistPageState>();
   final _moodsKey = GlobalKey<MoodsPageState>();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   /// Whether the user has manually revealed the bottom nav during the
   /// current auto-hide episode (landscape or Car Mode layout, while
@@ -329,6 +331,7 @@ class _HomePageState extends State<HomePage> {
       onDestinationSelected: (i) => setState(() => _selectedIndex = i),
       pluginManager: core.pluginManager,
       destinations: destinations,
+      onOpenSidebar: () => _scaffoldKey.currentState?.openDrawer(),
     );
 
     final mainContent = Stack(
@@ -378,8 +381,24 @@ class _HomePageState extends State<HomePage> {
             if (!AppSettings.instance.keyboardShortcutsEnabled) return;
             _openCommandPalette(context, core);
           },
+          // UI_SPEC §3's "summoned from anywhere" — the same
+          // Ctrl+<letter> convention Ctrl+K/Ctrl+P already establish for
+          // the command palette, here for the pop-out sidebar.
+          const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+            if (!AppSettings.instance.keyboardShortcutsEnabled) return;
+            _scaffoldKey.currentState?.openDrawer();
+          },
         },
         child: Scaffold(
+          key: _scaffoldKey,
+          drawer: GlobalSidebarDrawer(
+            pluginManager: core.pluginManager,
+            selectedIndex: _selectedIndex,
+            destinations: destinations,
+            playlistKey: _playlistKey,
+            moodsKey: _moodsKey,
+            onSelectDestination: (i) => setState(() => _selectedIndex = i),
+          ),
           // Wide layout: the rail sits beside the content permanently —
           // unlike the bottom bar it's never subject to
           // autoHideActive/navVisible, since it's a side column, not

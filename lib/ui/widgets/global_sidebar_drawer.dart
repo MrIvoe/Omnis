@@ -1,0 +1,281 @@
+import 'package:flutter/material.dart';
+import 'package:omnis/core/custom_mood.dart';
+import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/core/playlist_store.dart';
+import 'package:omnis/core/sidebar_config.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/ui/home_navigation.dart';
+import 'package:omnis/ui/home_page.dart' show MoodsPageState;
+import 'package:omnis/ui/playlist_page.dart';
+
+/// UI_SPEC §3-5's "pop-out sidebar" — "a global sidebar drawer that can
+/// be summoned from anywhere," "not just navigation... the user's
+/// personal music command center." Built as a real Flutter [Drawer]
+/// (`Scaffold.drawer`), which already gives §5's "Mobile drawer: swipe
+/// from left" and "Floating: overlays content" for free — a drawer is,
+/// by definition, an overlay reached by a gesture/tap, not permanently
+/// occupying layout space. §5's other four modes (Compact, Pinned,
+/// Hidden-behind-hotkey, Auto-hide-on-cursor-to-edge) are a real,
+/// named, deliberately out-of-scope gap for a future pass — this is one
+/// mode (functionally closest to "Floating"), not mode-switching UI.
+///
+/// §4's item kinds are scoped to [SidebarItemKind]'s two values
+/// (playlist, mood) — see that enum's own doc for why the spec's fuller
+/// list (smart playlist/library/provider/server/favorite album or
+/// artist/radio station/shortcut) isn't built here. Sections are
+/// likewise scoped to a fixed kind each (no mixed-kind custom groups,
+/// no "add a new section" UI) — [defaultSidebarSections] seeds exactly
+/// the two the spec's own mockup shows ("MY PLAYLISTS"/"MY MOODS").
+///
+/// Tapping a playlist switches to the Playlist tab and opens it (mirrors
+/// the §37 command-palette's own `onSelectPlaylist` wiring in
+/// `home_page.dart` exactly); tapping a mood plays it directly, custom or
+/// preset (mirrors `MoodsPageState.playMood`/`playCustomMood` — resolved
+/// here by checking the custom-mood list first, falling back to treating
+/// the name as a preset `IQueueBuilder` query), reusing
+/// `MoodsPageState`'s already-tested queue-building/snackbar-feedback
+/// logic via the same `GlobalKey`-into-an-already-mounted-`IndexedStack`-
+/// page pattern this app already established for
+/// `HomeDashboardPageState.openCustomizeSheet`/`PlaylistPageState.
+/// openPlaylist`/`MoodsPageState.playMood` itself.
+class GlobalSidebarDrawer extends StatefulWidget {
+  final PluginManager pluginManager;
+  final int selectedIndex;
+  final List<HomeDestinationInfo> destinations;
+  final GlobalKey<PlaylistPageState> playlistKey;
+  final GlobalKey<MoodsPageState> moodsKey;
+
+  /// Switches `HomePage`'s own selected tab — the drawer itself has no
+  /// navigation state of its own, matching every other cross-tab jump in
+  /// this app (the command palette's own `onSelectPlaylist`/
+  /// `onSelectMood`).
+  final ValueChanged<int> onSelectDestination;
+
+  const GlobalSidebarDrawer({
+    super.key,
+    required this.pluginManager,
+    required this.selectedIndex,
+    required this.destinations,
+    required this.playlistKey,
+    required this.moodsKey,
+    required this.onSelectDestination,
+  });
+
+  @override
+  State<GlobalSidebarDrawer> createState() => _GlobalSidebarDrawerState();
+}
+
+class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
+  List<SidebarSection> _sections = [];
+  List<Playlist> _playlists = [];
+  List<CustomMood> _customMoods = [];
+  List<String> _presetMoods = [];
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final sections = await SidebarConfigStore.instance.load();
+    final playlists = await PlaylistStore.instance.load();
+    final customMoods = await CustomMoodStore.instance.load();
+    final presetMoods = <String>{
+      for (final builder
+          in widget.pluginManager.services.getAll<IQueueBuilder>())
+        ...builder.supportedQueries,
+    }.toList();
+    if (!mounted) return;
+    setState(() {
+      _sections = sections;
+      _playlists = playlists;
+      _customMoods = customMoods;
+      _presetMoods = presetMoods;
+      _loaded = true;
+    });
+  }
+
+  Future<void> _persist() async {
+    await SidebarConfigStore.instance.save(_sections);
+  }
+
+  void _selectPlaylist(Playlist playlist) {
+    Navigator.of(context).pop();
+    widget.onSelectDestination(2);
+    widget.playlistKey.currentState?.openPlaylist(playlist);
+  }
+
+  void _selectMood(String name) {
+    Navigator.of(context).pop();
+    CustomMood? custom;
+    for (final m in _customMoods) {
+      if (m.name == name) {
+        custom = m;
+        break;
+      }
+    }
+    if (custom != null) {
+      widget.moodsKey.currentState?.playCustomMood(custom);
+    } else {
+      widget.moodsKey.currentState?.playMood(name);
+    }
+  }
+
+  Future<void> _addItem(SidebarSection section) async {
+    final available = section.kind == SidebarItemKind.playlist
+        ? _playlists
+            .where((p) => !section.items.any((i) => i.refId == p.id))
+            .map((p) => (id: p.id, label: p.name))
+            .toList()
+        : {..._presetMoods, ..._customMoods.map((m) => m.name)}
+            .where((name) => !section.items.any((i) => i.refId == name))
+            .map((name) => (id: name, label: name))
+            .toList();
+    if (available.isEmpty) return;
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Add to ${section.title}'),
+        children: [
+          for (final entry in available)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(entry.id),
+              child: Text(entry.label),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    final updatedSection = section.copyWith(items: [
+      ...section.items,
+      SidebarItem(kind: section.kind, refId: picked),
+    ]);
+    setState(() {
+      _sections = [
+        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+      ];
+    });
+    await _persist();
+  }
+
+  Future<void> _removeItem(SidebarSection section, SidebarItem item) async {
+    final updatedSection = section.copyWith(
+      items: section.items.where((i) => i != item).toList(),
+    );
+    setState(() {
+      _sections = [
+        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+      ];
+    });
+    await _persist();
+  }
+
+  Future<void> _reorderItem(
+      SidebarSection section, int oldIndex, int newIndex) async {
+    final items = [...section.items];
+    if (newIndex > oldIndex) newIndex -= 1;
+    final moved = items.removeAt(oldIndex);
+    items.insert(newIndex, moved);
+    final updatedSection = section.copyWith(items: items);
+    setState(() {
+      _sections = [
+        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+      ];
+    });
+    await _persist();
+  }
+
+  /// Resolves [item] to a display label, or `null` if its referenced
+  /// playlist/mood no longer exists — a stale reference is skipped when
+  /// rendering rather than shown as a broken entry.
+  String? _labelFor(SidebarItem item) {
+    if (item.kind == SidebarItemKind.playlist) {
+      final match = _playlists.where((p) => p.id == item.refId);
+      return match.isEmpty ? null : match.first.name;
+    }
+    if (_presetMoods.contains(item.refId) ||
+        _customMoods.any((m) => m.name == item.refId)) {
+      return item.refId;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Drawer(
+      child: SafeArea(
+        child: !_loaded
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                children: [
+                  DrawerHeader(
+                    decoration: BoxDecoration(color: theme.colorScheme.surface),
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Text('OMNIS', style: theme.textTheme.headlineSmall),
+                    ),
+                  ),
+                  for (var i = 0; i < widget.destinations.length; i++)
+                    ListTile(
+                      leading: Icon(widget.destinations[i].icon),
+                      title: Text(widget.destinations[i].label),
+                      selected: i == widget.selectedIndex,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        widget.onSelectDestination(i);
+                      },
+                    ),
+                  const Divider(),
+                  for (final section in _sections) ...[
+                    ListTile(
+                      dense: true,
+                      title: Text(
+                        section.title.toUpperCase(),
+                        style: theme.textTheme.labelSmall,
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add, size: 20),
+                        tooltip: 'Add to ${section.title}',
+                        onPressed: () => _addItem(section),
+                      ),
+                    ),
+                    ReorderableListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      onReorder: (oldIndex, newIndex) =>
+                          _reorderItem(section, oldIndex, newIndex),
+                      children: [
+                        for (final item in section.items)
+                          if (_labelFor(item) != null)
+                            ListTile(
+                              key: ValueKey('${section.id}_${item.refId}'),
+                              contentPadding:
+                                  const EdgeInsets.only(left: 32, right: 8),
+                              title: Text(_labelFor(item)!),
+                              leading: ReorderableDragStartListener(
+                                index: section.items.indexOf(item),
+                                child: const Icon(Icons.drag_indicator, size: 18),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Remove',
+                                onPressed: () => _removeItem(section, item),
+                              ),
+                              onTap: () => section.kind == SidebarItemKind.playlist
+                                  ? _selectPlaylist(_playlists
+                                      .firstWhere((p) => p.id == item.refId))
+                                  : _selectMood(item.refId),
+                            ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+}

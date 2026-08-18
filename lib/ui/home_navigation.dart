@@ -54,12 +54,18 @@ class HomeNavigationBar extends StatelessWidget {
   final PluginManager pluginManager;
   final List<HomeDestinationInfo> destinations;
 
+  /// UI_SPEC §3's pop-out sidebar entry point — `null` omits the menu
+  /// button entirely (used by every existing test/call site that doesn't
+  /// care about it), so this stays purely additive.
+  final VoidCallback? onOpenSidebar;
+
   const HomeNavigationBar({
     super.key,
     required this.selectedIndex,
     required this.onDestinationSelected,
     required this.pluginManager,
     required this.destinations,
+    this.onOpenSidebar,
   });
 
   @override
@@ -69,12 +75,20 @@ class HomeNavigationBar extends StatelessWidget {
       locationId: 'sidebar_item',
       direction: Axis.vertical,
     );
+    final menuButton = onOpenSidebar == null
+        ? null
+        : IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Open sidebar',
+            onPressed: onOpenSidebar,
+          );
 
     if (isWideHomeLayout(context)) {
       return NavigationRail(
         selectedIndex: selectedIndex,
         onDestinationSelected: onDestinationSelected,
         labelType: NavigationRailLabelType.all,
+        leading: menuButton,
         destinations: [
           for (final d in destinations)
             NavigationRailDestination(
@@ -101,6 +115,7 @@ class HomeNavigationBar extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        if (menuButton != null) menuButton,
         Expanded(
           child: NavigationBar(
             selectedIndex: selectedIndex,

@@ -231,4 +231,65 @@ void main() {
       });
     });
   });
+
+  group('HomeNavigationBar — onOpenSidebar (UI_SPEC §3 pop-out sidebar)', () {
+    testWidgets('omitted: no menu button appears in either layout',
+        (tester) async {
+      await _pumpAt(tester, const Size(400, 800), PluginManager());
+      expect(find.byIcon(Icons.menu), findsNothing);
+
+      await _pumpAt(tester, const Size(900, 800), PluginManager());
+      expect(find.byIcon(Icons.menu), findsNothing);
+    });
+
+    testWidgets('provided: a menu button appears and fires the callback '
+        '— narrow layout', (tester) async {
+      var opened = 0;
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: HomeNavigationBar(
+            selectedIndex: 0,
+            onDestinationSelected: (_) {},
+            pluginManager: PluginManager(),
+            destinations: _destinations,
+            onOpenSidebar: () => opened++,
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.menu), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.menu));
+      expect(opened, 1);
+    });
+
+    testWidgets('provided: a menu button appears and fires the callback '
+        '— wide layout', (tester) async {
+      var opened = 0;
+      tester.view.physicalSize = const Size(900, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: HomeNavigationBar(
+            selectedIndex: 0,
+            onDestinationSelected: (_) {},
+            pluginManager: PluginManager(),
+            destinations: _destinations,
+            onOpenSidebar: () => opened++,
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.menu), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.menu));
+      expect(opened, 1);
+    });
+  });
 }

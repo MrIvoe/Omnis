@@ -7,7 +7,7 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-18 (item 5's fingerprint-based track identity gap closed).
+> Last regenerated: 2026-08-18 (item 45's pop-out sidebar gap closed).
 
 ## Overall
 
@@ -119,7 +119,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 
 | # | Item | Status |
 |---|------|--------|
-| 45 | Layout builder | 🟢 Solid for Now Playing (real drag-and-drop editor, 6 bundled layouts); Home now has reorder/hide too, but no free-form widget canvas or sidebar |
+| 45 | Layout builder | 🟢 Solid for Now Playing (real drag-and-drop editor, 6 bundled layouts); Home now has reorder/hide too, and now UI_SPEC §3-5's pop-out sidebar (a global drawer, reachable via a menu button or Ctrl+B, pinning playlists/moods into user-editable, reorderable sections) — a free-form widget canvas and the sidebar's fuller mode-switching (Compact/Pinned/Auto-hide) remain open |
 | 46 | Car mode | 🟢 Dedicated minimal layout plus real GPS-speed auto-activation |
 | 47 | TV mode | 🟡 New TV-optimized Now Playing layout; built from a genuine 0% start |
 | 48 | Accessibility | 🟡 Keyboard shortcuts (now with per-shortcut remapping and conflict detection), tooltips, `Semantics` pass, reduce-motion/transparency, and a Ctrl+K command palette (11 of 13 spec-named commands, now also §37's "search everywhere" overlay across Commands/Songs/Playlists/Moods) all real; Artists/Albums/Settings search-everywhere coverage and the 2 still-deferred commands are the remaining named gaps |
