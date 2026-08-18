@@ -10,10 +10,15 @@ common kind of contribution — a new plugin.
 
 **`lib/core/` never imports a concrete plugin.** Every feature —
 equalizer, lyrics, scrobbling, smart playlists, tag editing, streaming
-integrations — lives in `lib/plugins/`. If you're adding a feature and
-find yourself editing `lib/core/`, stop and ask: does this genuinely need
-to be core, or does it belong behind the capabilities the Core already
-exposes (`PluginContext`, `PluginStorage`, `ServiceRegistry`, `EventBus`)?
+integrations — lives in the separate
+[Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo, consumed
+by this app as the `omnis_plugins` package (see
+[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) for that workflow, including
+how to publish a change there and point this app at it). If you're adding
+a feature and find yourself editing `lib/core/`, stop and ask: does this
+genuinely need to be core, or does it belong behind the capabilities the
+Core already exposes (`PluginContext`, `PluginStorage`, `ServiceRegistry`,
+`EventBus`)?
 
 The design rule behind that: **could someone reasonably want to replace
 this with a different implementation?** If yes, it belongs behind a
