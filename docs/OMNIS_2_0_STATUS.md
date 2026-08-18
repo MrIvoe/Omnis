@@ -7,7 +7,7 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-18 (item 10's Library display-columns gap closed).
+> Last regenerated: 2026-08-18 (item 39's custom mood creation gap closed).
 
 ## Overall
 
@@ -108,7 +108,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 
 | # | Item | Status |
 |---|------|--------|
-| 39 | Recommendations | 🟡 Data-driven "Moods" algorithm, Similar Artist, Deep Cuts, New Releases, and now Daily/Weekly Mix presets all real; Discovery, Energy Flow, and a provider-neutral recommendation framework still open |
+| 39 | Recommendations | 🟡 Data-driven "Moods" algorithm, Similar Artist, Deep Cuts, New Releases, Daily/Weekly Mix presets, and now UI_SPEC §13's user-created custom moods (genre/mood-tag/tempo-range/rating-floor/recently-played-exclusion rules, plus §14's color/icon visual identity — Background/Artwork/Animation/Gradient/Sound-behavior deliberately not built) all real; Discovery, Energy Flow, and a provider-neutral recommendation framework still open |
 | 40 | Sonic similarity | 🟡 Real acoustic-feature distance/similarity scoring on top of Essentia's extracted features |
 | 41 | Radio | 🟡 Real client to the free Radio Browser directory; built from a genuine 0% start |
 | 42 | Smart playlists | 🟡 Real rule engine incl. BPM/duration/bitrate/codec conditions and JSON import/export — no further named gaps |

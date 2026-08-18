@@ -6,6 +6,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
+import 'package:omnis/core/custom_mood.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/playlist_store.dart';
@@ -17,6 +18,7 @@ import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:omnis/ui/home_dashboard_page.dart';
 import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/library_page.dart';
+import 'package:omnis/ui/mood_builder_dialog.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/online_page.dart';
@@ -440,6 +442,143 @@ class MoodsPage extends StatefulWidget {
 
 class MoodsPageState extends State<MoodsPage> {
   bool _loading = false;
+  List<CustomMood> _customMoods = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCustomMoods();
+  }
+
+  Future<void> _loadCustomMoods() async {
+    final moods = await CustomMoodStore.instance.load();
+    if (mounted) setState(() => _customMoods = moods);
+  }
+
+  IRatingsProvider? get _ratings =>
+      widget.pluginManager.services.get<IRatingsProvider>();
+
+  IPlayHistoryProvider? get _playHistory =>
+      widget.pluginManager.services.get<IPlayHistoryProvider>();
+
+  Future<void> _createCustomMood() async {
+    final library = await LibraryRepository.instance.load();
+    final knownGenres = {for (final t in library) ...t.genres}.toList()
+      ..sort();
+    final knownMoodTags = {
+      for (final t in library)
+        if (t.mood != null && t.mood!.isNotEmpty) t.mood!,
+    }.toList()
+      ..sort();
+    if (!mounted) return;
+    final created = await Navigator.of(context).push<CustomMood>(
+      MaterialPageRoute(
+        builder: (context) => MoodBuilderPage(
+          knownGenres: knownGenres,
+          knownMoodTags: knownMoodTags,
+        ),
+      ),
+    );
+    if (created == null) return;
+    final updated = [..._customMoods, created];
+    await CustomMoodStore.instance.save(updated);
+    if (mounted) setState(() => _customMoods = updated);
+  }
+
+  Future<void> _editCustomMood(CustomMood mood) async {
+    final library = await LibraryRepository.instance.load();
+    final knownGenres = {for (final t in library) ...t.genres}.toList()
+      ..sort();
+    final knownMoodTags = {
+      for (final t in library)
+        if (t.mood != null && t.mood!.isNotEmpty) t.mood!,
+    }.toList()
+      ..sort();
+    if (!mounted) return;
+    final edited = await Navigator.of(context).push<CustomMood>(
+      MaterialPageRoute(
+        builder: (context) => MoodBuilderPage(
+          existing: mood,
+          knownGenres: knownGenres,
+          knownMoodTags: knownMoodTags,
+        ),
+      ),
+    );
+    if (edited == null) return;
+    final updated = [
+      for (final m in _customMoods) if (m.id == edited.id) edited else m,
+    ];
+    await CustomMoodStore.instance.save(updated);
+    if (mounted) setState(() => _customMoods = updated);
+  }
+
+  Future<void> _deleteCustomMood(CustomMood mood) async {
+    final updated = _customMoods.where((m) => m.id != mood.id).toList();
+    await CustomMoodStore.instance.save(updated);
+    if (mounted) setState(() => _customMoods = updated);
+  }
+
+  /// UI_SPEC §13's "Play Late Night Drive becomes an intelligent queue" —
+  /// filters the library through [CustomMood.matches] rather than going
+  /// through [_queueBuilders] (those serve the separate, fixed
+  /// `supportedQueries` preset moods, not a user's own rule-based one).
+  /// Same empty-library/empty-result snackbar UX and setQueue+play flow
+  /// [playMood] already established, so a custom mood tile behaves
+  /// identically to a preset one from the user's perspective.
+  Future<void> playCustomMood(CustomMood mood) async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final library = await LibraryRepository.instance.load();
+      if (library.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your library is empty — add tracks in the Library tab first.',
+            ),
+          ),
+        );
+        return;
+      }
+      final ratingsProvider = _ratings;
+      final playHistory = _playHistory;
+      Set<String> recentlyPlayedIds = const {};
+      if (mood.excludeRecentlyPlayedDays != null && playHistory != null) {
+        final cutoff = DateTime.now()
+            .subtract(Duration(days: mood.excludeRecentlyPlayedDays!));
+        recentlyPlayedIds = playHistory
+            .recentlyPlayed(limit: 2000)
+            .where((r) => r.playedAt.isAfter(cutoff))
+            .map((r) => r.trackId)
+            .toSet();
+      }
+      final queue = library
+          .where((track) => mood.matches(
+                track,
+                ratingOf: (id) => ratingsProvider?.ratingOf(id) ?? 0,
+                recentlyPlayedIds: recentlyPlayedIds,
+              ))
+          .toList();
+      if (queue.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No tracks match "${mood.name}" yet — try widening its '
+              'genres, tempo range, or rating floor.',
+            ),
+          ),
+        );
+        return;
+      }
+      await widget.engine.setQueue(queue);
+      await widget.engine.play();
+      widget.onPlaybackStarted();
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   /// Every registered `IQueueBuilder`, in registration order —
   /// `SmartPlaylistPlugin` (curated mood-tag matches) before
@@ -525,9 +664,10 @@ class MoodsPageState extends State<MoodsPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moods = <String>{
+    final presetMoods = <String>{
       for (final builder in _queueBuilders) ...builder.supportedQueries,
     }.toList();
+    final now = DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
@@ -545,6 +685,11 @@ class MoodsPageState extends State<MoodsPage> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _loading ? null : _createCustomMood,
+        tooltip: 'Create a mood',
+        child: const Icon(Icons.add),
+      ),
       body: Stack(
         children: [
           GridView.builder(
@@ -559,39 +704,93 @@ class MoodsPageState extends State<MoodsPage> {
               // instead of the subtitle text touching the bottom edge.
               childAspectRatio: 0.95,
             ),
-            itemCount: moods.length,
+            itemCount: presetMoods.length + _customMoods.length,
             itemBuilder: (context, index) {
-              final mood = moods[index];
-              return Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: _loading ? null : () => playMood(mood),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    // A two-word mood/preset name (e.g. "Forgotten
-                    // Favorites") wraps to a second line, which this
-                    // fixed-aspect-ratio grid tile's height doesn't
-                    // budget for — the single-word names this grid was
-                    // originally built for (Chill/Focus/Workout/Sleep)
-                    // never exposed that. Same `SingleChildScrollView`
-                    // guard used elsewhere in this app for exactly
-                    // "fixed-size content might not always fit."
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.mood,
-                              size: 36, color: theme.colorScheme.primary),
-                          const SizedBox(height: 12),
-                          Text(mood, style: theme.textTheme.titleMedium),
-                          const SizedBox(height: 4),
-                          Text('Tap to build and play a queue',
-                              style: theme.textTheme.bodySmall),
-                        ],
+              if (index < presetMoods.length) {
+                final mood = presetMoods[index];
+                return Card(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _loading ? null : () => playMood(mood),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      // A two-word mood/preset name (e.g. "Forgotten
+                      // Favorites") wraps to a second line, which this
+                      // fixed-aspect-ratio grid tile's height doesn't
+                      // budget for — the single-word names this grid was
+                      // originally built for (Chill/Focus/Workout/Sleep)
+                      // never exposed that. Same `SingleChildScrollView`
+                      // guard used elsewhere in this app for exactly
+                      // "fixed-size content might not always fit."
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.mood,
+                                size: 36, color: theme.colorScheme.primary),
+                            const SizedBox(height: 12),
+                            Text(mood, style: theme.textTheme.titleMedium),
+                            const SizedBox(height: 4),
+                            Text('Tap to build and play a queue',
+                                style: theme.textTheme.bodySmall),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+                );
+              }
+              final mood = _customMoods[index - presetMoods.length];
+              // UI_SPEC §14's "mood visuals": a user-picked color/icon
+              // identify this tile, distinct from every preset tile's
+              // generic `Icons.mood`/theme-primary look above.
+              final tileColor = mood.color ?? theme.colorScheme.primary;
+              return Card(
+                child: Stack(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: _loading ? null : () => playCustomMood(mood),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(mood.icon.icon, size: 36, color: tileColor),
+                              const SizedBox(height: 12),
+                              Text(mood.name,
+                                  style: theme.textTheme.titleMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                mood.isInTimeWindow(now)
+                                    ? 'Suggested now'
+                                    : 'Tap to build and play a queue',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: PopupMenuButton<String>(
+                        tooltip: 'Mood options',
+                        onSelected: (value) {
+                          if (value == 'edit') _editCustomMood(mood);
+                          if (value == 'delete') _deleteCustomMood(mood);
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'edit', child: Text('Edit')),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
