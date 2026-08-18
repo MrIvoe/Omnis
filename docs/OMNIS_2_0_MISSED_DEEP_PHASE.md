@@ -13,35 +13,36 @@
 > the pass that found it (usually: real scope, needs hardware/an
 > external account, or is a distinct unit of work), and enough context
 > to pick it up later without re-deriving it.
+>
+> **Last staleness pass: 2026-08-18.** This file had drifted noticeably
+> stale — a dedicated audit cross-checked every bullet against
+> [OMNIS_2_0_STATUS.md](OMNIS_2_0_STATUS.md), the build log, and the
+> real current code, closing/trimming everything that had since shipped.
+> An entry naming a specific Omnis-Plugins-repo detail (a plugin's own
+> internal implementation, as opposed to what interface/data it exposes
+> to this app) couldn't always be independently re-verified from this
+> repo alone — where that applies, the entry says so explicitly rather
+> than asserting either way.
 
 ---
 
 ## From Phase 1 (Reliability)
 
-- **§51.2 — `AudioEngine` is still one large facade.** Split OS-integration
-  and A-B repeat out into their own files/classes; the bigger split
-  (`QueueController`, `OutputController`, `AudioSessionController`) is
-  still undone. Originally deferred because touching the crossfade/queue
-  state machine felt too risky without a real device to smoke-test on —
-  as of 2026-08-13 that's now half-outdated: Android smoke testing is
-  confirmed working in this dev environment (a debug APK built,
-  installed, and ran clean on an emulator, including a genuine live
-  network round-trip via the new Radio feature — see `docs/BUILDING.md`).
-  Windows desktop specifically is still blocked, but for a confirmed,
-  narrow reason (Flutter SDK 3.27.4 doesn't recognize the installed
-  Visual Studio Build Tools 2026's version and falls back to a CMake
-  generator string that doesn't exist on this machine — also documented
-  there). The bigger `AudioEngine` split is still real, separate work
-  not attempted in this pass, but "no way to smoke-test it at all" is no
-  longer the blocker — only "hasn't been done yet."
+- **§51.2 — `AudioEngine` is still one large facade.** OS-integration and
+  A-B repeat were split out into their own files/classes early on; the
+  bigger split (`QueueController`, `OutputController`,
+  `AudioSessionController`) is still undone — `audio_engine.dart` is
+  still one 1000+-line `class AudioEngine`. Real, separate work not
+  attempted in any pass so far.
 - **§7 — Queue engine depth.** `playNext()` exposure through
   `PluginContext` and a track context menu closed 2026-08-14; queue
-  history (an automatic, capped rolling log) and queue snapshots
-  (permanent, user-named saves) closed 2026-08-15 — see item 2's
-  build-log entry. Still no smart/rule-based continuation (mood/artist/
-  genre/similar-track auto-continuation), no advanced shuffle modes
-  beyond what `ShuffleRepeatPlugin` already does, no queue rules/
-  exclusions, no multiple queue sources.
+  history (an automatic, capped rolling log), queue snapshots (permanent,
+  user-named saves), smart/rule-based continuation (mood/artist/genre/
+  similar-track auto-continuation, `lib/core/queue_continuation.dart`),
+  and queue rules/exclusions (avoid-repeat-artist/album,
+  `lib/core/queue_rules.dart`) are all closed — see item 2's build-log
+  entries. Still no advanced shuffle modes beyond what
+  `ShuffleRepeatPlugin` already does, no multiple queue sources.
 - **§4/§41 — Real indexed database.** Every store is still a JSON file
   (now atomic-write-safe and per-entry-decode-safe, but not an indexed
   DB). Schema migration system closed 2026-08-14: `lib/core/
@@ -54,11 +55,6 @@
   version-to-version dispatch loop are all real and tested, not just a
   number. Still no multi-source libraries, no SQL-like query layer, no
   scheduled integrity check.
-- **§5 — Scanning depth.** No filesystem watchers, no scheduled scans, no
-  duplicate-file detection beyond the Library page's own manual cleanup
-  tool, no content-fingerprint/hash-based track identity (tracks are
-  still identified primarily by path — moving a library folder still
-  loses history/favorites/ratings linkage).
 - **§43 — `AudioEngine` itself has no direct test coverage.** Queue
   mutation, gapless, shuffle/repeat, and the crossfade math beyond the
   pure `crossfadeVolumes` function are untested. Needs either a real
@@ -85,26 +81,16 @@
 
 - **§6 — Search is a genuine MVP, not the full spec.** `filterTracks`
   supports free text + `artist:`/`album:`/`genre:`/`title:`/`mood:`/
-  `year:`/`rating:` (the last joined 2026-08-13). Quoted multi-word
-  field values (`album:"greatest hits"` — previously split into two
-  AND'd terms) closed 2026-08-14: a small tokenizer keeps a `"..."` span
-  intact (quotes stripped, internal whitespace preserved) instead of
-  splitting on it — the field-value regex itself already accepted
-  multi-word values, it just never got the chance to see one. Still
-  missing: `bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/`duplicate:`
-  operators (each needs a feature/data source that still doesn't
-  exist), natural-language queries, and **no search scope beyond the
-  Library page** — no global Ctrl+K command palette (§37/§38) searching
-  settings/commands/playlists/moods in one place (the global keyboard
-  *shortcuts* closed 2026-08-14 under item 48 are a separate thing —
-  fixed playback bindings, not a searchable command palette).
-- **§9 — `rating:>=4` search/smart-playlist operator not wired.**
-  `RatingsPlugin.ratedAtLeast()` exists specifically as the building
-  block for this, but `filterTracks` is a pure `BaseTrack`-only function
-  with no plugin access — wiring it in means either the caller
-  pre-joining ratings onto tracks before calling `filterTracks`, or a
-  deliberate design decision about whether `filterTracks` should gain a
-  plugin dependency at all.
+  `year:`/`rating:`/`bpm:`/`format:`/`bitrate:`/`lyrics:`/`missing:`/
+  `duplicate:` — every field/operator the spec names. A real global
+  Ctrl+K command palette also now exists (§37/§38,
+  `lib/core/command_palette.dart`/`lib/ui/command_palette_dialog.dart`),
+  with a "search everywhere" overlay across Commands/Songs/Playlists/
+  Moods — though Artists/Albums/Settings search-everywhere coverage is
+  still a named gap there (see item 48). Still missing:
+  natural-language *queries* inside `filterTracks` itself (a separate,
+  narrower natural-language *search* now exists via `IAIProvider
+  .searchLibrary`, item 43 — a different subsystem, not this one).
 - **§9 — Bulk "rate selected" action closed 2026-08-14.** Favorites'
   one-tap bulk toggle in selection mode doesn't fit ratings directly (a
   specific 1-5 value, not a binary), so a new "Rate selected" button
@@ -116,13 +102,19 @@
   repo-only `PlaylistFolderStore` (deliberately not a field on the
   shared `Playlist` model, to avoid a cross-repo version bump for a
   purely local UI concern) backs create/rename/delete-folder and
-  "Move to folder…" actions on `PlaylistPage`. Collaborative playlists
-  and XSPF/PLS import/export still don't exist (M3U/M3U8 does, plus a
-  full `SmartPlaylistPlugin`).
-- **§11 — Metadata provider framework.** Only `MetadataEnrichmentPlugin`
-  (MusicBrainz + optional Last.fm) exists — not the `IMetadataProvider`-
-  pluggable-provider framework the spec describes (Discogs/Deezer/Genius
-  etc. as swappable alternatives a user could install instead).
+  "Move to folder…" actions on `PlaylistPage`. XSPF/PLS import/export
+  are now real too (`exportPLS`/`importPLS`/`exportXSPF`/`importXSPF`
+  in `lib/core/playlist_store.dart`, closed 2026-08-15, alongside CSV/
+  JSON export). Collaborative playlists still don't exist.
+- **§11 — Metadata provider framework.** The pluggability point is now
+  real: `IMetadataProvider` is a typed interface and `library_page.dart`
+  looks it up generically (`services.get<IMetadataProvider>()`), not by
+  naming `MetadataEnrichmentPlugin` directly — but `MetadataEnrichmentPlugin`
+  (MusicBrainz + optional Last.fm) is still the only implementation
+  registered against it; no separate Discogs/Deezer/Genius plugin exists
+  to swap in instead, so the spec's "swappable alternatives a user could
+  install" promise is architecturally possible but not yet exercised by
+  a second real provider.
 - **§12 — Artwork provider framework.** Embedded artwork, Android
   MediaStore artwork, and `ArtistImagePlugin` (Deezer search) exist —
   no `IArtworkProvider` framework (Cover Art Archive/Fanart.tv lookup),
@@ -228,9 +220,10 @@ limiter clip protection.
 `HardwareEqBand`) and virtual (a fixed 3-band ±12dB trim as a gain
 contribution, everywhere else). Bands persist *per connected device*
 (via `IDeviceConnectivityProvider`/`BluetoothPlaybackPlugin`) — real
-per-device profiles, but not per-artist/per-album. No selectable band
-count, no parametric mode, no EQ at all on desktop beyond the 3-band
-trim (no `AVAudioUnitEQ`, no WASAPI APO).
+per-device profiles, but not per-artist/per-album. Selectable band count
+(3/5/10-band virtual EQ, `VirtualEqBandCount`) closed 2026-08-17. Still
+no parametric mode, no EQ at all on desktop beyond the 3-band trim (no
+`AVAudioUnitEQ`, no WASAPI APO).
 
 **21. Output devices** — Partial (closed 2026-08-14, was 0% for device
 *selection*). Real Settings → Playback & Audio → "Output devices" page
@@ -287,8 +280,8 @@ then tap back to "System default" as a genuine state change.
 Still missing: no USB DAC sample-rate/bit-depth negotiation UI (item
 22's remaining DSP-chain gap is closely related but distinct — this
 increment is about *which device*, not *what bit depth to that
-device*), no per-device volume (only the pre-existing per-device-name
-EQ keying from item 20), and no HDMI/Cast/DLNA/AirPlay output beyond
+device*) — per-device volume memory is now real, closed alongside item
+20's per-device EQ keying — and no HDMI/Cast/DLNA/AirPlay output beyond
 whatever `audio_session`'s device list already reports as connected —
 none of those are alternate *routes* this app can initiate, only
 things the OS might already be doing. **Not exercised against real
@@ -377,20 +370,15 @@ is still label-only, deliberately out of this scope. WMA closed
 (simpler than M4A's box nesting, once written — turned out to have
 less surface area than expected) down to the audio Stream Properties
 Object's embedded `WAVEFORMATEX` structure for real sample rate/
-channels/bit depth, plus a real encoder-declared average bitrate. With
-this closed, every container `AudioFormatReader` recognizes now gets
-real header parsing except a bare `.aac` ADTS elementary stream, which
-remains deliberately out of scope (not a container format at all). And
-the DSP/output half is still fully 0%:
-no source→DSP→resampling→output *chain* display, no exclusive/
-WASAPI-style output mode. Also found and left as-is (out of scope for
-this pass): `BaseTrack`'s `==`/`hashCode` compare list fields
-(`artists`/`genres`) with plain `List.==`, which Dart doesn't override
-for content equality — so two structurally-identical tracks built from
-separate list literals are never `==`-equal unless they share list
-instances. Harmless today (every real call site compares tracks by
-`.id`, never by `==`/in a `Set`), but a latent trap for future code that
-assumes value equality.
+channels/bit depth, plus a real encoder-declared average bitrate. A bare `.aac` ADTS elementary
+stream (not an MP4 container at all) also now gets real header parsing
+via `AudioFormatReader._readAdts` — every recognized format/extension
+this reader handles now has real parsing, none label-only. The DSP/
+output half is still fully 0%: no source→DSP→resampling→output *chain*
+display, no exclusive/WASAPI-style output mode. `BaseTrack`'s
+`==`/`hashCode` list-field (`artists`/`genres`) equality trap noted here
+originally is also fixed: `packages/omnis_plugin_api/lib/base_track.dart`
+now has a real `_listEquals` content-equality helper used by both.
 
 **23. Audio analysis** — Partial. `AudioAnalysisPlugin` is a real HTTP
 client to a self-hosted Essentia service (`tools/essentia_service/`,
@@ -402,19 +390,20 @@ for a future recommendation engine to consume.
 ### Phase 4 — Plugin platform
 
 **24. Capability interfaces** — Solid. `packages/omnis_plugin_api/lib/service_interfaces.dart`
-defines 9 typed interfaces (`ILyricsProvider`, `IPlayHistoryProvider`,
-`IQueueBuilder`, `IMetadataProvider`, `IAudioAnalysisProvider`,
-`IFileTagWriter`, `IVisualizerProvider`, `IArtistImageProvider`,
-`IDeviceConnectivityProvider`); `ServiceRegistry`
+now defines 15 typed interfaces (the original 9 plus `IRatingsProvider`,
+`IFavoritesProvider`, `IThumbsProvider`, `IAIProvider`,
+`IOnlineSearchProvider`, `ISyncedLyricsProvider`); `ServiceRegistry`
 (`packages/omnis_plugin_api/lib/service_registry.dart`) is a real,
 working typed registry (`register`/`unregister`/`get<T>`/`getAll<T>`/`has<T>`,
 a `changes` stream, multi-provider support — used for `IQueueBuilder`
-by both `SmartPlaylistPlugin` and `QueuePresetPlugin`). Gap: external
-(downloaded) plugins can only register as providers for 2 of the 9 —
-`PluginManager._registerProvidedServices`/`_capabilityType` hard-codes a
-`switch` covering only `'lyrics'` and `'queue_builder'`; a downloaded
-plugin declaring `provides: [IMetadataProvider]` is silently never
-registered.
+by both `SmartPlaylistPlugin` and `QueuePresetPlugin`). Gap, updated but
+not closed: external (downloaded) plugins can now register as providers
+for 4 of the 15 — `PluginManager._registerProvidedServices`/
+`_capabilityType` hard-codes a `switch` covering `'lyrics'`,
+`'queue_builder'`, `'play_history'`, and `'artist_image'` (the latter
+two closed 2026-08-13); a downloaded plugin declaring
+`provides: [IMetadataProvider]` (or any of the other 11) is still
+silently never registered.
 
 **25. Plugin lifecycle** — Solid mechanics, partial spec fidelity.
 Install → register → init → enable/disable → uninstall all work, and
@@ -455,10 +444,11 @@ need a new `package_info_plus` dependency for one narrow check) via the
 existing `compareVersions` semver comparator already used for
 update-checking; a plugin requiring a newer Omnis than is running is
 refused at install/update time with a message naming both versions.
-Still no dependency *graph*/resolver (a single flat list, not
-transitive resolution) and a missing dependency is detected/surfaced,
-never auto-resolved (no "install this for me" flow) — both real,
-distinct, still-open follow-ups.
+A missing dependency now offers a real one-tap "Install" when the
+catalog has it, closed alongside item 30's catalog work (`plugins_page
+.dart`). Still no dependency *graph*/resolver — a single flat list, not
+transitive resolution — which remains a real, distinct, still-open
+follow-up.
 
 **27. Permissions** — Solid. Manifest `permissions:` map to real
 `dart_eval` grants (`FilesystemPermission`, `LibraryReadPermission`,
@@ -497,10 +487,13 @@ consecutive-since-last-success counter, since `PluginHealthRecord`s
 only exist for failures with no "hook succeeded" event to reset a
 consecutive counter against.
 
-Still gaps: no dedicated health-center page (it's a section of the
-general Plugins page, not the spec's separate 🟢/🟡/🔴-per-plugin view),
-no heartbeat (health is purely reactive — a silently-hung plugin that
-never throws is never detected).
+Both remaining gaps this section originally named are now closed too: a
+dedicated Plugin Health page exists (`lib/ui/plugin_health_page.dart`,
+the spec's separate per-plugin view rather than a section of the
+general Plugins page), and background heartbeat monitoring
+(`lib/core/plugin_heartbeat_scheduler.dart`) now catches a silently-hung
+plugin that never throws, not just reactive failure logging. STATUS
+item 28: "no further named gaps."
 
 **29. Plugin updates** — Partial (was genuine 0%, closed 2026-08-13).
 Real update detection now exists: `PluginInstaller.fetchRemoteManifest`
@@ -547,9 +540,10 @@ leaves the previous working version running, not a corpse. A rollback
 that itself fails surfaces both failures in one message. 9 new tests,
 all passing on the first real run.
 
-Still gaps: no automatic/background/scheduled checking (purely
-user-initiated, one tap at a time), and — a real, structural limit, not
-a missed detail — update detection only works for a GitHub
+Automatic/background checking now exists too
+(`lib/core/plugin_update_scheduler.dart`), no longer purely
+user-initiated one-tap-at-a-time. Still a real, structural limit, not a
+missed detail: update detection only works for a GitHub
 `tree/branch[/subfolder]` or bare-repo source URL; a plugin installed
 from a direct `.zip` link has no general way to derive a single raw
 file's location from an arbitrary zip URL, so `fetchRemoteManifest`
@@ -796,8 +790,9 @@ Correctly platform-gated (Android/iOS/web only, no Windows/Linux
 WebView). Self-flagged ⚠️ in the README: neither exercised against a
 real OAuth client or device/web build.
 
-**38. Other providers** — Partial (Emby closed 2026-08-14, was genuine
-0% as music providers). New `EmbyPlugin` (`Omnis-Plugins`) is a real
+**38. Other providers** — Partial (Emby closed 2026-08-14, Ampache and
+Koel closed since too — all self-hostable, keyless, the same
+tractability reasoning as Emby below — see STATUS item 38). New `EmbyPlugin` (`Omnis-Plugins`) is a real
 REST client to a self-hosted Emby server — session-token auth via
 `/Users/AuthenticateByName`, `/Items` search returning genuinely
 playable `BaseTrack`s (new `TrackType.emby` on `plugin-api-v0.13.0`,
@@ -870,23 +865,28 @@ once would never rank among the *most played*, but is exactly what
 never a misleading whole-library-shuffle fallback, when the data they'd
 need isn't available.
 
-Still 0% for every other named algorithm (Similar Track/Artist, Album/
-Artist/Genre Radio, Discovery, Deep Cuts, New Releases, Daily/Weekly
-Mix, Energy Flow) — confirmed via repo-wide search, zero matches. No
+Since closed: Similar Track (`lib/core/track_similarity.dart`), Similar
+Artist (`lib/core/artist_similarity.dart`), Deep Cuts, New Releases, and
+Daily/Weekly Mix presets (all real, per STATUS item 39). Favorites data
+is also now a real recommendation input — `IFavoritesProvider` is a
+registered interface consumed by `QueuePresetPlugin` (a "Favorites Mix"
+preset), not unused as this section originally noted. Still 0%:
+Discovery, Energy Flow, Album/Artist/Genre Radio, and no
 provider-neutral recommendation framework/interface (each preset is
-still its own bespoke method on `QueuePresetPlugin`, not built against
-a shared "recommendation algorithm" abstraction). `favorites_plugin.dart`'s
-data (as opposed to `ratings_plugin.dart`'s, now consumed by
-"Rediscover") still isn't used by any recommendation.
+still its own bespoke method on `QueuePresetPlugin`, not built against a
+shared "recommendation algorithm" abstraction).
 
-**40. Sonic similarity** — Partial. `AudioAnalysisPlugin` extracts real
-acoustic features (BPM/key/mood/genre) via Essentia — genuine
-audio-derived data, not just tags. But there is no embedding/vector and
-no similarity/distance computation anywhere in either repo — nothing
-does actual "find tracks that sound like this." What consumes these
-results (`SmartPlaylistPlugin`/`QueuePresetPlugin`) is still tag-string
-matching once the tags are populated, not fingerprint/vector similarity
-the way Plexamp's Sonic Analysis (cited in the spec) works.
+**40. Sonic similarity** — Partial, materially advanced since first
+written. `AudioAnalysisPlugin` extracts real acoustic features (BPM/key/
+mood/genre) via Essentia, and `lib/core/track_similarity.dart` now does
+a real thing with them: a weighted genre/mood/BPM/key distance-and-
+similarity score, closing this item's original "nothing does actual
+'find tracks that sound like this'" gap. What it deliberately is *not*:
+a true acoustic-fingerprint/embedding system — still tag/feature-based
+distance over already-extracted Essentia fields, not raw audio-content
+matching the way Plexamp's Sonic Analysis (cited in the spec) works. No
+embedding/vector representation exists, so a track with accurate tags
+but never analyzed by Essentia has nothing to compare with.
 
 **41. Radio** — Partial (was genuine 0%, closed 2026-08-13). New
 `RadioPlugin` (`Omnis-Plugins/lib/radio_plugin.dart`) is a real client
@@ -990,11 +990,13 @@ button repopulates the create form and saves in place, reusing the
 rule's existing id) and surfacing on the main Playlists page closed
 2026-08-15 (a new "Smart playlists" section there, play/delete per
 rule, a "Manage" link deep-linking to the plugin's own settings page
-for create/edit rather than a second builder UI) — **still missing**:
-no persistence as a real `PlaylistStore` entry a user could otherwise
-manage, no import/export, and the builder UI's string-field operator
-choice is narrower than the model (`contains` only, though `equals`
-works if constructed directly).
+for create/edit rather than a second builder UI). JSON import/export
+closed 2026-08-16 (`exportRulesToJson`/`importRulesFromJson`), and the
+builder UI's string-field operator choice now offers `equals` alongside
+`contains`, closed 2026-08-15 — **still missing**: no persistence as a
+real `PlaylistStore` entry a user could otherwise manage. STATUS item
+42: "no further named gaps," which reflects that this remaining item is
+judged out of scope rather than forgotten.
 
 **43. AI** — Partial (closed 2026-08-13, was genuine 0%). The spec
 calls this "a major optional ecosystem" (§21) and names eight distinct
@@ -1046,16 +1048,21 @@ non-JSON text, a non-200 response surfacing the API's own error
 message), and the two guarantees above (never-invents-a-track, capped
 sample).
 
-Still genuine 0% for every other capability the spec names: natural
-language *search* (as opposed to playlist creation), metadata cleanup,
-tagging, a recommendation engine (§22, a separate, larger spec section
-of its own — listening history/ratings/favorites/skips/BPM/key/mood/
-acoustic-fingerprint-driven algorithms like Similar Track/Similar
-Artist/Daily Mix), a conversational library assistant ("Which albums
-have never been played?"), voice control, and artist-similarity
-discovery. Each is real, separate work, not attempted here — the spec's
-own framing ("a major optional ecosystem") was accurate; this closes
-one deliberately narrow slice of it, not the whole item.
+Natural-language *search* is now also real at the interface level:
+`IAIProvider.searchLibrary` exists specifically to close that half of
+this gap (STATUS item 43: "Real playlist generation and natural
+language search"); the consuming UI code lives in the separate
+Omnis-Plugins repo and wasn't independently re-verified from this repo.
+Still genuine 0% for every other capability the spec names: metadata
+cleanup, tagging, a recommendation engine (§22, a separate, larger spec
+section of its own — note items 39/40 above have since made real
+progress on *some* of this via a different route, but not the
+conversational/natural-language framing §22 itself describes), a
+conversational library assistant ("Which albums have never been
+played?"), voice control, and artist-similarity discovery. Each is
+real, separate work, not attempted here — the spec's own framing ("a
+major optional ecosystem") was accurate; this closes a still-narrow
+slice of it, not the whole item.
 
 **Not exercised against the real Anthropic API** in this environment —
 what's verified is protocol-level request/response handling against a
@@ -1068,28 +1075,35 @@ session added).
 **44. Themes** — Partial. A real declarative theme engine exists
 (`lib/ui/theme/declarative/`: `ThemeManifest` parser, `ThemeInstaller`,
 `ThemeManager`, rendered through the same pipeline as a built-in
-preset), importable from a URL or local file. Four built-in presets:
-`AppThemePreset { classic, midnight, aurora, sunset }` — only "Classic"
-survives from the spec's named list of 6 (Pure/Drive/Karaoke/Future/
-Audiophile don't exist as *themes*, though Drive/Karaoke exist as
-separate *Now Playing layouts*, see item 45). The engine only changes
+preset), importable from a URL or local file. Named-preset parity with the
+spec's list of 6 is now closed: `AppThemePreset { classic, pure, drive,
+karaoke, future, audiophile }` — all 6 exist as real, selectable themes
+(closed alongside item 46's Car-mode theme work). The engine only changes
 colors/typography/shape/motion/background — it does not touch
 navigation type, Home layout, or Library layout the way spec §20/§28
 ("themes can alter navigation") demands; a theme and a layout are two
 separate systems here, not the unified "Theme = composition + styling +
 behavior + assets + layout rules" concept the spec describes.
 
-**45. Layout builder** — Solid for Now Playing, 0% for Home. `lib/ui/player_layouts/`
-has a genuinely complete declarative layout system: 6 bundled layouts
+**45. Layout builder** — Solid for Now Playing; Home and the sidebar
+have both since gained real ground. `lib/ui/player_layouts/` has a
+genuinely complete declarative layout system: 6 bundled layouts
 (Standard, Top Controls, Landscape, Full Art + Gestures, Karaoke
 Gestures, Car Mode), install-from-URL/file, and — notably — a real
 drag-and-drop visual editor (`LayoutEditorPage`): tap to add components
 from a palette, drag freely, remove, name, save, all serializing to the
-same manifest format an imported layout uses. Entirely scoped to Now
-Playing, though — `home_dashboard_page.dart` is a hardcoded,
-non-reorderable widget with fixed sections (no hide/show/reorder/resize
-"widget canvas" per spec §6-8), and there's no sidebar customization
-(add/remove/reorder/group nav items) either.
+same manifest format an imported layout uses. `home_dashboard_page.dart`
+originally had no reorder/hide at all — that's now real. A global
+pop-out sidebar drawer also now exists (UI_SPEC §3-5, closed
+2026-08-18: `lib/core/sidebar_config.dart` +
+`lib/ui/widgets/global_sidebar_drawer.dart`) — reachable via a menu
+button or Ctrl+B, pinning playlists/moods into named, reorderable,
+add/remove-able sections. What remains open: a free-form Home widget
+canvas (resize, not just reorder/hide), and the sidebar's fuller
+mode-switching (Compact/Pinned/Hidden-behind-hotkey/Auto-hide — the
+current drawer covers one mode, functionally closest to "Floating"),
+plus pinnable item kinds beyond playlist/mood (smart playlist/library/
+provider/server/favorite album or artist/radio station/shortcut).
 
 **46. Car mode** — Solid. `CarModeLayout`: a dedicated Now Playing
 layout with an oversized button rail on either edge, large centered
@@ -1098,8 +1112,9 @@ driving distraction. `DrivingModePlugin`: real GPS-speed-triggered
 auto-activation (configurable threshold, default 20 km/h) and
 auto-revert, with documented Android background-service limitations
 (foreground-only; can't silently auto-connect Bluetooth since Android
-13, surfaces a reminder instead). No separate Car *theme*, no voice
-control, no Android Auto/CarPlay integration.
+13, surfaces a reminder instead). A separate Car *theme* now exists too
+(`AppThemePreset.drive`, closed alongside item 44's preset-parity work).
+No voice control, no Android Auto/CarPlay integration.
 
 **47. TV mode** — Partial (closed 2026-08-13, was genuine 0%). New
 `TvModeLayout` (`lib/ui/player_layouts/tv_mode_layout.dart`) delivers
@@ -1171,15 +1186,9 @@ ring drawn around the button), and pressing `DPAD_RIGHT` then
 REYFM), proving both that focus really moved to Next and that
 activating it really worked — not inferred from a screenshot alone.
 
-**A separate, pre-existing bug spotted while verifying this on a real
-device, unrelated to TV Mode**: the *Standard* layout's Now Playing
-screen (the default layout, not touched by this change) overflows its
-button row by ~4.6px on this same device/window size — the
-"Visualizer" button clips off the right edge with a debug overflow
-banner in debug builds. Not fixed here (out of scope for the TV Mode
-increment that found it), but worth a dedicated fix later — the same
-class of bug this increment's own `LayoutBuilder` fix addresses for TV
-Mode specifically.
+A separate, pre-existing overflow bug in the *Standard* layout's Now
+Playing screen, spotted while verifying this on a real device, was
+fixed 2026-08-15 (`PlayerControlsRow`) — no longer open.
 
 Still genuine 0% for a from-scratch, always-on TV/leanback shell — this
 closes one selectable Now Playing layout among several (reached the
@@ -1225,11 +1234,15 @@ already mounted without scrolling — fixed by adding the same
 test had already established for exactly this situation (a real UI
 behavior change in the running app too, not just a test artifact: those
 two cards genuinely sit one card's height further down now on a small
-screen). Still gaps: no high-contrast mode, no colorblind-safe state
-option, no app-wide text-scale setting (only a 4-step lyrics-only text
-size, `lyricsTextSize`, deliberately left in Appearance — it's a lyrics
-display option, not moved here), no voice control, no switch-input
-support, no RTL/localization wiring (`AppLocalizations` isn't used).
+screen). A real "High contrast" toggle and an app-wide text-scale
+setting (`lib/core/text_scale.dart`'s `clampTextScale`) have since
+closed — the 4-step lyrics-only text size, `lyricsTextSize`, remains a
+separate, deliberately-Appearance-scoped display option, not superseded
+by the app-wide one. `AppLocalizations` is now wired into `main.dart`'s
+`MaterialApp`, but only `Locale('en')` is currently supported — the
+*infrastructure* gap this section originally named is closed, real
+RTL/additional-language support still isn't. Still gaps: no
+colorblind-safe state option, no voice control, no switch-input support.
 
 **Keyboard shortcuts closed 2026-08-14** (was the genuine "zero
 `Shortcuts`/`FocusTraversalGroup`/`CallbackShortcuts` usage found"
@@ -1288,9 +1301,11 @@ the widget renders), 2 more in `test/settings_page_test.dart`. Full
 suite: 647 passing (was 634), `flutter analyze` clean. Main-repo-only,
 no cross-repo bump needed.
 
-Still 0% for per-shortcut remapping/conflict-detection UI, and for the
-UI spec's global Ctrl+K search (§37) and command palette (§38) — both
-distinct, materially larger features this increment didn't attempt.
+Per-shortcut remapping/conflict-detection UI is now real
+(`lib/core/keyboard_shortcut_remap.dart`), and so is the UI spec's
+global Ctrl+K search/command palette (§37/§38,
+`lib/core/command_palette.dart`/`lib/ui/command_palette_dialog.dart`) —
+both closed since this section was first written.
 
 **49. Widgets** — Partial (closed 2026-08-13, was genuine 0%). Real
 Android App Widget: `home_widget: ^0.9.2+1` for the Dart↔native
@@ -1414,13 +1429,17 @@ shown on the widget (would need `RemoteViews.setImageViewBitmap` fed a
 real decoded bitmap from the track's artwork source, a materially
 bigger increment than the text/controls built here).
 
-**50. Automation** — Partial. Two real, working single-purpose
-triggers: GPS-speed → Car Mode layout switch (`DrivingModePlugin`, see
-item 46), and Bluetooth-connect → quick-play/EQ-preset prompt
-(`BluetoothPlaybackPlugin`). Neither is the general-purpose
-"automation rules" engine the spec's §48-49 describes (no time-based
-triggers, no arbitrary condition→action rules, no UI-profile
-export/import/auto-switch), and the Bluetooth trigger specifically
-doesn't switch the UI/theme the way the spec's own example
-("Bluetooth device connected → Activate Driving UI") describes — it
-only offers quick-play and EQ switching.
+**50. Automation** — Partial. Real, working triggers: GPS-speed → Car
+Mode layout switch (`DrivingModePlugin`, see item 46), Bluetooth-connect
+→ quick-play/EQ-preset prompt (`BluetoothPlaybackPlugin`), and
+time-based playback scheduling (`lib/core/playback_scheduler.dart` +
+`lib/ui/settings/playback_schedule_page.dart`, closed since this
+section was first written — no longer 0%). STATUS item 50 additionally
+claims the Bluetooth-connect trigger now includes a Car Mode layout
+switch (closing the "doesn't switch the UI" gap this section originally
+named), but that wiring is Omnis-Plugins-side
+(`BluetoothPlaybackPlugin`) and wasn't independently re-verified from
+this repo — treat as likely-true, not confirmed. Not yet built: the
+general-purpose "automation rules" engine the spec's §48-49 describes
+(arbitrary condition→action rules, UI-profile export/import/auto-switch)
+and scheduled podcasts.
