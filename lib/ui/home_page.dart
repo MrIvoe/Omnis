@@ -14,6 +14,7 @@ import 'package:omnis/ui/command_palette_dialog.dart';
 import 'package:omnis/ui/forgotten_music_page.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:omnis/ui/home_dashboard_page.dart';
+import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
@@ -250,36 +251,58 @@ class _HomePageState extends State<HomePage> {
     }
     final navVisible = !autoHideActive || _navRevealed;
 
-    final navBar = NavigationBar(
+    // The five fixed destinations, unchanged in identity and behavior —
+    // only *where* they render (bottom bar vs. side rail) is responsive.
+    // See `home_navigation.dart` for the breakpoint/rail-vs-drawer
+    // reasoning.
+    const destinations = [
+      HomeDestinationInfo(Icons.home, 'Home'),
+      HomeDestinationInfo(Icons.library_music, 'Library'),
+      HomeDestinationInfo(Icons.playlist_play, 'Playlist'),
+      HomeDestinationInfo(Icons.mood, 'Moods'),
+      HomeDestinationInfo(Icons.radio, 'Radio'),
+      HomeDestinationInfo(Icons.settings, 'Settings'),
+    ];
+    final isWideLayout = isWideHomeLayout(context);
+    final homeNav = HomeNavigationBar(
       selectedIndex: _selectedIndex,
-      height: 72,
-      elevation: 0,
       onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.home),
-          label: 'Home',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.library_music),
-          label: 'Library',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.playlist_play),
-          label: 'Playlist',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.mood),
-          label: 'Moods',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.radio),
-          label: 'Radio',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.settings),
-          label: 'Settings',
-        ),
+      pluginManager: core.pluginManager,
+      destinations: destinations,
+    );
+
+    final mainContent = Stack(
+      children: [
+        IndexedStack(index: _selectedIndex, children: pages),
+        if (autoHideActive)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 28,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity < -150) {
+                  setState(() => _navRevealed = true);
+                } else if (velocity > 150) {
+                  setState(() => _navRevealed = false);
+                }
+              },
+            ),
+          ),
+        if (autoHideActive && !navVisible)
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: FloatingActionButton.small(
+              heroTag: 'reveal_bottom_nav',
+              tooltip: 'Show navigation',
+              onPressed: () => setState(() => _navRevealed = true),
+              child: const Icon(Icons.keyboard_arrow_up),
+            ),
+          ),
       ],
     );
 
@@ -299,40 +322,20 @@ class _HomePageState extends State<HomePage> {
           },
         },
         child: Scaffold(
-          body: Stack(
-            children: [
-              IndexedStack(index: _selectedIndex, children: pages),
-              if (autoHideActive)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 28,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onVerticalDragEnd: (details) {
-                      final velocity = details.primaryVelocity ?? 0;
-                      if (velocity < -150) {
-                        setState(() => _navRevealed = true);
-                      } else if (velocity > 150) {
-                        setState(() => _navRevealed = false);
-                      }
-                    },
-                  ),
-                ),
-              if (autoHideActive && !navVisible)
-                Positioned(
-                  right: 12,
-                  bottom: 12,
-                  child: FloatingActionButton.small(
-                    heroTag: 'reveal_bottom_nav',
-                    tooltip: 'Show navigation',
-                    onPressed: () => setState(() => _navRevealed = true),
-                    child: const Icon(Icons.keyboard_arrow_up),
-                  ),
-                ),
-            ],
-          ),
+          // Wide layout: the rail sits beside the content permanently —
+          // unlike the bottom bar it's never subject to
+          // autoHideActive/navVisible, since it's a side column, not
+          // something that overlaps playback controls the way a bottom
+          // bar does in landscape/Car Mode.
+          body: isWideLayout
+              ? Row(
+                  children: [
+                    homeNav,
+                    const VerticalDivider(width: 1, thickness: 1),
+                    Expanded(child: mainContent),
+                  ],
+                )
+              : mainContent,
           bottomNavigationBar: AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeInOut,
@@ -342,7 +345,7 @@ class _HomePageState extends State<HomePage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       MiniPlayerBar(engine: core.audioEngine),
-                      navBar,
+                      if (!isWideLayout) homeNav,
                     ],
                   )
                 : const SizedBox(width: double.infinity),

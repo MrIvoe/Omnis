@@ -1033,6 +1033,34 @@ class PluginManager {
     _emit();
   }
 
+  /// Like [callPluginHook], but returns the hook's own result instead of
+  /// discarding it — a `nav_item` payload's tap (see `plugin_slot_view.dart`)
+  /// needs the hook's *return value* (another small declarative payload to
+  /// show in a bottom sheet), not just to fire the call. A no-op
+  /// (returns `null`) for a bundled (in-process) plugin, same as
+  /// [callPluginHook] — bundled plugins have no hook-name-by-string
+  /// dispatch mechanism to call back into.
+  ///
+  /// Deliberately does *not* call [_emit] the way [callPluginHook] does:
+  /// a `nav_item` tap is a read ("what panel do I show"), not a mutation —
+  /// any actual state change a panel's own nested toggle/button triggers
+  /// goes back through [callPluginHook], which does emit.
+  Future<dynamic> callPluginHookForResult(
+    String pluginId,
+    String hook,
+    List<dynamic> args,
+  ) async {
+    final plugin = byId(pluginId);
+    final external = plugin?.external;
+    if (external == null || !external.hasHook(hook)) return null;
+    return _sandbox.run<dynamic>(
+      pluginId: plugin!.id,
+      pluginName: plugin.name,
+      hook: hook,
+      operation: () async => external.callHook(hook, args),
+    );
+  }
+
   /// Calls [MusicPlugin.uiSlot] for exactly one [plugin], not the
   /// aggregate dispatch [uiSlot] does across every enabled plugin.
   ///

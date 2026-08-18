@@ -1838,6 +1838,88 @@ dynamic onTrackStart(dynamic track) => null;
     });
   });
 
+  group('PluginManager.callPluginHookForResult', () {
+    test('invokes the declared hook on the named external plugin and '
+        'returns its result — the nav_item panel-fetch path', () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_call_hook_result_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'nav_item_plugin',
+        permissions: const [],
+        hooks: const ['openStats'],
+        extraSource: '''
+dynamic openStats(dynamic arg) {
+  return [
+    {'type': 'text', 'text': 'Plays this week: 42'},
+  ];
+}
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      // A single `null` argument, not `const []` — see plugin_slot_view.
+      // dart's `_handleTap` for why: a real dart_eval bug throws while
+      // building a string-valued Map/List literal inside a guest hook
+      // called with zero arguments (confirmed directly — the identical
+      // hook body succeeds when called with one argument, of any value,
+      // including `null`), and this is the exact call shape production
+      // code uses.
+      final result = await manager.callPluginHookForResult(
+          'nav_item_plugin', 'openStats', const [null]);
+
+      expect(result, isA<List>());
+      expect((result as List).single, {'type': 'text', 'text': 'Plays this week: 42'});
+    });
+
+    test('a hook the plugin never declared returns null, not an error',
+        () async {
+      final tempRoot = (await Directory.systemTemp
+              .createTemp('omnis_call_hook_result_missing_test'))
+          .path;
+      addTearDown(() => Directory(tempRoot).delete(recursive: true));
+
+      final dir = await writeEventPlugin(
+        tempRoot,
+        'no_such_result_hook',
+        permissions: const [],
+        hooks: const ['onTrackStart'],
+        extraSource: '''
+dynamic onTrackStart(dynamic track) => null;
+''',
+      );
+
+      final manager = PluginManager();
+      await manager.installFromPath(dir.path, sourceUrl: 'local');
+
+      final result = await manager.callPluginHookForResult(
+          'no_such_result_hook', 'notDeclared', const []);
+      expect(result, isNull);
+    });
+
+    test('an unknown plugin id returns null, not an error', () async {
+      final manager = PluginManager();
+      final result = await manager.callPluginHookForResult(
+          'does_not_exist', 'anyHook', const []);
+      expect(result, isNull);
+    });
+
+    test('is a no-op (returns null) for a bundled (in-process) plugin — no '
+        'dynamic dispatch mechanism exists for one', () async {
+      final manager = PluginManager();
+      manager.register(_RecordingPlugin());
+
+      final result = await manager.callPluginHookForResult(
+          'recorder', 'uiSlot', const []);
+      expect(result, isNull);
+    });
+  });
+
   group('SandboxedLyricsProvider / SandboxedQueueBuilder (unit)', () {
     test('SandboxedLyricsProvider forwards to provideLyrics and returns '
         'its result', () {
