@@ -9,12 +9,14 @@ Future<Widget?> renderInTree(
   WidgetTester tester,
   dynamic item, {
   PluginSlotAction? onAction,
+  PluginSlotPanelFetcher? onFetchPanel,
 }) async {
   Widget? result;
   await tester.pumpWidget(MaterialApp(
     home: Scaffold(
       body: Builder(builder: (context) {
-        result = renderPluginSlotItem(context, item, onAction: onAction);
+        result = renderPluginSlotItem(context, item,
+            onAction: onAction, onFetchPanel: onFetchPanel);
         return result ?? const SizedBox.shrink();
       }),
     ),
@@ -140,6 +142,146 @@ void main() {
       expect(rendered, isNotNull);
       expect(find.text('Active'), findsOneWidget);
       expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    });
+  });
+
+  group('renderPluginSlotItem — nav_item', () {
+    testWidgets('renders an icon-above-label tile', (tester) async {
+      final rendered = await renderInTree(tester, {
+        'type': 'nav_item',
+        'text': 'Stats',
+        'icon': 'history',
+        'hook': 'openStats',
+      });
+      expect(rendered, isNotNull);
+      expect(find.text('Stats'), findsOneWidget);
+      expect(find.byIcon(Icons.history), findsOneWidget);
+    });
+
+    testWidgets(
+        'tapping a String-hook nav_item calls onFetchPanel with the '
+        'right hook name, not onAction', (tester) async {
+      String? fetchedHook;
+      List<dynamic>? fetchedArgs;
+      var actionCalled = false;
+      await renderInTree(
+        tester,
+        {
+          'type': 'nav_item',
+          'text': 'Stats',
+          'icon': 'history',
+          'hook': 'openStats',
+        },
+        onAction: (hook, args) => actionCalled = true,
+        onFetchPanel: (hook, args) async {
+          fetchedHook = hook;
+          fetchedArgs = args;
+          return null; // no panel items -> no sheet, still proves the call
+        },
+      );
+
+      await tester.tap(find.byType(InkWell));
+      await tester.pumpAndSettle();
+
+      expect(fetchedHook, 'openStats');
+      // A single `null`, not an empty list — see _handleTap's own doc
+      // comment: a genuinely empty args list hits a real dart_eval bug
+      // when the guest hook's return value is a string-valued Map/List
+      // literal.
+      expect(fetchedArgs, const [null]);
+      expect(actionCalled, isFalse);
+    });
+
+    testWidgets(
+        'a panel returned by the hook opens in a bottom sheet, built from '
+        'the same declarative vocabulary', (tester) async {
+      await renderInTree(
+        tester,
+        {
+          'type': 'nav_item',
+          'text': 'Stats',
+          'icon': 'history',
+          'hook': 'openStats',
+        },
+        onFetchPanel: (hook, args) async => [
+          {'type': 'text', 'text': 'Plays this week: 42'},
+        ],
+      );
+
+      await tester.tap(find.byType(InkWell));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Plays this week: 42'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a WidgetBuilder-hook nav_item (bundled plugin) pushes a real page '
+        'via Navigator.push, never onFetchPanel', (tester) async {
+      var fetchPanelCalled = false;
+      Widget buildPage(BuildContext context) =>
+          const Scaffold(body: Text('Bundled plugin page'));
+
+      await renderInTree(
+        tester,
+        {
+          'type': 'nav_item',
+          'text': 'Open',
+          'icon': 'music',
+          'hook': buildPage,
+        },
+        onFetchPanel: (hook, args) async {
+          fetchPanelCalled = true;
+          return null;
+        },
+      );
+
+      await tester.tap(find.byType(InkWell));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bundled plugin page'), findsOneWidget);
+      expect(fetchPanelCalled, isFalse);
+    });
+
+    testWidgets('missing "hook" renders nothing', (tester) async {
+      final rendered = await renderInTree(
+          tester, {'type': 'nav_item', 'text': 'Stats', 'icon': 'history'});
+      expect(rendered, isNull);
+    });
+
+    testWidgets('a non-String, non-WidgetBuilder "hook" renders nothing',
+        (tester) async {
+      final rendered = await renderInTree(tester, {
+        'type': 'nav_item',
+        'text': 'Stats',
+        'icon': 'history',
+        'hook': 42,
+      });
+      expect(rendered, isNull);
+    });
+
+    testWidgets('missing "text" renders nothing', (tester) async {
+      final rendered = await renderInTree(
+          tester, {'type': 'nav_item', 'icon': 'history', 'hook': 'h'});
+      expect(rendered, isNull);
+    });
+  });
+
+  group('renderPluginSlotItem — malformed values never crash', () {
+    testWidgets('an unrecognized type renders nothing', (tester) async {
+      final rendered = await renderInTree(
+          tester, {'type': 'not_a_real_type', 'text': 'x', 'hook': 'h'});
+      expect(rendered, isNull);
+    });
+
+    testWidgets('a bare non-Map, non-Widget, non-String item renders nothing',
+        (tester) async {
+      final rendered = await renderInTree(tester, 12345);
+      expect(rendered, isNull);
+    });
+
+    testWidgets('null item renders nothing', (tester) async {
+      final rendered = await renderInTree(tester, null);
+      expect(rendered, isNull);
     });
   });
 }

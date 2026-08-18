@@ -105,6 +105,8 @@ class _PluginSettingsPageState extends State<PluginSettingsPage> {
                 onAction: (hook, args) => widget.pluginManager
                     .callPluginHook(widget.plugin.id, hook, args)
                     .then((_) => _load()),
+                onFetchPanel: (hook, args) => widget.pluginManager
+                    .callPluginHookForResult(widget.plugin.id, hook, args),
               ) case final Widget rendered)
             Card(
               child: Padding(
