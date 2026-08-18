@@ -1,5 +1,6 @@
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/plugin_runtime.dart';
+import 'package:omnis/plugin_api/lyric_line.dart';
 import 'package:omnis/plugin_api/play_record.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 
@@ -63,7 +64,7 @@ const providedCapabilityHooks = {
   'artist_image': ['artistImageUrlFor'],
 };
 
-class SandboxedLyricsProvider implements ILyricsProvider {
+class SandboxedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvider {
   final PluginRuntime runtime;
 
   const SandboxedLyricsProvider(this.runtime);
@@ -85,6 +86,20 @@ class SandboxedLyricsProvider implements ILyricsProvider {
     }
     return _fallback;
   }
+
+  /// Always `null` — a first cut. This adapter's whole job (see the file
+  /// doc above) is bridging one narrow, fixed, reviewed guest hook per
+  /// interface; [currentLyricFor]'s `provideLyrics` hook is scoped to
+  /// display text only (a single `String`, never a structured line list),
+  /// and there is no second guest hook here for a full synced-line list.
+  /// Bridging one would need its own reviewed `provides:`/hook contract
+  /// the way `provideLyrics` already has, which is real, separate work,
+  /// not attempted here. Always returning `null` is also already correct
+  /// behavior, not just a stub: every caller of [ILyricsProvider] treats
+  /// `null` as "fall back to [currentLyricFor]'s single-block rendering",
+  /// which is exactly what a sandboxed plugin's lyrics have ever offered.
+  @override
+  List<LyricLine>? syncedLyricsFor(BaseTrack track) => null;
 }
 
 class SandboxedQueueBuilder implements IQueueBuilder {

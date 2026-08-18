@@ -1,6 +1,7 @@
 import 'package:omnis_plugin_api/audio_analysis_result.dart';
 import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/enrichment_result.dart';
+import 'package:omnis_plugin_api/lyric_line.dart';
 import 'package:omnis_plugin_api/play_record.dart';
 
 /// Capability contracts a plugin registers against on `ServiceRegistry`
@@ -32,6 +33,46 @@ abstract class ILyricsProvider {
   /// never need to special-case "no provider" vs. "provider has nothing"
   /// beyond checking whether a provider is registered at all.
   String currentLyricFor(BaseTrack track, Duration position);
+}
+
+/// Supplies the full ordered list of time-synced lyric lines for a
+/// track, when a provider genuinely has them — letting a caller render
+/// every line at once (Spotify-style scrolling lyrics), not just
+/// [ILyricsProvider.currentLyricFor]'s single current line/block.
+///
+/// A separate interface from [ILyricsProvider], not a method added onto
+/// it, deliberately — verified directly, not assumed: Dart's
+/// `implements` clause requires a class to re-provide *every* member of
+/// an interface it implements, even one given a default body in the
+/// interface itself (unlike, say, Java's default interface methods,
+/// which an implementing class inherits automatically without
+/// overriding) — only `extends`/`with` actually inherit an
+/// implementation, and neither existing [ILyricsProvider] implementer
+/// can switch to those without a larger, unrelated refactor. Adding a
+/// method straight onto [ILyricsProvider] — with or without a default
+/// body — would therefore have been an instant compile break for every
+/// existing implementer the moment this package's version bumped:
+/// `LyricsPlugin` (`Omnis-Plugins` repo, `implements ILyricsProvider`,
+/// picking this up is a separate, not-yet-landed follow-up in that
+/// repo's own release) and `SandboxedLyricsProvider`
+/// (`lib/core/plugin_sandbox_services.dart`, this app).
+///
+/// A caller checks `provider is ISyncedLyricsProvider` — the exact
+/// "ask for the capability interface, not the concrete plugin type"
+/// pattern [IRatingsProvider]/[IThumbsProvider]/[IFavoritesProvider]
+/// above already establish for a signal not every provider of the base
+/// interface has — and falls back to
+/// [ILyricsProvider.currentLyricFor]'s existing single-block rendering
+/// when a provider doesn't implement it, which is every provider today
+/// until `LyricsPlugin` picks this up.
+abstract class ISyncedLyricsProvider {
+  /// The full ordered list of time-synced lines for [track], if this
+  /// provider genuinely has synced lyrics for it. Returns `null` — never
+  /// an empty list for "nothing synced" — when it only has (or has no)
+  /// plain, untimed lyrics for [track], so a caller can use "is this
+  /// null" as the one check that decides whether to fall back to
+  /// [ILyricsProvider.currentLyricFor]'s single-block rendering.
+  List<LyricLine>? syncedLyricsFor(BaseTrack track);
 }
 
 /// Records and queries real play history — "recently played," "most
