@@ -300,7 +300,16 @@ class MainCore {
     // registerAll (not a plain loop over createBundledPlugins()) so a
     // throwing bundled-plugins registry — a bad release of omnis_plugins,
     // or a single plugin constructor that throws — can't crash app boot.
-    _pluginManager.registerAll(createBundledPlugins);
+    //
+    // Skippable via `--dart-define=OMNIS_NO_BUNDLED_PLUGINS=true` — a
+    // dev/QA-only build flag for exercising the marketplace/catalog
+    // install flow and every page's "no plugins registered" behavior
+    // against a genuinely empty ServiceRegistry, the same state a brand
+    // new install would have before anything gets installed. Defaults to
+    // false, so every normal build is completely unaffected.
+    if (!const bool.fromEnvironment('OMNIS_NO_BUNDLED_PLUGINS')) {
+      _pluginManager.registerAll(createBundledPlugins);
+    }
 
     // Initialize bundled plugins registered so far, then load any plugins
     // installed on disk from previous sessions.
