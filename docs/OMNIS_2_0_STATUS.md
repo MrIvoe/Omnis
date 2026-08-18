@@ -113,7 +113,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 41 | Radio | 🟡 Real client to the free Radio Browser directory; built from a genuine 0% start |
 | 42 | Smart playlists | 🟡 Real rule engine incl. BPM/duration/bitrate/codec conditions and JSON import/export — no further named gaps |
 | 43 | AI | 🟡 Real playlist generation and natural language search from a genuine 0% start; conversational assistant/voice control/tagging still 0% |
-| 44 | Themes | 🟡 Real declarative theme engine (URL/file import, closed-schema colors/typography); named-preset parity closed, more presets possible |
+| 44 | Themes | 🟡 Real declarative theme engine (URL/file import, closed-schema colors/typography) plus a full in-app visual editor (9 color pickers, font/scale/corner-radius/motion controls, solid/gradient background editor, live preview, save-and-install); named-preset parity closed, more presets possible |
 
 ## Phase 7 — Advanced UX
 

@@ -10,82 +10,13 @@ import 'package:omnis/ui/player_layouts/declarative/layout_installer.dart'
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/settings/settings_widgets.dart';
+import 'package:omnis/ui/theme/declarative/theme_editor_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_installer.dart'
     show ThemeInstallException;
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manifest.dart';
+import 'package:omnis/ui/widgets/color_picker_dialog.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
-
-class _ColorPickerDialog extends StatefulWidget {
-  final Color initialColor;
-
-  const _ColorPickerDialog({required this.initialColor});
-
-  @override
-  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
-}
-
-class _ColorPickerDialogState extends State<_ColorPickerDialog> {
-  late Color _selectedColor;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedColor = widget.initialColor;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = {
-      Colors.deepPurple: 'Deep purple',
-      Colors.blue: 'Blue',
-      Colors.teal: 'Teal',
-      Colors.green: 'Green',
-      Colors.orange: 'Orange',
-      Colors.pink: 'Pink',
-    };
-
-    return AlertDialog(
-      title: const Text('Choose accent color'),
-      content: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: colors.entries.map((entry) {
-          final color = entry.key;
-          final name = entry.value;
-          final selected = color == _selectedColor;
-          return Semantics(
-            button: true,
-            label: name,
-            selected: selected,
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedColor = color),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: selected ? Colors.white : Colors.transparent,
-                      width: 2),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton(
-            onPressed: () => Navigator.pop(context, _selectedColor),
-            child: const Text('Apply')),
-      ],
-    );
-  }
-}
 
 /// "Import a layout" card: paste a direct link to a layout's YAML/JSON
 /// text (a GitHub "raw" file URL or a gist raw URL — not a repo page,
@@ -450,8 +381,9 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               onTap: () async {
                 final color = await showDialog<Color>(
                   context: context,
-                  builder: (context) =>
-                      _ColorPickerDialog(initialColor: settings.accentColor),
+                  builder: (context) => ColorPickerDialog(
+                      initialColor: settings.accentColor,
+                      title: 'Choose accent color'),
                 );
                 if (color != null && mounted) {
                   setState(() => settings.accentColor = color);
@@ -537,6 +469,20 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final saved = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ThemeEditorPage(themeManager: widget.themeManager),
+                ),
+              );
+              if (saved == true && mounted) setState(() {});
+            },
+            icon: const Icon(Icons.palette_outlined),
+            label: const Text('Create a theme'),
           ),
           const SizedBox(height: 8),
           _ThemeImportCard(themeManager: widget.themeManager),
