@@ -18,8 +18,8 @@ import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
+import 'package:omnis/ui/online_page.dart';
 import 'package:omnis/ui/playlist_page.dart';
-import 'package:omnis/ui/radio_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
@@ -227,7 +227,7 @@ class _HomePageState extends State<HomePage> {
           MaterialPageRoute(builder: (_) => const NowPlayingPage()),
         ),
       ),
-      RadioPage(engine: core.audioEngine, pluginManager: core.pluginManager),
+      OnlinePage(engine: core.audioEngine, pluginManager: core.pluginManager),
       SettingsPage(
           engine: core.audioEngine,
           pluginManager: core.pluginManager,
@@ -260,7 +260,7 @@ class _HomePageState extends State<HomePage> {
       HomeDestinationInfo(Icons.library_music, 'Library'),
       HomeDestinationInfo(Icons.playlist_play, 'Playlist'),
       HomeDestinationInfo(Icons.mood, 'Moods'),
-      HomeDestinationInfo(Icons.radio, 'Radio'),
+      HomeDestinationInfo(Icons.cloud_queue, 'Online'),
       HomeDestinationInfo(Icons.settings, 'Settings'),
     ];
     final isWideLayout = isWideHomeLayout(context);
