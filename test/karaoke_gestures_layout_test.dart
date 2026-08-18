@@ -74,6 +74,7 @@ PlayerLayoutData _dataFor({
       onOpenEqualizer: () {},
       onEditLyrics: () {},
       onActivateVisualizer: () {},
+      onOpenQueue: () {},
       onStartSleepTimer: () {},
       onCyclePlayMode: () {},
       onCycleAbRepeat: () {},

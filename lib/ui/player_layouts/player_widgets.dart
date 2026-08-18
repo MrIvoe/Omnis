@@ -736,6 +736,12 @@ class PlayerExtrasRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         PlayerAbRepeatButton(data: data),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: data.onOpenQueue,
+          icon: const Icon(Icons.queue_music),
+          label: const Text('Queue'),
+        ),
         if (equalizer != null || visualizer != null) const SizedBox(width: 8),
         if (equalizer != null)
           FilledButton.tonal(

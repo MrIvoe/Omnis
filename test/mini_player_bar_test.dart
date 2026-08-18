@@ -8,8 +8,10 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
+import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/widgets/mini_player_bar.dart';
+import 'package:omnis/ui/widgets/queue_panel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A controllable fake — real streams (not just stubbed getters), since
@@ -26,6 +28,18 @@ class _FakeEngine implements AudioEngine {
 
   @override
   BaseTrack? get currentTrack => _track;
+
+  // Stubbed only so the Queue button's target (QueuePanel) can build
+  // without throwing — this file's own tests don't exercise queue
+  // content/reordering, only that tapping the button opens the panel at
+  // all (see queue_panel_test.dart for real queue-content coverage).
+  @override
+  List<BaseTrack> get queue => _track == null ? const [] : [_track!];
+  @override
+  int get currentIndex => _track == null ? -1 : 0;
+  final _queueController = StreamController<List<BaseTrack>>.broadcast();
+  @override
+  Stream<List<BaseTrack>> get queueStream => _queueController.stream;
 
   void setTrack(BaseTrack? track) {
     _track = track;
@@ -115,6 +129,22 @@ void main() {
     // Still on the same route — tapping the icon didn't also trigger the
     // bar's own onTap navigation underneath it.
     expect(find.byType(MiniPlayerBar), findsOneWidget);
+  });
+
+  testWidgets('the Queue button opens QueuePanel, not the Now Playing route',
+      (tester) async {
+    final engine = _FakeEngine();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: MiniPlayerBar(engine: engine)),
+    ));
+    engine.setTrack(_track());
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.queue_music));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(QueuePanel), findsOneWidget);
+    expect(find.byType(NowPlayingPage), findsNothing);
   });
 
   testWidgets(

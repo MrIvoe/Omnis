@@ -89,6 +89,12 @@ class PlayerLayoutData {
   final VoidCallback onOpenEqualizer;
   final VoidCallback onEditLyrics;
   final VoidCallback onActivateVisualizer;
+
+  /// Opens the §40/§41 Queue panel (`lib/ui/widgets/queue_panel.dart`) —
+  /// same "callback lives on `PlayerLayoutData`, `NowPlayingPage` owns
+  /// the actual wiring" split every other player-adjacent panel here
+  /// already uses.
+  final VoidCallback onOpenQueue;
   final VoidCallback onStartSleepTimer;
   final VoidCallback? onCancelSleepTimer;
 
@@ -130,6 +136,7 @@ class PlayerLayoutData {
     required this.onOpenEqualizer,
     required this.onEditLyrics,
     required this.onActivateVisualizer,
+    required this.onOpenQueue,
     required this.onStartSleepTimer,
     this.onCancelSleepTimer,
     required this.onCyclePlayMode,

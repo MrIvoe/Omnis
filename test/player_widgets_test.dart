@@ -84,6 +84,7 @@ PlayerLayoutData _dataFor({
   VoidCallback? onCyclePlayMode,
   VoidCallback? onStartSleepTimer,
   VoidCallback? onCancelSleepTimer,
+  VoidCallback? onOpenQueue,
 }) =>
     PlayerLayoutData(
       track: _track(),
@@ -110,6 +111,7 @@ PlayerLayoutData _dataFor({
       onOpenEqualizer: () {},
       onEditLyrics: () {},
       onActivateVisualizer: () {},
+      onOpenQueue: onOpenQueue ?? () {},
       onStartSleepTimer: onStartSleepTimer ?? () {},
       onCancelSleepTimer: onCancelSleepTimer,
       onCyclePlayMode: onCyclePlayMode ?? () {},
@@ -783,6 +785,27 @@ void main() {
           reason: 'IgnorePointer on the overlay must let the Slider '
               'underneath still receive the tap');
       provider.close();
+    });
+  });
+
+  group('PlayerExtrasRow Queue button', () {
+    testWidgets('always renders and calls onOpenQueue when tapped, '
+        'regardless of equalizer/visualizer availability', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerExtrasRow(
+              data: _dataFor(onOpenQueue: () => opened = true)),
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.text('Queue'), findsOneWidget);
+
+      await tester.tap(find.text('Queue'));
+      await tester.pump();
+
+      expect(opened, isTrue);
     });
   });
 }

@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis/ui/widgets/queue_panel.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Persistent bar shown above the bottom nav whenever a track is loaded.
@@ -147,6 +148,12 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.queue_music),
+                      tooltip: 'Queue',
+                      onPressed: () =>
+                          QueuePanel.show(context, widget.engine),
                     ),
                     IconButton(
                       icon: Icon(_playing ? Icons.pause : Icons.play_arrow),

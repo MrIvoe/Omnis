@@ -21,6 +21,7 @@ import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/theme/omnis_colors.dart';
 import 'package:omnis/ui/widgets/now_playing_background.dart';
+import 'package:omnis/ui/widgets/queue_panel.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart' show ArtworkProvider;
 
 /// Which way a "Taps" gesture-mode tap should skip.
@@ -453,6 +454,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               if (!mounted) return;
               _toast(visualizerEmitter.lastError ?? 'Visualizer activated.');
             },
+      onOpenQueue: () => QueuePanel.show(context, engine),
       onStartSleepTimer: sleepTimer == null
           ? () {}
           : () => _pickSleepTimerDuration(sleepTimer),
