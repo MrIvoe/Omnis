@@ -6,13 +6,21 @@ wants to know what they're allowed to rely on.
 
 ## Two trust levels, matching the two kinds of plugin
 
-### Bundled plugins (`lib/plugins/`) — fully trusted
+### Bundled plugins — fully trusted
 
-Compiled into the app from this repository's own source. A bundled
-plugin is exactly as trusted as any other file in the app — full Dart,
-full Flutter, no sandbox, no permission system. If you're auditing what
-Omnis itself can do, this is the code to read; it's reviewed the same way
-any other change to the app is (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
+Compiled into the app from source — today that source lives in a
+separate repo, [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins),
+pulled in as the `omnis_plugins` package via a git dependency pinned to a
+tag in this repo's `pubspec.yaml` (see
+[PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for how that pin gets bumped). A
+bundled plugin is exactly as trusted as any other file in the app —
+full Dart, full Flutter, no sandbox, no permission system. If you're
+auditing what Omnis itself can do, this is the code to read; a change to
+it goes through a PR against Omnis-Plugins, reviewed there the same way
+any change to this app goes through a PR here (see
+[CONTRIBUTING.md](../CONTRIBUTING.md)) — before it can actually ship, the
+`omnis_plugins:` pin in this repo also has to be bumped to a tag that
+includes it, which is itself a normal, reviewed PR against this repo.
 
 ### Downloaded plugins — sandboxed, permission-gated
 

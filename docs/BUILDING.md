@@ -154,8 +154,13 @@ Plugins → paste a URL, not compiled into the app — live in their own repo,
 [MrIvoe/Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
 (`C:\Users\MrIvo\Github\Omnis-Plugins` locally), split out from this repo
 so they version and publish independently of the app itself. Bundled
-plugins (`lib/plugins/`) are unaffected — this only concerns the
-`plugins_page.dart` install flow.
+plugins moved out of this repo too, but through a different mechanism:
+they're compiled into the app from that same Omnis-Plugins repo's
+`omnis_plugins` package, pulled in via the `omnis_plugins:` git
+dependency (pinned to a tag) in this repo's `pubspec.yaml` — see
+[PLUGIN_GUIDE.md](PLUGIN_GUIDE.md#2-register-it) for that workflow. This
+section's catalog/`catalog.json` mechanism only concerns the runtime,
+paste-a-URL `plugins_page.dart` install flow for downloadable plugins.
 
 The Plugins page fetches the real, live `catalog.json` published at the
 root of Omnis-Plugins (`PluginInstaller.fetchCatalog()`, added

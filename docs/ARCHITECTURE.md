@@ -12,13 +12,15 @@ behind them.
 │                   UI Layer                     │
 │   Now Playing · Library · Plugins · Settings   │
 ├───────────────────────────────────────────────┤
-│      lib/plugins/  — every feature lives here  │
+│       omnis_plugins (Omnis-Plugins repo)       │
 │  equalizer · lyrics · replay gain · scrobble   │
 │  sleep timer · smart playlist · visualizer …   │
 ├───────────────────────────────────────────────┤
-│  lib/plugin_api/  — capability contracts.      │
-│  Grows with the ecosystem. Depends on core;    │
-│  core never depends back.                      │
+│  lib/plugin_api/ — thin re-export shim; the    │
+│  real capability contracts now live in         │
+│  packages/omnis_plugin_api/, so old imports    │
+│  still compile unchanged.                      │
+│  Depends on core; core never depends back.     │
 ├───────────────────────────────────────────────┤
 │      lib/core/  — the kernel, plugin-agnostic  │
 │  AudioEngine · PluginManager · Sandbox         │
@@ -27,11 +29,14 @@ behind them.
 ```
 
 The kernel never imports a concrete plugin. `lib/core/main_core.dart` has
-exactly one plugin-side import — the registry — so **you add features by
-editing `lib/plugins/`, never `lib/core/`.** The same rule extends one
-layer further, and it's why `lib/plugin_api/` exists as its own directory
-rather than living inside `lib/core/`: see "Why interfaces live in
-`lib/plugin_api/`" below.
+exactly one plugin-side import — `createBundledPlugins()` from
+`package:omnis_plugins/bundled_plugins.dart` — so **you add features by
+editing the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
+repo (the `omnis_plugins` package this app depends on), never
+`lib/core/`.** `lib/plugin_api/` in *this* repo is a thin re-export shim,
+not where a feature's capability contract lives — see "Why interfaces
+live in `omnis_plugin_api`" below for where it actually lives and why the
+shim exists.
 
 ## Design rule
 
@@ -67,11 +72,11 @@ interface that provides no practical value is a cost, not a virtue.
 
 Both live on `PluginManager` and are handed to every plugin via the same `PluginContext` instance, so a plugin registering a service and a page looking it up share one object, not two. **This mechanism is the whole point, and it's deliberately the only part of it that lives in `lib/core/`.**
 
-### Why interfaces live in `lib/plugin_api/`, not `lib/core/`
+### Why interfaces live in `omnis_plugin_api`, not `lib/core/`
 
 The six interfaces below each used to mean adding a file to `lib/core/` — one per capability, plus a result-type file for the ones that needed a return type. That's a real problem: it means the kernel grows forever, one file per feature, which is exactly what "the Core stays small and never needs to change" is supposed to prevent. `ServiceRegistry`/`EventBus` themselves haven't changed once across all six additions and have no reason to change for a seventh — they're the generic, stable *mechanism*. The interfaces (`ILyricsProvider`, `IQueueBuilder`, ...) are not that: they're capability-specific knowledge that keeps growing as the plugin ecosystem grows.
 
-So they live in `lib/plugin_api/` instead — a layer that depends on `lib/core/` (for `BaseTrack`, nothing else) but that `lib/core/` never depends back on. A plugin implements an interface from `plugin_api`; a caller (UI code, another plugin) imports it from `plugin_api` too. Adding an eighth interface means adding a file to `plugin_api` — `lib/core/` doesn't change, doesn't grow, and nothing about the kernel needs re-review. Result types an interface needs to name (`PlayRecord`, `EnrichmentResult`, `AudioAnalysisResult`) live in `plugin_api` alongside the interfaces themselves, for the same reason.
+So they live in `packages/omnis_plugin_api/` instead of `lib/core/` — a small standalone package that depends on nothing but `BaseTrack` (also defined there) and that neither `lib/core/` nor a plugin depends back on. It has to be a genuinely separate *package*, not just a separate directory in this repo, because the interfaces now need to be visible from two different git repositories: this app, and the bundled plugins themselves, which live in the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo as the `omnis_plugins` package. A plugin implements an interface by depending on `omnis_plugin_api` directly (`import 'package:omnis_plugin_api/service_interfaces.dart'`); this app's UI code imports the very same interface through `lib/plugin_api/service_interfaces.dart`, a one-line re-export shim (`export 'package:omnis_plugin_api/service_interfaces.dart';`) kept around so every pre-existing `import 'package:omnis/plugin_api/service_interfaces.dart'` in this codebase keeps compiling unchanged. Adding an eighth interface means adding a file to `packages/omnis_plugin_api/` — `lib/core/` doesn't change, doesn't grow, nothing about the kernel needs re-review, and this app's own shim doesn't need touching either, since it re-exports the whole file rather than naming symbols one by one. Result types an interface needs to name (`PlayRecord`, `EnrichmentResult`, `AudioAnalysisResult`) live in `omnis_plugin_api` alongside the interfaces themselves, for the same reason.
 
 Real migrations exist today, not just unused infrastructure:
 
@@ -116,7 +121,8 @@ playback, and persisting state.
   runs, so a plugin can read persisted state from the first line of that
   hook; writes self-initialize even for a plugin built directly in a test.
 
-**`ShuffleRepeatPlugin`** (`lib/plugins/shuffle_repeat_plugin.dart`) is the
+**`ShuffleRepeatPlugin`** (`shuffle_repeat_plugin.dart`, `package:omnis_plugins`
+in the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo) is the
 concrete proof both of these were worth building, and a worked example of
 where the plugin/Core line actually sits. The *toggle itself*
 (`setShuffleEnabled`/`setRepeatMode`) has to stay a thin call into
@@ -381,7 +387,7 @@ more than it does.
   unrelated track. The button in `PlayerExtrasRow` cycles off → A marked →
   looping → off.
 
-### Tagging (`TagEditorPlugin`, `lib/plugins/tag_editor_plugin.dart`)
+### Tagging (`TagEditorPlugin`, `package:omnis_plugins/tag_editor_plugin.dart` in the [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo)
 
 Reads and writes real ID3 tags via `id3_codec` (pure Dart, no native
 build). Building this surfaced three real bugs/gaps in that third-party
@@ -572,7 +578,8 @@ Flutter binary at all, official or otherwise. Compiling it from source for
 Android/iOS/Windows and binding it via `dart:ffi` is a native-build
 project measured in days, so the app talks to Essentia over HTTP instead:
 
-- **`lib/plugins/audio_analysis_plugin.dart`** (`AudioAnalysisPlugin`): a
+- **`package:omnis_plugins/audio_analysis_plugin.dart`** (`AudioAnalysisPlugin`,
+  in the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo): a
   real HTTP client, same shape as `MetadataEnrichmentPlugin` — POSTs a
   local track's audio to a URL you configure from this plugin's own
   settings (tap "Audio Analysis (Essentia)" in Plugins) and parses back
@@ -661,8 +668,10 @@ answers a genuinely different question:
   Windows/Linux (no official Flutter WebView there) rather than
   attempting to construct one that would fail.
 
-All four use Authorization Code + PKCE OAuth (`SpotifyAuth`/`YoutubeAuth`
-in `lib/plugins/`), opened via `flutter_web_auth_2` — a loopback HTTP
+All four use Authorization Code + PKCE OAuth (`SpotifyAuth`/`YoutubeAuth`,
+part of the `omnis_plugins` package in the separate
+[Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo), opened via
+`flutter_web_auth_2` — a loopback HTTP
 redirect on desktop, a custom URL scheme (`omnis://callback`, registered
 in `android/app/src/main/AndroidManifest.xml`) on Android/iOS. Each
 plugin holds its own Client ID/tokens in its own `PluginStorage`, entered

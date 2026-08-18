@@ -3,9 +3,13 @@
 Omnis is a micro-kernel: `lib/core/` is a small, stable playback engine
 that never imports a concrete plugin, and everything else — lyrics,
 equalizer, scrobbling, smart playlists, tag editing, and more — is a
-plugin under `lib/plugins/`. This guide is everything you need to build
-your own, whether it ships compiled into the app or gets installed later
-from a GitHub URL.
+plugin. Bundled plugins themselves live in a separate repo,
+[Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins), consumed by
+this app as the `omnis_plugins` package (see `pubspec.yaml`'s
+`omnis_plugins:` git dependency) — there's no bundled-plugin directory in
+this app's own source tree any more. This guide is everything you need
+to build your own, whether it ships compiled into the app (via that
+separate repo) or gets installed later from a GitHub URL.
 
 For the *why* behind this design (interfaces, the service registry, the
 event bus, the layering between `lib/core/` and `lib/plugin_api/`), see
@@ -17,7 +21,7 @@ self-contained so you don't have to read the architecture doc first.
 
 | | Bundled | Downloaded |
 |---|---|---|
-| Lives in | `lib/plugins/`, compiled into the app | a GitHub repo, installed at runtime |
+| Lives in | the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo, compiled into the app | a GitHub repo, installed at runtime |
 | Language | full Dart + Flutter | a restricted Dart subset, interpreted by `dart_eval` |
 | Base | extends `MusicPlugin` | a top-level `createPlugin()` function + hook functions |
 | Can render real widgets | yes | no — returns a small declarative `Map` instead |
@@ -27,8 +31,8 @@ self-contained so you don't have to read the architecture doc first.
 Use **bundled** for anything you want shipped with the app, or that needs
 a real widget, `ServiceRegistry`/`EventBus` participation, or
 `PluginStorage`. Use **downloaded** for something you want to distribute
-independently without a PR against this repo, and that only needs to
-react to hooks or show a simple badge.
+independently without a PR against the [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
+repo, and that only needs to react to hooks or show a simple badge.
 
 Most of this guide covers bundled plugins, since that's where the real
 capability surface lives. Downloaded plugins get their own section near
@@ -46,11 +50,14 @@ settings page. Skim it once, then come back here for the details.
 
 ### 1. Create the file
 
-Add `lib/plugins/my_plugin.dart`:
+Bundled plugins live in the separate
+[Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo now, not in
+this one — a fresh plugin starts there. In your local Omnis-Plugins
+checkout, add `lib/my_plugin.dart`:
 
 ```dart
-import 'package:omnis/core/base_track.dart';
-import 'package:omnis/core/plugin_interface.dart';
+import 'package:omnis_plugin_api/base_track.dart';
+import 'package:omnis_plugin_api/plugin_interface.dart';
 
 class MyPlugin extends MusicPlugin {
   @override
@@ -81,26 +88,64 @@ class MyPlugin extends MusicPlugin {
 }
 ```
 
+Note the imports: `package:omnis_plugin_api/...`, not `package:omnis/core/...`.
+`omnis_plugin_api` is the small, dependency-free contracts package both
+this app and Omnis-Plugins depend on — a plugin living in a different
+repo from the app has no way to import this app's own `lib/` at all. See
+[ARCHITECTURE.md](ARCHITECTURE.md#why-interfaces-live-in-omnis_plugin_api-not-libcore)
+for why the split exists.
+
 ### 2. Register it
 
-Add one line to `lib/plugins/bundled_plugins.dart`:
+Add an import and one factory entry to `lib/bundled_plugins.dart`, also
+in your Omnis-Plugins checkout — that file's own doc comment carries the
+full ordering rules (hook dispatch order, `ServiceRegistry` registration
+order for any interface more than one plugin registers under), so this
+is just the shape:
 
 ```dart
-List<MusicPlugin> createBundledPlugins() => <MusicPlugin>[
-      // ...existing plugins...
-      MyPlugin(),
-    ];
+import 'package:omnis_plugins/my_plugin.dart';
+
+// ...
+final factories = <MusicPlugin Function()>[
+  // ...existing factories...
+  () => MyPlugin(),
+];
 ```
 
-That's it — no other file changes. `MainCore` calls `createBundledPlugins()`,
-hands every plugin a `PluginContext`, and registers it. `lib/core/` never
-learns your plugin's name.
+That's it for the Omnis-Plugins side — no file in *this* repo changes.
+This app's `MainCore` calls `createBundledPlugins()` from
+`package:omnis_plugins/bundled_plugins.dart`, hands every plugin a
+`PluginContext`, and registers it; `lib/core/` never learns your plugin's
+name.
 
-Order in this list matters in two ways: it's the order hooks are
+Order in that list matters in two ways: it's the order hooks are
 dispatched in, and it's the registration order for any `ServiceRegistry`
 interface more than one plugin registers under (see
-[`IQueueBuilder`](ARCHITECTURE.md#why-interfaces-live-in-libplugin_api-not-libcore)
+[`IQueueBuilder`](ARCHITECTURE.md#why-interfaces-live-in-omnis_plugin_api-not-libcore)
 for a real example of why that can matter).
+
+### 3. Publish, then point this app at it
+
+This app depends on `omnis_plugins` via a git dependency pinned to a tag,
+not a floating branch (see the `omnis_plugins:` entry in this repo's
+`pubspec.yaml`) — so your new bundled plugin isn't live in Omnis until
+two more things happen:
+
+1. Commit and push your change to Omnis-Plugins, then cut a new tag there
+   (e.g. `v0.47.0`). A push to `main` alone changes nothing this app
+   builds against, by design: a stray push to Omnis-Plugins must never
+   silently change what Omnis ships.
+2. In this repo, bump the `ref:` under `omnis_plugins:` in `pubspec.yaml`
+   to that new tag and run `flutter pub get`.
+
+For fast local iteration without cutting a tag every time, add a
+`pubspec_overrides.yaml` (git-ignored, local-only — see the comment above
+the `omnis_plugins:` entry in `pubspec.yaml`) pointing `omnis_plugins` at
+a `path:` to your local Omnis-Plugins checkout instead; `flutter pub
+get`/`flutter run` then pick up uncommitted plugin changes immediately.
+Switch back to the plain git dependency before opening a PR against
+either repo.
 
 ## The `MusicPlugin` lifecycle
 
@@ -310,10 +355,11 @@ something another plugin (or a page) should be able to discover without
 hardcoding your plugin's name.
 
 **`ServiceRegistry`** is a lookup keyed by *interface*, not concrete
-class. Define an interface in `lib/plugin_api/service_interfaces.dart`
+class. Define an interface in `packages/omnis_plugin_api/lib/service_interfaces.dart`
 (only if one that fits doesn't already exist — see the six real ones
-there for the shape), implement it, and register/unregister across your
-lifecycle:
+there for the shape; this repo's own `lib/plugin_api/service_interfaces.dart`
+is just a re-export shim, not where to add a new one), implement it, and
+register/unregister across your lifecycle:
 
 ```dart
 class MyPlugin extends MusicPlugin implements ISomeCapability {
@@ -363,9 +409,12 @@ final sub = pluginManager.events.on<MyEvent>().listen((event) { ... });
 ```
 
 Matched by exact runtime type. `FavoritesPlugin`'s `FavoriteChangedEvent`
-(`lib/plugin_api/events.dart`) is the real, working example — it's what
-lets the Playlists page's "Favorites" smart list update immediately when
-a favorite changes elsewhere in the app, without polling.
+(defined in `packages/omnis_plugin_api/lib/events.dart`, re-exported
+through this repo's `lib/plugin_api/events.dart`; `FavoritesPlugin`
+itself lives in the [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
+repo) is the real, working example — it's what lets the Playlists page's
+"Favorites" smart list update immediately when a favorite changes
+elsewhere in the app, without polling.
 
 ## Testing your plugin
 

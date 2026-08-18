@@ -1,11 +1,16 @@
 // Omnis example plugin — a small, complete, real bundled plugin.
 //
-// This file is not wired into the running app (it's not listed in
-// `lib/plugins/bundled_plugins.dart`), but it lives inside the `omnis`
-// package and is checked by `flutter analyze`/compiles like any other
-// file, so it can never silently rot out of date with the real API. Copy
-// it into `lib/plugins/`, add one line to `bundled_plugins.dart`, and it
-// runs.
+// This file is not wired into the running app — bundled plugins are
+// registered in `lib/bundled_plugins.dart` in the separate
+// [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) repo, not
+// here. It lives inside the `omnis` package and is checked by `flutter
+// analyze`/compiles like any other file, so it can never silently rot
+// out of date with the real API. To actually run it: move it into your
+// Omnis-Plugins checkout, change its `omnis` imports below to
+// `omnis_plugin_api` ones, add one line to that repo's own
+// `bundled_plugins.dart`, and bump this app's `omnis_plugins:` pubspec
+// ref once it's published — see docs/PLUGIN_GUIDE.md for the full
+// workflow.
 //
 // Walks through every piece a real plugin typically touches:
 //  - the MusicPlugin lifecycle (initialize/enable/disable/dispose)
