@@ -7,21 +7,21 @@
 > answers "how far along is this, roughly" at a glance; that one
 > answers "what exactly changed and why" in full engineering detail.
 >
-> Last regenerated: 2026-08-18 (item 39's custom mood creation gap closed).
+> Last regenerated: 2026-08-18 (item 5's fingerprint-based track identity gap closed).
 
 ## Overall
 
 | ✅ Solid | 🟢 Solid, unverified | 🟡 Partial / in progress | ⬜ Not started |
 |---|---|---|---|
-| 8 | 8 | 34 | 0 |
+| 9 | 8 | 33 | 0 |
 
-### Estimated completion: ~71% (≈29% left to build)
+### Estimated completion: ~72% (≈28% left to build)
 
 A rough, weighted estimate — not a precise metric, since "partial"
 areas vary in how much is actually left: ✅ counts as 100% done, 🟢
 counts as 90% (fully built, only live-service verification pending),
 🟡 counts as 60% (real, working functionality exists, but named gaps
-remain), ⬜ counts as 0%. `(8×100 + 8×90 + 34×60 + 0×0) / 50 ≈ 71%`.
+remain), ⬜ counts as 0%. `(9×100 + 8×90 + 33×60 + 0×0) / 50 = 72%`.
 This will shift as items close out and as new gaps get discovered
 mid-build; it's refreshed alongside the rest of this file.
 
@@ -49,7 +49,7 @@ but the shape of what's left is narrow and well-enumerated, not open-ended.
 | 2 | Queue | 🟡 Manual queue, play-next, reorder, history/snapshots, cleanup, smart/rule-based continuation (similar track/artist, same genre/mood/album), "avoid repeat artist/album" queue rules (shuffle + continuation), and now a UI_SPEC §40/§41 Queue panel reachable from the mini-player and Now Playing (not just buried in the Playlist tab) all real; energy/BPM progression ordering and multiple queue sources not started |
 | 3 | Recovery | ✅ Watchdog + crash/power-loss recovery wired end-to-end |
 | 4 | Database | 🟡 Atomic writes, corruption detection, schema versioning, and scheduled backups all real; still JSON files, no indexed DB or multi-source libraries |
-| 5 | Library scanning | 🟡 Incremental rescan, desktop filesystem watcher, and scheduled background scans all real; no fingerprint-based track identity |
+| 5 | Library scanning | ✅ Incremental rescan, desktop filesystem watcher, scheduled background scans, and now content-fingerprint-based rename/move detection (a renamed file keeps its favorites/ratings/play history/playlist membership across every rescan trigger — the explicit "Add audio files" button, the desktop watcher, and the scheduled background scan — instead of silently losing them) — no further named gaps |
 | 6 | Persistence | ✅ Crash-safe playback/library/settings persistence |
 | 7 | OS media integration | 🟡 Windows SMTC + lock-screen controls confirmed; other platforms not re-verified this session |
 | 8 | Error handling | 🟡 Decoder auto-skip, plugin sandboxing, stranded-dialog fixes done; no full failure-mode audit yet |

@@ -17,8 +17,11 @@ import 'package:omnis/core/media_scanner.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/rating_aggregation.dart';
+import 'package:omnis/core/rename_reconciliation.dart';
 import 'package:omnis/core/star_rating.dart';
 import 'package:omnis/core/tag_find_replace.dart';
+import 'package:omnis/core/track_fingerprint.dart';
+import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
@@ -398,11 +401,27 @@ class _LibraryPageState extends State<LibraryPage> {
       // disk shouldn't stay in the library forever — scoped to this
       // explicit rescan action (not run automatically on every app open)
       // so pruning stays predictable and bounded.
-      final stillPresent = _tracks.where((t) {
-        if (t.type != TrackType.local || t.localPath == null) return true;
-        return File(t.localPath!).existsSync();
+      final missingTracks = _tracks.where((t) {
+        return t.type == TrackType.local &&
+            t.localPath != null &&
+            !File(t.localPath!).existsSync();
       }).toList();
-      setState(() => _tracks = [...stillPresent, ...newTracks]);
+      final stillPresent = _tracks
+          .where((t) => !missingTracks.contains(t))
+          .toList();
+      // Item 5's "no fingerprint-based track identity" gap: a missing
+      // local track and a genuinely-new one are reconciled by content
+      // fingerprint before being treated as "deleted" + "added" — see
+      // _reconcileRenamedTracks's own doc for why this matters (a
+      // renamed/moved file otherwise silently orphans its favorites/
+      // ratings/play history/playlist membership, all of which are keyed
+      // by track id).
+      final reconciled = await _reconcileRenamedTracks(
+        missingTracks: missingTracks,
+        candidateNewTracks: newTracks,
+      );
+      setState(() =>
+          _tracks = [...stillPresent, ...reconciled.renamed, ...reconciled.trulyNew]);
       // Persist so the library survives app restarts. Deliberately does
       // NOT touch the playback queue or start playback — scanning/adding
       // to the library is a data operation, not a "play something"
@@ -418,6 +437,29 @@ class _LibraryPageState extends State<LibraryPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Thin I/O wrapper around [reconcileRenamedTracks] — item 5's "no
+  /// fingerprint-based track identity" fix. Loads the persisted
+  /// fingerprint map, delegates the actual matching to the pure function
+  /// (see its own doc comment for the full rationale — this file has no
+  /// widget-test coverage at all, a documented, known limitation, so the
+  /// real logic lives where it's actually testable), then persists the
+  /// result back.
+  Future<RenameReconciliation> _reconcileRenamedTracks({
+    required List<BaseTrack> missingTracks,
+    required List<BaseTrack> candidateNewTracks,
+  }) async {
+    final fingerprintStore = TrackFingerprintStore.instance;
+    final fingerprints = await fingerprintStore.load();
+    final result = await reconcileRenamedTracks(
+      missingTracks: missingTracks,
+      candidateNewTracks: candidateNewTracks,
+      fingerprints: fingerprints,
+      computeFingerprint: computeFileFingerprint,
+    );
+    await fingerprintStore.save(result.updatedFingerprints);
+    return result;
   }
 
   Future<void> _playTrack(BaseTrack track) async {

@@ -28,7 +28,10 @@ import 'package:omnis/core/queue_continuation.dart';
 import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/core/recovery_journal.dart';
+import 'package:omnis/core/rename_reconciliation.dart';
 import 'package:omnis/core/sandbox.dart';
+import 'package:omnis/core/track_fingerprint.dart';
+import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis_plugins/bundled_plugins.dart';
 
 /// MainCore is the entry point for the Omnis micro-kernel music engine.
@@ -503,27 +506,44 @@ class MainCore {
   /// Keep every still-valid existing track, add only what's genuinely
   /// new ([newTracksFromScan], pure/tested), and prune a local track
   /// whose file is now gone (needs real file-existence I/O, so it stays
-  /// here rather than in that pure function). Shared by both
-  /// [_maybeStartLibraryWatcher]'s onSettled callback and
-  /// [_maybeRunScheduledScan] — the two real triggers for a rescan
-  /// being applied to the persisted library.
+  /// here rather than in that pure function) — unless it's recognized as
+  /// a rename via [reconcileRenamedTracks] (item 5's fix, the same one
+  /// `library_page.dart._pickAndAdd` applies), in which case its old id
+  /// is kept instead of being dropped and re-added under a new one.
+  /// Shared by both [_maybeStartLibraryWatcher]'s onSettled callback and
+  /// [_maybeRunScheduledScan]/[rescanNow] — every real trigger for a
+  /// rescan being applied to the persisted library other than
+  /// `library_page.dart`'s own explicit "Add audio files" button.
   Future<void> _mergeScanIntoLibrary(
     List<BaseTrack> current,
     List<BaseTrack> scanned,
   ) async {
     final newTracks = newTracksFromScan(current, scanned);
-    final stillPresent = current.where((t) {
-      if (t.type != TrackType.local || t.localPath == null) return true;
-      return File(t.localPath!).existsSync();
+    final missingTracks = current.where((t) {
+      return t.type == TrackType.local &&
+          t.localPath != null &&
+          !File(t.localPath!).existsSync();
     }).toList();
     // Only a genuine addition or removal is worth a write — a rescan
     // that finds nothing new and nothing gone (e.g. a file merely
     // touched/re-saved with the same path) shouldn't churn the library
     // store for no reason.
-    if (newTracks.isEmpty && stillPresent.length == current.length) {
+    if (newTracks.isEmpty && missingTracks.isEmpty) {
       return;
     }
-    await LibraryRepository.instance.save([...stillPresent, ...newTracks]);
+    final stillPresent =
+        current.where((t) => !missingTracks.contains(t)).toList();
+    final fingerprintStore = TrackFingerprintStore.instance;
+    final fingerprints = await fingerprintStore.load();
+    final reconciled = await reconcileRenamedTracks(
+      missingTracks: missingTracks,
+      candidateNewTracks: newTracks,
+      fingerprints: fingerprints,
+      computeFingerprint: computeFileFingerprint,
+    );
+    await fingerprintStore.save(reconciled.updatedFingerprints);
+    await LibraryRepository.instance
+        .save([...stillPresent, ...reconciled.renamed, ...reconciled.trulyNew]);
   }
 
   /// An explicit, user-triggered rescan — item 48's command palette's
