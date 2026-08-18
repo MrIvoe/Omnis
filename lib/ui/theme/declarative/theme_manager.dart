@@ -49,6 +49,14 @@ class ThemeManager {
     return _validateAndPersist(text, sourceUrl: 'file://$path');
   }
 
+  /// Install a theme built in-memory rather than fetched/read from
+  /// somewhere — [ThemeEditorPage]'s save action, which already has the
+  /// manifest text (JSON, a valid YAML subset, same as any imported file)
+  /// without needing a round trip through a temp file. Mirrors
+  /// `LayoutManager.installFromText` exactly.
+  Future<ThemeManifest> installFromText(String text) =>
+      _validateAndPersist(text, sourceUrl: 'local');
+
   Future<ThemeManifest> _validateAndPersist(
     String text, {
     required String sourceUrl,
