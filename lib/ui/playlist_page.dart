@@ -62,10 +62,10 @@ class PlaylistPage extends StatefulWidget {
   });
 
   @override
-  State<PlaylistPage> createState() => _PlaylistPageState();
+  State<PlaylistPage> createState() => PlaylistPageState();
 }
 
-class _PlaylistPageState extends State<PlaylistPage> {
+class PlaylistPageState extends State<PlaylistPage> {
   List<Playlist> _playlists = [];
   PlaylistFolderData _folderData = PlaylistFolderData.empty;
   List<BaseTrack> _libraryTracks = [];
@@ -92,6 +92,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
   /// this page needing to know that.
   IPlayHistoryProvider? get _playHistory =>
       widget.pluginManager.services.get<IPlayHistoryProvider>();
+
+  /// Opens [playlist]'s detail view — the same effect as tapping its tile
+  /// in the list. Public so a caller elsewhere in the app (the §37
+  /// "search everywhere" command palette, reached via a
+  /// `GlobalKey<PlaylistPageState>` the same way
+  /// `HomeDashboardPageState.openCustomizeSheet` is already reached) can
+  /// jump straight to a specific playlist without this page needing to
+  /// know that caller exists.
+  void openPlaylist(Playlist playlist) {
+    setState(() => _openPlaylist = playlist);
+  }
 
   @override
   void initState() {

@@ -8,6 +8,7 @@ import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
+import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/command_palette_dialog.dart';
@@ -51,6 +52,14 @@ class _HomePageState extends State<HomePage> {
   /// `home_dashboard_page.dart` without either page needing to know the
   /// other's internals beyond this one public method.
   final _homeDashboardKey = GlobalKey<HomeDashboardPageState>();
+
+  /// Same reach-into-an-already-alive-IndexedStack-page pattern as
+  /// [_homeDashboardKey], for the §37 "search everywhere" command
+  /// palette's Playlist/Mood results — [PlaylistPageState.openPlaylist]/
+  /// [MoodsPageState.playMood] reuse each page's own existing
+  /// open/build/play logic instead of duplicating it here.
+  final _playlistKey = GlobalKey<PlaylistPageState>();
+  final _moodsKey = GlobalKey<MoodsPageState>();
 
   /// Whether the user has manually revealed the bottom nav during the
   /// current auto-hide episode (landscape or Car Mode layout, while
@@ -199,6 +208,45 @@ class _HomePageState extends State<HomePage> {
     };
   }
 
+  /// Opens the command palette with §37's "search everywhere" data
+  /// wired in — [LibraryRepository.load]/[PlaylistStore.load] are both
+  /// already cheap/in-memory-cached by the time `HomePage` is up (see
+  /// their own doc comments elsewhere in this codebase), so awaiting them
+  /// right before showing the dialog doesn't introduce a visible delay in
+  /// practice; it keeps this dialog itself free of loading-state UI, the
+  /// same "caller supplies ready data" shape [_paletteActions] already
+  /// uses for commands.
+  Future<void> _openCommandPalette(BuildContext context, MainCore core) async {
+    final tracks = await LibraryRepository.instance.load();
+    final playlists = await PlaylistStore.instance.load();
+    final moods = <String>{
+      for (final builder
+          in core.pluginManager.services.getAll<IQueueBuilder>())
+        ...builder.supportedQueries,
+    }.toList();
+    if (!context.mounted) return;
+
+    showCommandPalette(
+      context,
+      actions: _paletteActions(context, core),
+      tracks: tracks,
+      playlists: playlists,
+      moods: moods,
+      onSelectTrack: (track) async {
+        await core.audioEngine.setQueue([track]);
+        await core.audioEngine.play();
+      },
+      onSelectPlaylist: (playlist) {
+        setState(() => _selectedIndex = 2);
+        _playlistKey.currentState?.openPlaylist(playlist);
+      },
+      onSelectMood: (mood) {
+        setState(() => _selectedIndex = 3);
+        _moodsKey.currentState?.playMood(mood);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_coreReady) {
@@ -216,8 +264,12 @@ class _HomePageState extends State<HomePage> {
           engine: core.audioEngine,
           pluginManager: core.pluginManager),
       LibraryPage(engine: core.audioEngine, pluginManager: core.pluginManager),
-      PlaylistPage(engine: core.audioEngine, pluginManager: core.pluginManager),
-      _MoodsPage(
+      PlaylistPage(
+          key: _playlistKey,
+          engine: core.audioEngine,
+          pluginManager: core.pluginManager),
+      MoodsPage(
+        key: _moodsKey,
         engine: core.audioEngine,
         pluginManager: core.pluginManager,
         // Previously switched to the "Now Playing" tab; that tab no
@@ -318,13 +370,11 @@ class _HomePageState extends State<HomePage> {
         bindings: <ShortcutActivator, VoidCallback>{
           const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
             if (!AppSettings.instance.keyboardShortcutsEnabled) return;
-            showCommandPalette(context,
-                actions: _paletteActions(context, core));
+            _openCommandPalette(context, core);
           },
           const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
             if (!AppSettings.instance.keyboardShortcutsEnabled) return;
-            showCommandPalette(context,
-                actions: _paletteActions(context, core));
+            _openCommandPalette(context, core);
           },
         },
         child: Scaffold(
@@ -372,22 +422,23 @@ class _HomePageState extends State<HomePage> {
 /// mood now actually builds a queue from the real library (via
 /// `SmartPlaylistPlugin.buildQueue`, which existed and was never called
 /// by anything) and starts playback.
-class _MoodsPage extends StatefulWidget {
+class MoodsPage extends StatefulWidget {
   final AudioEngine engine;
   final PluginManager pluginManager;
   final VoidCallback onPlaybackStarted;
 
-  const _MoodsPage({
+  const MoodsPage({
+    super.key,
     required this.engine,
     required this.pluginManager,
     required this.onPlaybackStarted,
   });
 
   @override
-  State<_MoodsPage> createState() => _MoodsPageState();
+  State<MoodsPage> createState() => MoodsPageState();
 }
 
-class _MoodsPageState extends State<_MoodsPage> {
+class MoodsPageState extends State<MoodsPage> {
   bool _loading = false;
 
   /// Every registered `IQueueBuilder`, in registration order —
@@ -407,7 +458,12 @@ class _MoodsPageState extends State<_MoodsPage> {
   /// audio analysis, since only the mood-tag path was ever tried —
   /// "Sleep" (a preset only `QueuePresetPlugin` contributes) could never
   /// work at all.
-  Future<void> _playMood(String mood) async {
+  ///
+  /// Public so the §37 "search everywhere" command palette (reached via a
+  /// `GlobalKey<MoodsPageState>`) can play a searched mood directly,
+  /// reusing this exact builder-fallback/snackbar-feedback logic rather
+  /// than duplicating it.
+  Future<void> playMood(String mood) async {
     if (_loading) return;
     setState(() => _loading = true);
     try {
@@ -509,7 +565,7 @@ class _MoodsPageState extends State<_MoodsPage> {
               return Card(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: _loading ? null : () => _playMood(mood),
+                  onTap: _loading ? null : () => playMood(mood),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     // A two-word mood/preset name (e.g. "Forgotten

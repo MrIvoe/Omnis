@@ -1,10 +1,11 @@
+import 'package:omnis/core/base_track.dart';
+import 'package:omnis_plugin_api/playlist.dart';
+
 /// Item 48/spec §38's "no global Ctrl+K search or command palette" gap —
-/// the fixed-action half of it. §37's sibling "search everywhere" overlay
-/// (Songs/Artists/Albums/Playlists/Moods/Settings/Commands) is a materially
-/// bigger lift needing to query the library/mood/playlist stores, not just
-/// execute a fixed action list, and item 10 (Search) already has a
-/// full-text library search surface elsewhere in the app — deliberately
-/// left open as this gap's documented remainder, not attempted here.
+/// the fixed-action half of it, plus §37's sibling "search everywhere"
+/// overlay (Songs/Playlists/Moods/Commands — see [searchEverywhere]'s own
+/// doc comment for why Artists/Albums/Settings are a deliberately scoped
+/// remainder, not silently dropped).
 ///
 /// Pure data/matching only — action callbacks live in the UI layer
 /// (`lib/ui/command_palette_dialog.dart`/`lib/ui/home_page.dart`), the same
@@ -82,4 +83,103 @@ List<PaletteCommand> matchCommands(
     return 0;
   });
   return matches;
+}
+
+/// What kind of thing a [GlobalSearchResult] points at — the dialog
+/// groups results by this and the caller (`home_page.dart`) dispatches on
+/// it to decide what "select this result" actually does.
+enum GlobalSearchResultKind { command, track, playlist, mood }
+
+/// One row in the §37 "search everywhere" overlay. [actionId] is
+/// kind-specific: a [PaletteCommand.id] for [GlobalSearchResultKind.command],
+/// a [BaseTrack.id] for [GlobalSearchResultKind.track], a [Playlist.id] for
+/// [GlobalSearchResultKind.playlist], or the mood/preset query string
+/// itself for [GlobalSearchResultKind.mood] — the same string
+/// `IQueueBuilder.buildQueueFor` already takes.
+class GlobalSearchResult {
+  final GlobalSearchResultKind kind;
+  final String title;
+  final String? subtitle;
+  final String actionId;
+
+  const GlobalSearchResult({
+    required this.kind,
+    required this.title,
+    this.subtitle,
+    required this.actionId,
+  });
+}
+
+/// §37's "search everywhere" overlay: one query across Commands, Songs,
+/// Playlists, and Moods/presets. Deliberately **not** Artists/Albums
+/// (there's no dedicated "browse by artist/album" result view to land on
+/// — item 10's own full-text library search already finds a track by
+/// artist/album name, which is where a search for either would end up
+/// anyway) or Settings (`settings_page.dart`'s `_SearchableSetting` index
+/// is tightly coupled to that page's own `BuildContext`-bound `navigate`
+/// closures — pulling it out into a caller-agnostic data list is a real,
+/// separately-sized refactor of that file, not attempted here; "Open
+/// settings" already surfaces as a [PaletteCommand], and that page has its
+/// own search bar once you're there).
+///
+/// An empty [query] returns every command in [commands]' own order and
+/// nothing else — identical to [matchCommands]' own empty-query behavior,
+/// so a freshly-opened palette with nothing typed looks exactly as it did
+/// before this function existed. A non-empty query keeps command-matching
+/// exactly as [matchCommands] already does, and additionally keeps up to
+/// [limitPerCategory] tracks/playlists/moods whose name contains it
+/// case-insensitively (a track also matches on artist name) — the same
+/// plain-`.contains()` restraint every other search surface in this
+/// codebase takes, not a fuzzy-match library.
+List<GlobalSearchResult> searchEverywhere({
+  required String query,
+  List<PaletteCommand> commands = paletteCommands,
+  List<BaseTrack> tracks = const [],
+  List<Playlist> playlists = const [],
+  List<String> moods = const [],
+  int limitPerCategory = 5,
+}) {
+  final results = <GlobalSearchResult>[
+    for (final c in matchCommands(query, commands))
+      GlobalSearchResult(
+          kind: GlobalSearchResultKind.command,
+          title: c.title,
+          actionId: c.id),
+  ];
+
+  final trimmed = query.trim().toLowerCase();
+  if (trimmed.isEmpty) return results;
+
+  final matchedTracks = tracks.where((t) =>
+      t.title.toLowerCase().contains(trimmed) ||
+      t.artists.any((a) => a.toLowerCase().contains(trimmed)));
+  for (final t in matchedTracks.take(limitPerCategory)) {
+    results.add(GlobalSearchResult(
+      kind: GlobalSearchResultKind.track,
+      title: t.title,
+      subtitle: t.artists.isNotEmpty ? t.artists.join(', ') : null,
+      actionId: t.id,
+    ));
+  }
+
+  final matchedPlaylists =
+      playlists.where((p) => p.name.toLowerCase().contains(trimmed));
+  for (final p in matchedPlaylists.take(limitPerCategory)) {
+    results.add(GlobalSearchResult(
+      kind: GlobalSearchResultKind.playlist,
+      title: p.name,
+      actionId: p.id,
+    ));
+  }
+
+  final matchedMoods = moods.where((m) => m.toLowerCase().contains(trimmed));
+  for (final m in matchedMoods.take(limitPerCategory)) {
+    results.add(GlobalSearchResult(
+      kind: GlobalSearchResultKind.mood,
+      title: m,
+      actionId: m,
+    ));
+  }
+
+  return results;
 }
