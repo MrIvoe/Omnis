@@ -12,11 +12,11 @@ lives in a plugin.
 
 ## Build progress
 
-**~71% complete, ~29% left to build** (a weighted estimate, not a
+**~72% complete, ~28% left to build** (a weighted estimate, not a
 precise metric — see the methodology in the status doc). Omnis 2.0 is
-under continuous, incremental development — 8 of 50 tracked feature
+under continuous, incremental development — 9 of 50 tracked feature
 areas are fully solid, 8 more are fully built but not yet verified
-against a live external service, and the remaining 34 are real and
+against a live external service, and the remaining 33 are real and
 working with specific, enumerated gaps left. None are starting from
 zero. See
 **[docs/OMNIS_2_0_STATUS.md](docs/OMNIS_2_0_STATUS.md)** for the
@@ -121,13 +121,15 @@ building release artifacts, and troubleshooting.
 │                   UI Layer                     │
 │   Now Playing · Library · Plugins · Settings   │
 ├───────────────────────────────────────────────┤
-│      lib/plugins/  — every feature lives here  │
+│       omnis_plugins (Omnis-Plugins repo)       │
 │  equalizer · lyrics · replay gain · scrobble   │
 │  Spotify · YouTube · smart playlist · …        │
 ├───────────────────────────────────────────────┤
-│  lib/plugin_api/  — capability contracts.      │
-│  Grows with the ecosystem. Depends on core;    │
-│  core never depends back.                      │
+│  lib/plugin_api/ — thin re-export shim; the    │
+│  real capability contracts now live in         │
+│  packages/omnis_plugin_api/, so old imports    │
+│  still compile unchanged.                      │
+│  Depends on core; core never depends back.     │
 ├───────────────────────────────────────────────┤
 │      lib/core/  — the kernel, plugin-agnostic  │
 │  AudioEngine · PluginManager · Sandbox         │
@@ -136,8 +138,10 @@ building release artifacts, and troubleshooting.
 ```
 
 The kernel never imports a concrete plugin — `lib/core/main_core.dart`
-has exactly one plugin-side import, the registry. Adding a plugin means
-editing `lib/plugins/`, never `lib/core/`. Full rationale in
+has exactly one plugin-side import, `createBundledPlugins()` from
+`package:omnis_plugins/bundled_plugins.dart`. Adding a plugin means
+editing the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
+repo, never `lib/core/`. Full rationale in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Versioning across the plugin split
