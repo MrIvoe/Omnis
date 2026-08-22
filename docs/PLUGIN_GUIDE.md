@@ -166,6 +166,9 @@ abstract class MusicPlugin {
   Future<void> onTrackStart(BaseTrack track);
   Future<void> onLibraryScan(String file);  // once per file during a scan
   dynamic uiSlot(String locationID);        // see "Injecting UI" below
+  List<PluginDestination> homeDestinations();  // optional; defaults to
+                                            // const [] — see "Adding a
+                                            // whole tab" below
   Future<void> dispose();                   // app shutdown
 
   Future<void> enable() async {}   // re-enabled after being disabled
@@ -174,7 +177,8 @@ abstract class MusicPlugin {
 ```
 
 Every hook call — `initialize`, `onTrackStart`, `onLibraryScan`, `uiSlot`,
-`enable`, `disable`, `dispose` — runs inside `PluginSandbox`. If your code
+`homeDestinations`, `enable`, `disable`, `dispose` — runs inside
+`PluginSandbox`. If your code
 throws, the error is caught, logged to the Plugin Health dashboard (the
 Plugins tab), and the rest of the app keeps running. **You don't need
 your own try/catch for "don't crash the player"** — the sandbox already
@@ -347,6 +351,65 @@ writing `plugin.storage` directly is the pattern every bundled plugin in
 this repo uses (see `MetadataEnrichmentPlugin`, `AudioAnalysisPlugin`, or
 `TagEditorPlugin` for real, working examples with text fields, chips, and
 toggles).
+
+## Adding a whole tab: `homeDestinations()`
+
+`uiSlot` injects into a slot that already exists. `homeDestinations()` is
+the other direction: it adds a **brand new top-level tab** to the app's
+navigation, with its own persistent page, sitting alongside Home,
+Library, Playlist, Moods, Online and Settings.
+
+```dart
+@override
+List<PluginDestination> homeDestinations() => [
+      PluginDestination(
+        id: 'podcasts',
+        icon: Icons.podcasts,
+        label: 'Podcasts',
+        pageBuilder: (context) => PodcastsPage(plugin: this),
+      ),
+    ];
+```
+
+Return `const []` (the default — just don't override it) if you don't
+want a tab. Most plugins don't; this is for the ones that really are a
+whole new surface rather than an addition to an existing one.
+
+**Bundled plugins only.** A downloaded (sandboxed) plugin cannot use
+this hook: `pageBuilder` has to return a real Flutter `Widget`, and
+`dart_eval` never has `package:flutter` available to it. There is no
+serialised-payload version of this the way `uiSlot` has one — a
+downloaded plugin that wants a page uses `uiSlot`'s `nav_item` payload
+instead, which gets a pushed route rather than a persistent tab.
+
+Each `PluginDestination` carries:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | `String` | Stable, unique identifier for this destination |
+| `icon` | `IconData` | Glyph shown in the nav bar/rail |
+| `label` | `String` | Text shown alongside the icon |
+| `pageBuilder` | `WidgetBuilder` | Builds the page shown when selected |
+| `order` | `int` | Sort order among *plugin* tabs; defaults to `0` |
+
+Core destinations always render first, in their fixed order; `order`
+only sorts plugin-contributed tabs relative to each other. Ties are
+broken by registration order in `bundled_plugins.dart`. Leave `order`
+alone unless you have a real reason — `0` means "no preference."
+
+`id` must not collide with another plugin's destination id, nor with one
+of the six reserved core ids: **`home`, `library`, `playlist`, `moods`,
+`online`, `settings`**. Nothing validates this for you; a collision is
+the contributing plugin's bug.
+
+Tab selection is keyed by `id`, not by index, so your tab stays selected
+as other plugins are enabled or disabled around it — and when *your*
+plugin is disabled while its tab is open, the app falls back to Home
+rather than silently showing whatever tab now sits at that position.
+`pageBuilder` is invoked on every rebuild of the navigation stack; your
+page's own `State` is preserved across those rebuilds through normal
+Flutter element reuse, so a `StatefulWidget` here keeps its state across
+tab switches for as long as your plugin stays enabled.
 
 ## Talking to other plugins: `ServiceRegistry` and `EventBus`
 
