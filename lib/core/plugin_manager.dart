@@ -404,7 +404,16 @@ class PluginManager {
           await plugin.inProcess!.initialize();
         } else if (plugin.external != null &&
             plugin.external!.hasHook('initialize')) {
-          plugin.external!.callHook('initialize', const []);
+          // Awaited, not fire-and-forget — an external plugin backing a
+          // provides: capability with the scoped `state` storage bridge
+          // (itself always async) needs its own initialize() to actually
+          // finish warming an in-memory cache before
+          // _registerProvidedServices below wires that cache up as a
+          // synchronous ServiceRegistry adapter; a discarded Future here
+          // would let registration race ahead of a guest that hasn't
+          // read its persisted state yet.
+          final result = plugin.external!.callHook('initialize', const []);
+          if (result is Future) await result;
         }
         return null;
       },
