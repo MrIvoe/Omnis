@@ -49,6 +49,17 @@ jobs:
       - name: flutter test
         run: flutter test
 
+      # `flutter test` above runs from the repo root, which does not
+      # descend into `packages/` — so packages/omnis_plugin_api's own
+      # suite needs its own step or it never runs at all. (`flutter
+      # analyze` from the root *does* cover that directory, so this is a
+      # test-only gap, not an analysis one.)
+      - name: flutter test (omnis_plugin_api package)
+        working-directory: packages/omnis_plugin_api
+        run: |
+          flutter pub get
+          flutter test
+
   build-android:
     name: Build Android (debug)
     runs-on: ubuntu-latest
