@@ -1,5 +1,6 @@
 import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/plugin_context.dart';
+import 'package:omnis_plugin_api/plugin_destination.dart';
 import 'package:omnis_plugin_api/plugin_storage.dart';
 
 /// Abstract base class for all plugins in the Omnis music engine.
@@ -98,6 +99,17 @@ abstract class MusicPlugin {
   ///
   /// Return `null` when the plugin has nothing to show at this slot.
   dynamic uiSlot(String locationID);
+
+  /// Optional. A plugin that wants a persistent top-level tab (not
+  /// just an injected slot) returns one or more [PluginDestination]s
+  /// here. Default: none — most plugins have nothing to add at this
+  /// level and stay purely `uiSlot`-based.
+  ///
+  /// Called once per `PluginManager.homeDestinations` read (today:
+  /// every time `home_page.dart` rebuilds), sandboxed the same as
+  /// every other hook — a throwing override degrades to "this plugin
+  /// contributes no destinations this time," never a crash.
+  List<PluginDestination> homeDestinations() => const [];
 
   /// Called when the plugin is shut down.
   Future<void> dispose();
