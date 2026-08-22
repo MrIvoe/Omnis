@@ -61,6 +61,16 @@ class _FakeFavoritesProvider implements IFavoritesProvider {
 
   @override
   List<String> favoriteIds() => ids;
+
+  @override
+  Future<void> setFavorite(String trackId, bool favorite,
+      {BaseTrack? track}) async {
+    ids = favorite ? [...ids, trackId] : ids.where((id) => id != trackId).toList();
+  }
+
+  @override
+  List<BaseTrack> favoritesWithSnapshots(List<BaseTrack> localTracks) =>
+      localTracks.where((t) => ids.contains(t.id)).toList();
 }
 
 PlayRecord _playedRecord(String trackId) => PlayRecord(

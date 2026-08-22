@@ -9,6 +9,7 @@ import 'package:http/testing.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/custom_radio_station_store.dart';
+import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/radio_page.dart';
 import 'package:omnis_plugins/favorites_plugin.dart';
@@ -35,6 +36,19 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await tester.pump();
+}
+
+/// Attaches a real context and initializes registered plugins so a
+/// bundled `FavoritesPlugin` actually registers itself as
+/// `IFavoritesProvider` — required now that `RadioPage` looks favorites
+/// up by interface, not by concrete type via `bundled<FavoritesPlugin>`.
+Future<void> _wireContext(PluginManager manager, AudioEngine engine) async {
+  manager.attachContext(OmnisPluginContext(
+    audioEngine: engine,
+    services: manager.services,
+    events: manager.events,
+  ));
+  await manager.initializeAll();
 }
 
 /// Spies on setQueue/play — same noSuchMethod-throws-if-unstubbed pattern
@@ -213,9 +227,11 @@ void main() {
       final manager = PluginManager();
       manager.register(RadioPlugin(client: client));
       manager.register(FavoritesPlugin());
+      final engine = _FakeEngine();
+      await _wireContext(manager, engine);
 
       await tester.pumpWidget(MaterialApp(
-        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+        home: RadioPage(engine: engine, pluginManager: manager),
       ));
       await tester.pump();
       await tester.pump();
@@ -245,9 +261,11 @@ void main() {
       final manager = PluginManager();
       manager.register(RadioPlugin(client: client));
       manager.register(FavoritesPlugin());
+      final engine = _FakeEngine();
+      await _wireContext(manager, engine);
 
       await tester.pumpWidget(MaterialApp(
-        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+        home: RadioPage(engine: engine, pluginManager: manager),
       ));
       await tester.pump();
       await tester.pump();
@@ -290,7 +308,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.favorite_border));
       await tester.pump();
 
-      expect(find.text('The Favorites plugin is disabled in Settings.'),
+      expect(find.text('No favorites provider is installed/enabled.'),
           findsOneWidget);
     });
   });
@@ -301,6 +319,7 @@ void main() {
       final manager = PluginManager();
       manager.register(RadioPlugin(client: client));
       manager.register(FavoritesPlugin());
+      await _wireContext(manager, engine);
       await tester.pumpWidget(MaterialApp(
         home: RadioPage(engine: engine, pluginManager: manager),
       ));

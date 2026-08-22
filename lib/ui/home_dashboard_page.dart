@@ -8,9 +8,9 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/events.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
-import 'package:omnis_plugins/favorites_plugin.dart';
 
 /// Home tab: Recently Played / Most Played / Recently Added / Continue
 /// Listening / Favorites / Most Skipped, each a horizontally-scrolling
@@ -19,10 +19,10 @@ import 'package:omnis_plugins/favorites_plugin.dart';
 /// Recently Played/Most Played/Continue Listening/Most Skipped are
 /// sourced from `PlayHistoryStore` (core, always on — works regardless
 /// of whether the optional `ScrobblePlugin` is installed). Favorites
-/// reads `FavoritesPlugin` by type the same way `NowPlayingPage` looks
-/// up optional plugins — the section simply doesn't render if that
-/// plugin is disabled or nothing's favorited, the same graceful-absence
-/// pattern used throughout this app.
+/// reads whatever's registered as `IFavoritesProvider` — the section
+/// simply doesn't render if nothing's registered or nothing's
+/// favorited, the same graceful-absence pattern used throughout this
+/// app.
 class HomeDashboardPage extends StatefulWidget {
   final AudioEngine engine;
   final PluginManager pluginManager;
@@ -130,8 +130,8 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
     final recentlyAdded = library.where((t) => t.dateAdded != null).toList()
       ..sort((a, b) => b.dateAdded!.compareTo(a.dateAdded!));
 
-    final favorites = widget.pluginManager
-            .bundled<FavoritesPlugin>(onlyEnabled: true)
+    final favorites = widget.pluginManager.services
+            .get<IFavoritesProvider>()
             ?.favoritesWithSnapshots(library) ??
         const <BaseTrack>[];
 

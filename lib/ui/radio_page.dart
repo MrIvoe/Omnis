@@ -4,7 +4,7 @@ import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
-import 'package:omnis_plugins/favorites_plugin.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/radio_plugin.dart';
 
 /// Internet Radio tab: search and browse live streaming stations via
@@ -100,27 +100,28 @@ class RadioBodyState extends State<RadioBody> {
   RadioPlugin? get _plugin =>
       widget.pluginManager.bundled<RadioPlugin>(onlyEnabled: true);
 
-  FavoritesPlugin? get _favoritesPlugin =>
-      widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+  IFavoritesProvider? get _favoritesProvider =>
+      widget.pluginManager.services.get<IFavoritesProvider>();
 
   bool _isFavorite(String stationId) =>
-      _favoritesPlugin?.isFavorite(stationId) ?? false;
+      _favoritesProvider?.isFavorite(stationId) ?? false;
 
-  /// [station] is passed through to [FavoritesPlugin.toggleFavorite] so a
+  /// [station] is passed through to [IFavoritesProvider.setFavorite] so a
   /// newly-favorited station gets a real snapshot captured (a station is
   /// never part of the scanned local library, so without one it would be
   /// genuinely favorited but invisible in the Playlists page's aggregate
   /// "Favorites" list).
   Future<void> _toggleFavorite(BaseTrack station) async {
-    final plugin = _favoritesPlugin;
-    if (plugin == null) {
+    final provider = _favoritesProvider;
+    if (provider == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('The Favorites plugin is disabled in Settings.'),
+        content: Text('No favorites provider is installed/enabled.'),
       ));
       return;
     }
     OmnisHaptics.selectionClick();
-    await plugin.toggleFavorite(station.id, track: station);
+    await provider.setFavorite(station.id, !provider.isFavorite(station.id),
+        track: station);
     if (mounted) setState(() {});
   }
 

@@ -24,7 +24,6 @@ import 'package:omnis/core/track_fingerprint.dart';
 import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/lyrics_plugin.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
@@ -1509,8 +1508,13 @@ class _LibraryPageState extends State<LibraryPage> {
 
   // --- Favorites + playlists ---
 
-  FavoritesPlugin? get _favoritesPlugin =>
-      widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+  // Looked up by interface, not concrete plugin type — whatever is
+  // currently registered as `IFavoritesProvider` (bundled or a
+  // downloadable plugin) answers reads/writes here, the same
+  // interface-not-concrete-type pattern `_ratingsPlugin`'s neighbor
+  // `IPlayHistoryProvider` usage below already establishes.
+  IFavoritesProvider? get _favoritesProvider =>
+      widget.pluginManager.services.get<IFavoritesProvider>();
 
   TagEditorPlugin? get _tagEditorPlugin =>
       widget.pluginManager.bundled<TagEditorPlugin>(onlyEnabled: true);
@@ -1531,16 +1535,16 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   bool _isFavorite(String trackId) =>
-      _favoritesPlugin?.isFavorite(trackId) ?? false;
+      _favoritesProvider?.isFavorite(trackId) ?? false;
 
   Future<void> _toggleFavorite(String trackId) async {
-    final plugin = _favoritesPlugin;
-    if (plugin == null) {
-      _toast('The Favorites plugin is disabled in Settings.');
+    final provider = _favoritesProvider;
+    if (provider == null) {
+      _toast('No favorites provider is installed/enabled.');
       return;
     }
     OmnisHaptics.selectionClick();
-    await plugin.toggleFavorite(trackId);
+    await provider.setFavorite(trackId, !provider.isFavorite(trackId));
     if (mounted) setState(() {});
   }
 
@@ -2296,13 +2300,13 @@ class _LibraryPageState extends State<LibraryPage> {
                   icon: const Icon(Icons.favorite_border),
                   tooltip: 'Add to favorites',
                   onPressed: () async {
-                    final plugin = _favoritesPlugin;
-                    if (plugin == null) {
-                      _toast('The Favorites plugin is disabled in Settings.');
+                    final provider = _favoritesProvider;
+                    if (provider == null) {
+                      _toast('No favorites provider is installed/enabled.');
                       return;
                     }
                     for (final id in _selectedIds) {
-                      await plugin.setFavorite(id, true);
+                      await provider.setFavorite(id, true);
                     }
                     if (mounted) setState(() {});
                     _toast('Added ${_selectedIds.length} track'

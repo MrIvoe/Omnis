@@ -128,6 +128,27 @@ abstract class IFavoritesProvider {
   /// first) — matches the order `FavoritesPlugin`'s own persisted id
   /// list is stored in.
   List<String> favoriteIds();
+
+  /// Marks [trackId] favorited/unfavorited — the write side, added
+  /// alongside the sandbox's `favorites` bridge capability so a
+  /// downloadable favorites provider can be reached the same way the
+  /// bundled one always has been. Every UI call site that used to reach
+  /// `FavoritesPlugin` by concrete type (`bundled<FavoritesPlugin>()`)
+  /// now goes through this interface instead, which is what makes the
+  /// provider swappable at all — a UI file no longer needs to know
+  /// whether favorites are bundled or downloaded. [track], when given,
+  /// is a snapshot for a non-local track (radio station, online search
+  /// result) that [favoritesWithSnapshots] can later reconstruct even
+  /// though it isn't in the scanned library.
+  Future<void> setFavorite(String trackId, bool favorite, {BaseTrack? track});
+
+  /// Every favorited track, in favorited order: a scanned-library match
+  /// from [localTracks] when there is one, otherwise a reconstruction
+  /// from the snapshot [setFavorite] captured for it. A favorited local
+  /// track that's since been deleted, or a non-local one favorited
+  /// before a snapshot existed for it, is silently skipped rather than
+  /// producing a broken entry.
+  List<BaseTrack> favoritesWithSnapshots(List<BaseTrack> localTracks);
 }
 
 /// A track's thumbs-up/down preference — MusicBee comparison §36:

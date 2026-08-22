@@ -62,7 +62,12 @@ const providedCapabilityHooks = {
     'playHistoryPlayCountFor',
   ],
   'artist_image': ['artistImageUrlFor'],
-  'favorites': ['favoritesIsFavorite', 'favoritesFavoriteIds'],
+  'favorites': [
+    'favoritesIsFavorite',
+    'favoritesFavoriteIds',
+    'favoritesSetFavorite',
+    'favoritesWithSnapshots',
+  ],
   'ratings': ['ratingsRatingOf'],
   'thumbs': ['thumbsThumbOf'],
   'online_search': ['onlineSearchIsConfigured', 'onlineSearchSearch'],
@@ -251,6 +256,37 @@ class SandboxedFavoritesProvider implements IFavoritesProvider {
     try {
       final result = runtime.callHook('favoritesFavoriteIds', []);
       if (result is List) return result.map((e) => e.toString()).toList();
+    } catch (_) {
+      // Falls through to empty below.
+    }
+    return const [];
+  }
+
+  @override
+  Future<void> setFavorite(String trackId, bool favorite,
+      {BaseTrack? track}) async {
+    try {
+      runtime.callHook('favoritesSetFavorite',
+          [trackId, favorite, track?.toJson()]);
+    } catch (_) {
+      // A throwing guest hook must never surface as a crash to whoever
+      // tapped the favorite toggle — the same fail-soft stance every
+      // other sandboxed adapter in this file takes; the UI simply won't
+      // see the change reflected next read.
+    }
+  }
+
+  @override
+  List<BaseTrack> favoritesWithSnapshots(List<BaseTrack> localTracks) {
+    try {
+      final result = runtime.callHook('favoritesWithSnapshots',
+          [localTracks.map((t) => t.toJson()).toList()]);
+      if (result is List) {
+        return result
+            .whereType<Map>()
+            .map((m) => BaseTrack.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+      }
     } catch (_) {
       // Falls through to empty below.
     }

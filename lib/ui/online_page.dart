@@ -5,7 +5,6 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/radio_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
-import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/spotify_playback_plugin.dart';
 import 'package:omnis_plugins/youtube_playback_plugin.dart';
 
@@ -205,22 +204,23 @@ class _ProviderSearchViewState extends State<_ProviderSearchView> {
   bool _loading = false;
   bool _searched = false;
 
-  FavoritesPlugin? get _favoritesPlugin =>
-      widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+  IFavoritesProvider? get _favoritesProvider =>
+      widget.pluginManager.services.get<IFavoritesProvider>();
 
   bool _isFavorite(String trackId) =>
-      _favoritesPlugin?.isFavorite(trackId) ?? false;
+      _favoritesProvider?.isFavorite(trackId) ?? false;
 
   Future<void> _toggleFavorite(BaseTrack track) async {
-    final plugin = _favoritesPlugin;
-    if (plugin == null) {
+    final provider = _favoritesProvider;
+    if (provider == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('The Favorites plugin is disabled in Settings.'),
+        content: Text('No favorites provider is installed/enabled.'),
       ));
       return;
     }
     OmnisHaptics.selectionClick();
-    await plugin.toggleFavorite(track.id, track: track);
+    await provider.setFavorite(track.id, !provider.isFavorite(track.id),
+        track: track);
     if (mounted) setState(() {});
   }
 

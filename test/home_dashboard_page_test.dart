@@ -252,6 +252,12 @@ void main() {
 
       final favorites = FavoritesPlugin();
       pluginManager.register(favorites);
+      // Registers the plugin as IFavoritesProvider — HomeDashboardPage
+      // now looks it up by interface, not by concrete type, so this is
+      // required for it to be found at all (it wasn't before the
+      // interface gained read+write and every UI call site switched to
+      // it).
+      await pluginManager.initializeAll();
       await favorites.setFavorite('a', true);
 
       // No second pumpWidget — HomeDashboardPage's State is preserved

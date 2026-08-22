@@ -19,7 +19,6 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
 import 'package:omnis_plugins/smart_playlist_rule.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
@@ -49,8 +48,9 @@ enum _ImportFormat { m3u, pls, xspf }
 /// "a playlist" from "what's queued right now"). Real playlists are
 /// persisted via [PlaylistStore]; the live queue is still reachable here
 /// too, as one of the "smart" entries above the user's own playlists,
-/// alongside Favorites (from [FavoritesPlugin]) and Recently/Most Played
-/// (from whatever's registered as [IPlayHistoryProvider]).
+/// alongside Favorites (from whatever's registered as
+/// [IFavoritesProvider]) and Recently/Most Played (from whatever's
+/// registered as [IPlayHistoryProvider]).
 class PlaylistPage extends StatefulWidget {
   final AudioEngine engine;
   final PluginManager pluginManager;
@@ -80,8 +80,8 @@ class PlaylistPageState extends State<PlaylistPage> {
   StreamSubscription<BaseTrack?>? _trackSub;
   StreamSubscription<FavoriteChangedEvent>? _favoriteSub;
 
-  FavoritesPlugin? get _favorites =>
-      widget.pluginManager.bundled<FavoritesPlugin>(onlyEnabled: true);
+  IFavoritesProvider? get _favorites =>
+      widget.pluginManager.services.get<IFavoritesProvider>();
 
   SmartPlaylistPlugin? get _smartPlaylists =>
       widget.pluginManager.bundled<SmartPlaylistPlugin>(onlyEnabled: true);

@@ -477,10 +477,19 @@ $extraSource
         tempDir.path,
         'fav_plugin',
         provides: const ['favorites'],
-        hooks: const ['favoritesIsFavorite', 'favoritesFavoriteIds'],
+        hooks: const [
+          'favoritesIsFavorite',
+          'favoritesFavoriteIds',
+          'favoritesSetFavorite',
+          'favoritesWithSnapshots',
+        ],
         extraSource: '''
 dynamic favoritesIsFavorite(dynamic trackId) => trackId == 't1';
 dynamic favoritesFavoriteIds() => ['t1', 't2'];
+dynamic favoritesSetFavorite(dynamic trackId, dynamic favorite, dynamic track) {
+  return null;
+}
+dynamic favoritesWithSnapshots(dynamic localTracks) => localTracks;
 ''',
       );
 
@@ -490,6 +499,20 @@ dynamic favoritesFavoriteIds() => ['t1', 't2'];
       expect(provider!.isFavorite('t1'), true);
       expect(provider.isFavorite('other'), false);
       expect(provider.favoriteIds(), ['t1', 't2']);
+
+      await provider.setFavorite('t3', true);
+      final localTracks = [
+        BaseTrack.fromJson({
+          'id': 'z',
+          'title': 'Z',
+          'artists': ['x'],
+          'genres': [],
+          'album': 'al',
+          'duration': 1,
+          'type': 'local',
+        })
+      ];
+      expect(provider.favoritesWithSnapshots(localTracks), localTracks);
     });
 
     test('ratings: registers IRatingsProvider', () async {
