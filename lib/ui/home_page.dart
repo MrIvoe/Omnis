@@ -262,6 +262,8 @@ class _HomePageState extends State<HomePage> {
     final core = locator<MainCore>();
     final settings = AppSettings.instance;
 
+    final pluginDestinations = core.pluginManager.homeDestinations;
+
     final pages = <Widget>[
       HomeDashboardPage(
           key: _homeDashboardKey,
@@ -291,6 +293,7 @@ class _HomePageState extends State<HomePage> {
           sandbox: core.sandbox,
           layoutManager: locator<LayoutManager>(),
           themeManager: locator<ThemeManager>()),
+      for (final d in pluginDestinations) Builder(builder: d.pageBuilder),
     ];
 
     // Landscape and Car Mode both want the bottom nav out of the way of
@@ -324,7 +327,20 @@ class _HomePageState extends State<HomePage> {
       HomeDestinationInfo(OmnisIconCatalog.mood.resolve(), 'Moods'),
       HomeDestinationInfo(OmnisIconCatalog.cloudQueue.resolve(), 'Online'),
       HomeDestinationInfo(OmnisIconCatalog.settings.resolve(), 'Settings'),
+      for (final d in pluginDestinations) HomeDestinationInfo(d.icon, d.label),
     ];
+
+    // A plugin contributing a destination can be disabled/uninstalled
+    // mid-session, shrinking this list — clamp before it's used to index
+    // into `pages`/`destinations` below, so a stale _selectedIndex from a
+    // vanished plugin tab never crashes IndexedStack. Falls back to Home
+    // (index 0), not the last valid index, since "the destination you
+    // were on disappeared" should read as "back to the start," not
+    // "landed on some other tab."
+    if (_selectedIndex >= destinations.length) {
+      _selectedIndex = 0;
+    }
+
     final isWideLayout = isWideHomeLayout(context);
     final homeNav = HomeNavigationBar(
       selectedIndex: _selectedIndex,
