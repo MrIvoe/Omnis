@@ -121,31 +121,12 @@ flutter build web --release
 `flutter build apk --release` without any signing configuration produces
 an APK signed with Flutter's own debug key — installable for testing,
 **not** acceptable for the Play Store or for distributing to users as a
-trusted update path. To sign with your own key:
-
-1. Generate a keystore (once):
-
-   ```bash
-   keytool -genkey -v -keystore ~/omnis-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias omnis
-   ```
-
-2. Create `android/key.properties` (**do not commit this file** — it's
-   already covered by `.gitignore`'s general secrets patterns, but double
-   check before committing anything under `android/`):
-
-   ```properties
-   storePassword=<your-store-password>
-   keyPassword=<your-key-password>
-   keyAlias=omnis
-   storeFile=<absolute-path-to-omnis-release.jks>
-   ```
-
-3. Wire it into `android/app/build.gradle`'s `signingConfigs`/
-   `buildTypes.release` block — this repo doesn't include that wiring by
-   default since it would otherwise require every contributor to have a
-   keystore just to build a debug APK. See
-   [Flutter's own signing guide](https://docs.flutter.dev/deployment/android#signing-the-app)
-   for the exact Gradle snippet.
+trusted update path. `android/app/build.gradle` already reads a real
+signing key from `android/key.properties` when that file exists (and
+falls back to the debug key when it doesn't, so this stays optional for
+casual contributors) — see **[RELEASING.md](RELEASING.md)** for
+generating the keystore and wiring it up, both locally and for the
+tag-triggered release CI.
 
 ## Plugin catalog
 

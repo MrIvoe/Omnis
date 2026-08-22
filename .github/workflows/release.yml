@@ -1,0 +1,99 @@
+name: Release
+
+# Runs when a version tag is pushed (see docs/RELEASING.md for the full
+# cut-a-release flow). Builds a real release artifact per platform and
+# publishes them together as one GitHub Release, marked pre-release
+# since this project ships betas, not stable versions, right now.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  # Keep in sync with ci.yml's pin — see that file's comment for why.
+  FLUTTER_VERSION: "3.27.4"
+
+jobs:
+  android:
+    name: Build & publish Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: flutter pub get
+
+      # The keystore and its passwords live only as GitHub Actions
+      # secrets, decoded to disk for the duration of this job — see
+      # docs/RELEASING.md for how they're generated and set. Never
+      # logged, never committed; android/key.properties and *.jks are
+      # gitignored.
+      - name: Write release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=${{ github.workspace }}/android/app/release.jks
+          EOF
+
+      - name: flutter build apk --release
+        run: flutter build apk --release
+
+      - name: flutter build appbundle --release
+        run: flutter build appbundle --release
+
+      - name: Remove keystore from disk
+        if: always()
+        run: rm -f android/app/release.jks android/key.properties
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+  windows:
+    name: Build & publish Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter config --enable-windows-desktop
+
+      - run: flutter pub get
+
+      - name: flutter build windows --release
+        run: flutter build windows --release
+
+      - name: Zip the release build
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Omnis-windows-x64.zip
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: Omnis-windows-x64.zip

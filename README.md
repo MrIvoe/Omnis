@@ -5,102 +5,60 @@
 [![Site](https://img.shields.io/badge/site-mrivoe.github.io%2FOmnis-3DDCC4)](https://mrivoe.github.io/Omnis/)
 [![Wiki](https://img.shields.io/badge/docs-wiki-A78BFA)](https://github.com/MrIvoe/Omnis/wiki)
 
-A micro-kernel music player with a hot-swappable plugin ecosystem. The
-Core stays small and never crashes; every feature — equalizer, lyrics,
-scrobbling, smart playlists, tag editing, Spotify/YouTube integration —
-lives in a plugin.
+## What is Omnis?
 
-## Build progress
+A music player. The part that plays your music is small and never
+crashes; everything else — the equalizer, lyrics, Spotify/YouTube,
+smart playlists, tag editing, and more — is a plugin you can add,
+remove, or replace.
 
-**~72% complete, ~28% left to build** (a weighted estimate, not a
-precise metric — see the methodology in the status doc). Omnis 2.0 is
-under continuous, incremental development — 9 of 50 tracked feature
-areas are fully solid, 8 more are fully built but not yet verified
-against a live external service, and the remaining 33 are real and
-working with specific, enumerated gaps left. None are starting from
-zero. See
-**[docs/OMNIS_2_0_STATUS.md](docs/OMNIS_2_0_STATUS.md)** for the
-phase-by-phase breakdown and the completion-% methodology, or
-[docs/OMNIS_2_0_FINISHED_TASK.md](docs/OMNIS_2_0_FINISHED_TASK.md) for
-the full build log behind every line of it.
+## Who it's for
 
-## Features
+Anyone who wants a music player that stays reliable no matter how many
+features they pile on, and who'd rather pick their own features than
+be stuck with everyone else's.
 
-**Playback**
-- Gapless queue playback, crossfade, ReplayGain-based volume normalization
-- Shuffle, repeat (off/all/one), A-B repeat
-- Independent pitch and speed controls, skip-silence
-- Real per-band hardware equalizer on Android; a virtual bass/mid/treble
-  model everywhere else
+## Why built this way
 
-**Library**
-- List/grid views (2–5 column density) for Songs, Albums, and Genres;
-  list views for Artists and Folders
-- Duplicate and short-track ("ad stinger") detection with multi-select
-  cleanup
-- Real embedded artwork everywhere (MediaStore on Android, direct ID3
-  parsing on desktop) — not a placeholder icon
-- Manual and automatic ID3 tag editing — every standard field, plus
-  freeform custom fields — with smart skip-if-already-tagged tracking
-- Configurable "feat./ft./featuring" artist-separator rules, so a
-  featured artist doesn't stay stuck in the title field
+A normal app can crash because of any feature in it. Omnis splits
+"always works" (playback) from "everything else" (plugins), so a
+broken or misbehaving feature can never take the music down with it —
+and because features are plugins, you only run the ones you actually
+want.
 
-**Lyrics**
-- Manual lyrics entry, or automatic online lookup (via
-  [lrclib.net](https://lrclib.net), free, no API key) with optional
-  time-synced display
-- Optional auto-fetch when a track starts playing, and an option to embed
-  fetched lyrics directly into the file's own tags
+## How it works
 
-**Customization**
-- Six built-in Now Playing layouts (Standard, Top Controls, Landscape,
-  Full Art + Gestures, Karaoke Gestures, Car Mode), plus an importable
-  declarative layout format for building your own — no code required,
-  safe to import from a URL with no permission prompt
-- Full theming: light/dark/system, accent color, presets
-- Every plugin has its own settings page — tap it in the Plugins list —
-  the same "click the plugin to configure it" model RuneLite uses
+```mermaid
+flowchart LR
+    U[You] --> App[Omnis app]
+    App --> Core[Small, stable core<br/>just plays music]
+    App --> Plugins[Plugins<br/>equalizer, lyrics, Spotify, ...]
+    Plugins -. "a crash here" .-> Core
+    Core -. "never crashes because of it" .-> App
+```
 
-**Streaming integrations** *(bring your own API credentials — see
-[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md))*
-- Spotify: browse/import your playlists, or remote-control playback on a
-  Spotify Connect device
-- YouTube: search and browse your playlists, or play a video through
-  YouTube's own embedded player
+Some plugins ship inside the app already; others you install yourself,
+picking only what you want, from the
+[Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) catalog.
 
-**Ecosystem**
-- Install community plugins by pasting a GitHub URL — sandboxed, with a
-  permission-confirmation dialog before any downloaded code runs
-- A plugin crash never takes down playback — every hook runs sandboxed,
-  with failures surfaced on a Plugin Health dashboard, not silently
-  swallowed or fatal
+## Where things live
 
-## Documentation
+```text
+lib/       the app: a small core, plus the UI
+packages/  contracts every plugin is built against
+example/   a complete example plugin to copy from
+docs/      technical documentation — start here to go deeper
+test/      automated tests
+```
 
-- **[Wiki](https://github.com/MrIvoe/Omnis/wiki)** — the long-form guide:
-  architecture walkthrough, writing your first plugin end-to-end, the
-  theme/layout YAML reference, and an honestly-labeled roadmap. Start
-  here if you're new.
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — how the micro-kernel
-  is put together and why: the Core/plugin split, `ServiceRegistry`/
-  `EventBus`, `PluginContext`/`PluginStorage`, player layouts, and an
-  honest "what's real vs. approximated" feature-by-feature breakdown.
-- **[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md)** — how to build a
-  plugin, bundled or downloadable, with a complete working example at
-  [`example/example_plugin.dart`](example/example_plugin.dart).
-- **[docs/BUILDING.md](docs/BUILDING.md)** — prerequisites, running,
-  testing, building release artifacts, signing.
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — the ground rules and workflow
-  for contributing.
-- **[docs/PLUGIN_SECURITY.md](docs/PLUGIN_SECURITY.md)** — what a
-  downloaded plugin can and can't do, written for anyone deciding
-  whether to paste a GitHub URL in.
-- **[docs/COMMUNITY_PLUGINS.md](docs/COMMUNITY_PLUGINS.md)** — a
-  curated list of downloadable community plugins, and how to get yours
-  added.
-- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** /
-  **[SECURITY.md](SECURITY.md)** — community conduct expectations and
-  how to privately report a vulnerability.
+## Download
+
+[![Latest release](https://img.shields.io/github/v/release/MrIvoe/Omnis?include_prereleases&label=latest%20beta)](https://github.com/MrIvoe/Omnis/releases/latest)
+
+Beta builds for Android and Windows are published on the
+**[Releases page](https://github.com/MrIvoe/Omnis/releases)**. iOS,
+macOS, Linux, and Web aren't built yet — see
+[docs/RELEASING.md](docs/RELEASING.md) for why and what's planned.
 
 ## Quick start
 
@@ -111,48 +69,13 @@ flutter pub get
 flutter run
 ```
 
-See [docs/BUILDING.md](docs/BUILDING.md) for platform prerequisites,
-building release artifacts, and troubleshooting.
+See [docs/BUILDING.md](docs/BUILDING.md) for platform prerequisites and
+building release artifacts.
 
-## Architecture, in one picture
+## Want more detail?
 
-```
-┌───────────────────────────────────────────────┐
-│                   UI Layer                     │
-│   Now Playing · Library · Plugins · Settings   │
-├───────────────────────────────────────────────┤
-│       omnis_plugins (Omnis-Plugins repo)       │
-│  equalizer · lyrics · replay gain · scrobble   │
-│  Spotify · YouTube · smart playlist · …        │
-├───────────────────────────────────────────────┤
-│  lib/plugin_api/ — thin re-export shim; the    │
-│  real capability contracts now live in         │
-│  packages/omnis_plugin_api/, so old imports    │
-│  still compile unchanged.                      │
-│  Depends on core; core never depends back.     │
-├───────────────────────────────────────────────┤
-│      lib/core/  — the kernel, plugin-agnostic  │
-│  AudioEngine · PluginManager · Sandbox         │
-│  PluginContext · ServiceRegistry · EventBus    │
-└───────────────────────────────────────────────┘
-```
-
-The kernel never imports a concrete plugin — `lib/core/main_core.dart`
-has exactly one plugin-side import, `createBundledPlugins()` from
-`package:omnis_plugins/bundled_plugins.dart`. Adding a plugin means
-editing the separate [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins)
-repo, never `lib/core/`. Full rationale in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Versioning across the plugin split
-
-`omnis_plugins` ([github.com/MrIvoe/Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins))
-and `packages/omnis_plugin_api` (in this repo) are pinned to each other by
-git tag, not a floating branch — `pubspec.yaml`'s `ref:` fields. A push to
-either repo never silently changes what the other builds against. To pick
-up new work on purpose: cut a new tag in the changed repo, then bump the
-`ref:` in whichever `pubspec.yaml` depends on it, as its own reviewed
-commit.
+Full feature list, architecture, how to build a plugin, and everything
+else technical: **[docs/README.md](docs/README.md)**.
 
 ## Contributing
 

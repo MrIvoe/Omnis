@@ -48,3 +48,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android release signing — a real keystore/passwords must never be
+# committed. See docs/RELEASING.md.
+android/key.properties
+*.jks
+*.keystore
