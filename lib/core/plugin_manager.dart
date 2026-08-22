@@ -1029,12 +1029,20 @@ class PluginManager {
   }
 
   /// Collect top-level tabs contributed by enabled bundled plugins,
-  /// sorted by `PluginDestination.order` ascending — `home_page.dart`
-  /// appends these after its own six fixed destinations. Downloadable
+  /// sorted by `PluginDestination.order` ascending, ties broken by
+  /// registration order — `home_page.dart` appends these after its own
+  /// six fixed destinations. Downloadable
   /// (external) plugins never contribute here; only `inProcess`
   /// (bundled) plugins can produce a real `WidgetBuilder`.
   List<PluginDestination> get homeDestinations {
-    final result = <PluginDestination>[];
+    // Each destination is decorated with the index it was collected at
+    // before sorting, and that index is the tie-breaker for equal
+    // `order` values. `List.sort` is documented as an unspecified
+    // algorithm, *not* a stable one, so `PluginDestination.order`'s
+    // "ties are broken by registration order" promise is only actually
+    // true if registration order is part of the comparison — relying on
+    // sort stability would make that a promise this can't keep.
+    final collected = <(int, PluginDestination)>[];
     for (final plugin in _enabled()) {
       if (plugin.inProcess == null) continue;
       final destinations = _sandbox.runSync(
@@ -1043,10 +1051,16 @@ class PluginManager {
         hook: 'homeDestinations',
         operation: () => plugin.inProcess!.homeDestinations(),
       );
-      if (destinations != null) result.addAll(destinations);
+      if (destinations == null) continue;
+      for (final destination in destinations) {
+        collected.add((collected.length, destination));
+      }
     }
-    result.sort((a, b) => a.order.compareTo(b.order));
-    return result;
+    collected.sort((a, b) {
+      final byOrder = a.$2.order.compareTo(b.$2.order);
+      return byOrder != 0 ? byOrder : a.$1.compareTo(b.$1);
+    });
+    return [for (final (_, destination) in collected) destination];
   }
 
   /// Calls a named hook on exactly one external plugin by id, for a
