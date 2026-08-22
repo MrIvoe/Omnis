@@ -383,3 +383,21 @@ abstract class IOnlineSearchProvider {
   /// nothing.
   Future<List<BaseTrack>> search(String query, {int limit = 25});
 }
+
+/// Browses/searches Internet radio stations. Implemented by
+/// `RadioPlugin`. A separate interface from [IOnlineSearchProvider]
+/// deliberately — that one is scoped to self-hosted media-server
+/// search (Ampache/Koel/OpenSubsonic/Jellyfin/Plex/Emby), all of which
+/// share one "search this server's existing catalog" shape with no
+/// concept of "top/popular results with no query," which radio
+/// stations genuinely have and self-hosted servers don't.
+abstract class IRadioProvider {
+  /// The most popular stations, with no search query — Internet
+  /// Radio's landing-page content. Returns an empty list, never
+  /// throws, on any failure (network error, upstream directory down).
+  Future<List<BaseTrack>> topStations({int limit = 30});
+
+  /// Searches stations matching [query]. Returns an empty list, never
+  /// throws, on any failure.
+  Future<List<BaseTrack>> searchStations(String query, {int limit = 30});
+}
