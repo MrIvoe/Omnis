@@ -127,9 +127,11 @@ void main() {
     });
     final manager = PluginManager();
     manager.register(RadioPlugin(client: client));
+    final engine = _FakeEngine();
+    await _wireContext(manager, engine);
 
     await tester.pumpWidget(MaterialApp(
-      home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      home: RadioPage(engine: engine, pluginManager: manager),
     ));
     await tester.pump();
     await tester.pump();
@@ -146,9 +148,11 @@ void main() {
     });
     final manager = PluginManager();
     manager.register(RadioPlugin(client: client));
+    final engine = _FakeEngine();
+    await _wireContext(manager, engine);
 
     await tester.pumpWidget(MaterialApp(
-      home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      home: RadioPage(engine: engine, pluginManager: manager),
     ));
     await tester.pump();
     await tester.pump();
@@ -168,9 +172,11 @@ void main() {
     });
     final manager = PluginManager();
     manager.register(RadioPlugin(client: client));
+    final engine = _FakeEngine();
+    await _wireContext(manager, engine);
 
     await tester.pumpWidget(MaterialApp(
-      home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+      home: RadioPage(engine: engine, pluginManager: manager),
     ));
     await tester.pump();
     await tester.pump();
@@ -198,6 +204,7 @@ void main() {
     final manager = PluginManager();
     manager.register(RadioPlugin(client: client));
     final engine = _FakeEngine();
+    await _wireContext(manager, engine);
 
     await tester.pumpWidget(MaterialApp(
       home: RadioPage(engine: engine, pluginManager: manager),
@@ -296,11 +303,13 @@ void main() {
       final manager = PluginManager();
       manager.register(RadioPlugin(client: client));
       // Favorites deliberately not registered — same shape as it being
-      // disabled in Settings, since `bundled` only ever sees registered
-      // plugins.
+      // disabled in Settings, since `services.get<IFavoritesProvider>()`
+      // only ever sees a registered-and-initialized plugin.
+      final engine = _FakeEngine();
+      await _wireContext(manager, engine);
 
       await tester.pumpWidget(MaterialApp(
-        home: RadioPage(engine: _FakeEngine(), pluginManager: manager),
+        home: RadioPage(engine: engine, pluginManager: manager),
       ));
       await tester.pump();
       await tester.pump();

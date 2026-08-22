@@ -5,7 +5,6 @@ import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis_plugins/radio_plugin.dart';
 
 /// Internet Radio tab: search and browse live streaming stations via
 /// `RadioPlugin` (the Radio Browser directory), and play one straight
@@ -40,8 +39,8 @@ class RadioPage extends StatefulWidget {
 class _RadioPageState extends State<RadioPage> {
   final _bodyKey = GlobalKey<RadioBodyState>();
 
-  RadioPlugin? get _plugin =>
-      widget.pluginManager.bundled<RadioPlugin>(onlyEnabled: true);
+  IRadioProvider? get _plugin =>
+      widget.pluginManager.services.get<IRadioProvider>();
 
   @override
   Widget build(BuildContext context) {
@@ -97,8 +96,8 @@ class RadioBodyState extends State<RadioBody> {
   bool _loading = false;
   bool _searched = false;
 
-  RadioPlugin? get _plugin =>
-      widget.pluginManager.bundled<RadioPlugin>(onlyEnabled: true);
+  IRadioProvider? get _plugin =>
+      widget.pluginManager.services.get<IRadioProvider>();
 
   IFavoritesProvider? get _favoritesProvider =>
       widget.pluginManager.services.get<IFavoritesProvider>();
