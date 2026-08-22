@@ -20,6 +20,7 @@ import 'package:omnis/core/semver.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis_plugin_api/plugin_destination.dart';
 import 'package:path/path.dart' as p;
 
 /// A plugin that is loaded at runtime.
@@ -1025,6 +1026,27 @@ class PluginManager {
       }
     }
     return widgets;
+  }
+
+  /// Collect top-level tabs contributed by enabled bundled plugins,
+  /// sorted by `PluginDestination.order` ascending — `home_page.dart`
+  /// appends these after its own six fixed destinations. Downloadable
+  /// (external) plugins never contribute here; only `inProcess`
+  /// (bundled) plugins can produce a real `WidgetBuilder`.
+  List<PluginDestination> get homeDestinations {
+    final result = <PluginDestination>[];
+    for (final plugin in _enabled()) {
+      if (plugin.inProcess == null) continue;
+      final destinations = _sandbox.runSync(
+        pluginId: plugin.id,
+        pluginName: plugin.name,
+        hook: 'homeDestinations',
+        operation: () => plugin.inProcess!.homeDestinations(),
+      );
+      if (destinations != null) result.addAll(destinations);
+    }
+    result.sort((a, b) => a.order.compareTo(b.order));
+    return result;
   }
 
   /// Calls a named hook on exactly one external plugin by id, for a
