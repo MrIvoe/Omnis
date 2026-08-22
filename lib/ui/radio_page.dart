@@ -6,12 +6,18 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 
-/// Internet Radio tab: search and browse live streaming stations via
-/// `RadioPlugin` (the Radio Browser directory), and play one straight
-/// through the normal queue — a station is just a [BaseTrack] with
-/// `type: TrackType.radio` and a real `streamUrl`, so [AudioEngine]
-/// needs no special-casing at all to play it (`AudioEngine.uriFor`
-/// already plays any track with a `streamUrl`).
+/// Internet Radio tab: search and browse live streaming stations, and
+/// play one straight through the normal queue — a station is just a
+/// [BaseTrack] with `type: TrackType.radio` and a real `streamUrl`, so
+/// [AudioEngine] needs no special-casing at all to play it
+/// (`AudioEngine.uriFor` already plays any track with a `streamUrl`).
+///
+/// Stations come from whichever plugin has registered itself as the
+/// [IRadioProvider] capability, looked up through
+/// `services.get<IRadioProvider>()`. The bundled `RadioPlugin` (backed
+/// by the Radio Browser directory) is what provides it in practice, but
+/// this page never names that — or any other — concrete plugin type;
+/// anything implementing the interface can back this tab instead.
 ///
 /// A thin `Scaffold`+`AppBar` wrapper around [RadioBody] — the actual
 /// station list/search/custom-station logic lives there so the

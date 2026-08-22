@@ -30,10 +30,12 @@ class PluginDestination {
   final String label;
 
   /// Builds the persistent page shown when this destination is
-  /// selected. Called once per `IndexedStack` entry, the same as every
-  /// existing core tab's page widget — the returned widget's own
-  /// `State` (if any) survives tab switches for as long as the
-  /// contributing plugin stays enabled.
+  /// selected. Invoked on every rebuild of the containing
+  /// `IndexedStack`, the same as every existing core tab's page widget;
+  /// the returned widget's own `State` (if any) is preserved across
+  /// those rebuilds via normal Flutter element reuse — not because this
+  /// builder is only called once — and so survives tab switches for as
+  /// long as the contributing plugin stays enabled.
   final WidgetBuilder pageBuilder;
 
   /// Relative ordering among plugin-contributed destinations only —
