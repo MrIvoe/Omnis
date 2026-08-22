@@ -30,11 +30,28 @@ class _FakePathProvider extends PathProviderPlatform
   Future<String?> getApplicationSupportPath() async => tempDir;
 }
 
+/// A bundled plugin contributing exactly one tab. Parameterised by id and
+/// label so a test can register two of them and tell their tabs apart —
+/// which the id-keyed-selection tests need, since the whole point is that
+/// one plugin's tab must not be mistaken for another's.
 class _TabContributingPlugin extends MusicPlugin {
   @override
-  String get id => 'tab_plugin';
+  final String id;
+  final String tabLabel;
+  final int tabOrder;
+
+  _TabContributingPlugin({
+    this.id = 'tab_plugin',
+    this.tabLabel = 'Extra Tab',
+    this.tabOrder = 0,
+  });
+
+  /// The text this plugin's page renders — derived from [tabLabel] so a
+  /// test never has to keep the two in sync by hand.
+  String get pageText => '$tabLabel Content';
+
   @override
-  String get name => 'Tab Plugin';
+  String get name => 'Tab Plugin $id';
   @override
   String get description => 'test plugin';
   @override
@@ -55,11 +72,11 @@ class _TabContributingPlugin extends MusicPlugin {
   @override
   List<PluginDestination> homeDestinations() => [
         PluginDestination(
-          id: 'tab_plugin_tab',
+          id: '${id}_tab',
           icon: Icons.extension,
-          label: 'Extra Tab',
-          pageBuilder: (context) =>
-              const Center(child: Text('Extra Tab Content')),
+          label: tabLabel,
+          pageBuilder: (context) => Center(child: Text(pageText)),
+          order: tabOrder,
         ),
       ];
 }
@@ -105,6 +122,19 @@ Future<void> _unregisterCore() async {
 /// finish — same "even inside `tester.runAsync()`, an explicit real delay
 /// between two pumps is what actually lets it complete" reasoning
 /// `home_dashboard_page_test.dart`'s own `_settle` helper documents.
+/// HomePage's tab `IndexedStack`, identified by how many children it has
+/// (six core destinations plus one per enabled plugin tab) — other
+/// `IndexedStack`s exist deeper in the page tree, and `.first` is not a
+/// reliable way to pick this one out. Asserting on `index` rather than on
+/// which page's text is rendered matters here: an `IndexedStack` keeps
+/// every child mounted, so a page being "not shown" is a property of the
+/// stack's index, not of whether its widgets exist.
+IndexedStack _homeStack(WidgetTester tester, {required int childCount}) {
+  return tester
+      .widgetList<IndexedStack>(find.byType(IndexedStack))
+      .firstWhere((stack) => stack.children.length == childCount);
+}
+
 Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
   await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -135,7 +165,7 @@ void main() {
     await tester.runAsync(() async {
       final core = _registerBareCore();
       addTearDown(_unregisterCore);
-      core.pluginManager.register(_TabContributingPlugin());
+      core.pluginManager.register(_TabContributingPlugin(id: 'tab_plugin'));
 
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
@@ -150,13 +180,12 @@ void main() {
   });
 
   testWidgets(
-      'if _selectedIndex points past a shrunk destination list after a '
-      'plugin is disabled, HomePage falls back to Home instead of '
-      'crashing IndexedStack', (tester) async {
+      'when the selected plugin tab disappears, HomePage falls back to Home '
+      'instead of crashing IndexedStack', (tester) async {
     await tester.runAsync(() async {
       final core = _registerBareCore();
       addTearDown(_unregisterCore);
-      core.pluginManager.register(_TabContributingPlugin());
+      core.pluginManager.register(_TabContributingPlugin(id: 'tab_plugin'));
 
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
@@ -165,16 +194,92 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Extra Tab Content'), findsOneWidget);
 
-      // Simulate the plugin disappearing mid-session — this is the exact
-      // shrinking-list scenario the clamp in home_page.dart guards. This
-      // notifies AppSettings' listeners (HomePage is already subscribed
-      // for its own auto-hide-nav reasons), which is what actually drives
-      // HomePage to rebuild and recompute its now-shorter destination list.
+      // Simulate the plugin disappearing mid-session — the exact
+      // shrinking-list scenario home_page.dart's id lookup guards.
       final managed = core.pluginManager.byId('tab_plugin')!;
       await core.pluginManager.disablePlugin(managed);
       await tester.pumpAndSettle();
 
       expect(find.text('Extra Tab Content'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets(
+      'disabling the selected plugin falls back to Home rather than to '
+      'whichever plugin now occupies its old index', (tester) async {
+    await tester.runAsync(() async {
+      final core = _registerBareCore();
+      addTearDown(_unregisterCore);
+      // Two plugins, so index 6 (the first plugin slot) means something
+      // *different* after the first one is removed. With selection tracked
+      // by raw index, disabling plugin A while it was selected left index 6
+      // in range — length shrinks 8 -> 7, and `6 >= 7` is false, so no
+      // bounds check fired — and index 6 silently resolved to plugin B's
+      // tab instead. Keying selection by destination id is what makes the
+      // vanished tab read as vanished.
+      core.pluginManager.register(
+        _TabContributingPlugin(id: 'plugin_a', tabLabel: 'Alpha', tabOrder: 0),
+      );
+      core.pluginManager.register(
+        _TabContributingPlugin(id: 'plugin_b', tabLabel: 'Beta', tabOrder: 1),
+      );
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await _settle(tester);
+
+      expect(find.text('Alpha'), findsOneWidget);
+      expect(find.text('Beta'), findsOneWidget);
+
+      await tester.tap(find.text('Alpha'));
+      await tester.pumpAndSettle();
+      // Six core tabs + two plugin tabs; Alpha is the first plugin slot.
+      expect(_homeStack(tester, childCount: 8).index, 6);
+
+      await core.pluginManager
+          .disablePlugin(core.pluginManager.byId('plugin_a')!);
+      await tester.pumpAndSettle();
+
+      // Beta's *tab* survives — it's only Alpha that went away.
+      expect(find.text('Beta'), findsOneWidget);
+      // The point of the test. Index 6 is now Beta; asserting on the
+      // resolved index rather than on rendered text is deliberate, since
+      // an IndexedStack keeps every child mounted and only the selected
+      // one is actually shown.
+      expect(_homeStack(tester, childCount: 7).index, isNot(6));
+      expect(_homeStack(tester, childCount: 7).index, 0);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets(
+      'a plugin registered after the first build gets its tab without any '
+      'AppSettings change', (tester) async {
+    await tester.runAsync(() async {
+      final core = _registerBareCore();
+      addTearDown(_unregisterCore);
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await _settle(tester);
+
+      expect(find.text('Late Tab'), findsNothing);
+
+      // `PluginManager.register` emits on `changes` and never touches
+      // AppSettings — unlike enable/disable, which write through
+      // `AppSettings.setPluginEnabled` and so used to be the *only* reason
+      // HomePage rebuilt at all (it listens to AppSettings for unrelated
+      // auto-hide-nav reasons). This is the path that stayed invisible
+      // until _HomePageState subscribed to `changes` directly.
+      core.pluginManager.register(
+        _TabContributingPlugin(id: 'late_plugin', tabLabel: 'Late Tab'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Late Tab'), findsOneWidget);
+
+      await tester.tap(find.text('Late Tab'));
+      await tester.pumpAndSettle();
+      expect(find.text('Late Tab Content'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

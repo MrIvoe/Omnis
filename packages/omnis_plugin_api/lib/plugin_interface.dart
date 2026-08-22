@@ -106,9 +106,11 @@ abstract class MusicPlugin {
   /// level and stay purely `uiSlot`-based.
   ///
   /// Called once per `PluginManager.homeDestinations` read (today:
-  /// every time `home_page.dart` rebuilds), sandboxed the same as
-  /// every other hook — a throwing override degrades to "this plugin
-  /// contributes no destinations this time," never a crash.
+  /// when `home_page.dart` finishes bootstrapping, and again on every
+  /// `PluginManager.changes` event — deliberately not from inside
+  /// `build()`), sandboxed the same as every other hook — a throwing
+  /// override degrades to "this plugin contributes no destinations
+  /// this time," never a crash.
   List<PluginDestination> homeDestinations() => const [];
 
   /// Called when the plugin is shut down.

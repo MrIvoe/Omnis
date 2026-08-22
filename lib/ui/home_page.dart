@@ -11,6 +11,7 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/command_palette_dialog.dart';
 import 'package:omnis/ui/forgotten_music_page.dart';
@@ -46,9 +47,62 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+/// Stable ids for the six fixed core destinations, in render order —
+/// the same ids [PluginDestination.id]'s own dartdoc reserves as
+/// off-limits to plugins. Selection is tracked by id rather than by
+/// index (see [_HomePageState._selectedDestinationId]), so these are
+/// the id half of the `pages`/`destinations` lists built in `build()`.
+const _coreDestinationIds = <String>[
+  'home',
+  'library',
+  'playlist',
+  'moods',
+  'online',
+  'settings',
+];
+
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
+  /// The *id* of the selected destination, not its index.
+  ///
+  /// An index is not a stable handle on a destination once plugins can
+  /// add and remove tabs around the one you're on: with destinations
+  /// `[...6 core, pluginA(6), pluginB(7)]`, disabling pluginA while it's
+  /// selected shrinks the list to length 7, so a bounds check on index 6
+  /// passes — and index 6 now silently resolves to pluginB's tab. The
+  /// user would land on a completely different plugin's page with no
+  /// indication anything had changed. Keying on the id makes a vanished
+  /// destination *look* vanished: `indexOf` returns -1 and `build()`
+  /// falls back to Home deliberately. The render index is derived from
+  /// this id at build time and never stored.
+  String _selectedDestinationId = _coreDestinationIds.first;
   bool _coreReady = false;
+
+  /// Plugin-contributed tabs, cached rather than read from
+  /// `pluginManager.homeDestinations` inside `build()`.
+  ///
+  /// That getter runs each plugin's `homeDestinations()` hook through
+  /// `Sandbox.runSync`, whose failure path records a health event and
+  /// notifies health listeners *synchronously* — and two of those
+  /// listeners (`plugins_page.dart`, `plugin_health_page.dart`) call
+  /// `setState`. Reading it from `build()` therefore meant one throwing
+  /// plugin could fire "setState() or markNeedsBuild() called during
+  /// build" on either of those pages while they were mounted. Sandbox's
+  /// `_notify` catches and drops whatever a listener throws, so that
+  /// surfaced as a silently-dropped rebuild rather than a red screen —
+  /// worse to diagnose, not better. `runSync`'s own dartdoc scopes it to
+  /// constructor/`attach`-time use, not per-frame use, either way.
+  /// Refreshed from [_pluginManagerSub] instead, so the sandbox-touching
+  /// call only ever happens outside a build.
+  List<PluginDestination> _pluginDestinations = const [];
+
+  /// Keeps [_pluginDestinations] live as plugins are registered, enabled
+  /// or disabled at runtime. The suite passed before this existed only
+  /// because `enablePlugin`/`disablePlugin` also write through
+  /// `AppSettings.setPluginEnabled`, which this state already listens to
+  /// for unrelated reasons — an accidental coupling. A plugin registered
+  /// by any path that doesn't touch `AppSettings` would never have had
+  /// its tab appear.
+  StreamSubscription<List<ManagedPlugin>>? _pluginManagerSub;
 
   /// Lets the command palette's "Customize home" action (item 48/spec
   /// §38) reach [HomeDashboardPageState.openCustomizeSheet] from outside
@@ -102,6 +156,23 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('Omnis: failed to bootstrap core for HomePage: $e');
     } finally {
+      // The plugin manager only exists once bootstrap has resolved, so
+      // this is the earliest point the destination list can be primed
+      // and kept live. Seeding it here rather than in the listener means
+      // the initial list and _coreReady land in the same first real
+      // build, instead of the first build painting six core tabs and a
+      // second one adding the plugin tabs.
+      final readyCore = core;
+      if (readyCore != null) {
+        _pluginDestinations = readyCore.pluginManager.homeDestinations;
+        _pluginManagerSub = readyCore.pluginManager.changes.listen((_) {
+          if (mounted) {
+            setState(() {
+              _pluginDestinations = readyCore.pluginManager.homeDestinations;
+            });
+          }
+        });
+      }
       if (mounted) {
         setState(() => _coreReady = true);
       }
@@ -163,6 +234,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     AppSettings.instance.removeListener(_onSettingsChanged);
+    _pluginManagerSub?.cancel();
     super.dispose();
   }
 
@@ -180,7 +252,8 @@ class _HomePageState extends State<HomePage> {
       'previous': core.audioEngine.previous,
       'shuffle': () => core.audioEngine
           .setShuffleEnabled(!core.audioEngine.shuffleEnabled),
-      'open_settings': () => setState(() => _selectedIndex = 5),
+      'open_settings': () =>
+          setState(() => _selectedDestinationId = 'settings'),
       'enable_driving_mode': () =>
           setState(() => AppSettings.instance.playerLayoutId = 'car_mode'),
       'open_lyrics': () {
@@ -196,7 +269,7 @@ class _HomePageState extends State<HomePage> {
             ),
           )),
       'customize_home': () {
-        setState(() => _selectedIndex = 0);
+        setState(() => _selectedDestinationId = 'home');
         _homeDashboardKey.currentState?.openCustomizeSheet();
       },
       'scan_library': () async {
@@ -241,11 +314,11 @@ class _HomePageState extends State<HomePage> {
         await core.audioEngine.play();
       },
       onSelectPlaylist: (playlist) {
-        setState(() => _selectedIndex = 2);
+        setState(() => _selectedDestinationId = 'playlist');
         _playlistKey.currentState?.openPlaylist(playlist);
       },
       onSelectMood: (mood) {
-        setState(() => _selectedIndex = 3);
+        setState(() => _selectedDestinationId = 'moods');
         _moodsKey.currentState?.playMood(mood);
       },
     );
@@ -262,7 +335,10 @@ class _HomePageState extends State<HomePage> {
     final core = locator<MainCore>();
     final settings = AppSettings.instance;
 
-    final pluginDestinations = core.pluginManager.homeDestinations;
+    // Cached, not read from `core.pluginManager.homeDestinations` here —
+    // see [_pluginDestinations] for why that getter must not be called
+    // from inside build().
+    final pluginDestinations = _pluginDestinations;
 
     final pages = <Widget>[
       HomeDashboardPage(
@@ -293,7 +369,12 @@ class _HomePageState extends State<HomePage> {
           sandbox: core.sandbox,
           layoutManager: locator<LayoutManager>(),
           themeManager: locator<ThemeManager>()),
-      for (final d in pluginDestinations) Builder(builder: d.pageBuilder),
+      // Keyed by destination id: without a key `IndexedStack` matches
+      // its children to existing elements positionally, so when the
+      // plugin list shifts, two different plugins' pages that happen to
+      // share a widget type would swap `State` with each other.
+      for (final d in pluginDestinations)
+        Builder(key: ValueKey(d.id), builder: d.pageBuilder),
     ];
 
     // Landscape and Car Mode both want the bottom nav out of the way of
@@ -330,21 +411,37 @@ class _HomePageState extends State<HomePage> {
       for (final d in pluginDestinations) HomeDestinationInfo(d.icon, d.label),
     ];
 
+    // The id of each entry above, in the same order, 1:1 with both
+    // `pages` and `destinations` — this is what turns the stored
+    // destination *id* back into the index those two lists are indexed
+    // by. Kept adjacent to them so the three stay in sync.
+    final destinationIds = <String>[
+      ..._coreDestinationIds,
+      for (final d in pluginDestinations) d.id,
+    ];
+
     // A plugin contributing a destination can be disabled/uninstalled
-    // mid-session, shrinking this list — clamp before it's used to index
-    // into `pages`/`destinations` below, so a stale _selectedIndex from a
-    // vanished plugin tab never crashes IndexedStack. Falls back to Home
-    // (index 0), not the last valid index, since "the destination you
-    // were on disappeared" should read as "back to the start," not
-    // "landed on some other tab."
-    if (_selectedIndex >= destinations.length) {
-      _selectedIndex = 0;
+    // mid-session, removing its id from the list above. Resolving by id
+    // rather than clamping an index means that reads as "the tab you
+    // were on is gone" and falls back to Home — a shrinking list can no
+    // longer quietly hand the user a *different* plugin's page that
+    // happens to now sit at the old numeric position. Home, not the last
+    // valid index, because "the destination you were on disappeared"
+    // should read as "back to the start," not "landed on some other tab."
+    var selectedIndex = destinationIds.indexOf(_selectedDestinationId);
+    if (selectedIndex < 0) {
+      selectedIndex = 0;
+      _selectedDestinationId = destinationIds[0];
     }
 
     final isWideLayout = isWideHomeLayout(context);
     final homeNav = HomeNavigationBar(
-      selectedIndex: _selectedIndex,
-      onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+      selectedIndex: selectedIndex,
+      // HomeNavigationBar reports the tapped *index* (it's also used with
+      // plain fixed destination lists elsewhere, so its ValueChanged<int>
+      // signature stays as-is); convert to an id at this call site.
+      onDestinationSelected: (i) =>
+          setState(() => _selectedDestinationId = destinationIds[i]),
       pluginManager: core.pluginManager,
       destinations: destinations,
       onOpenSidebar: () => _scaffoldKey.currentState?.openDrawer(),
@@ -352,7 +449,7 @@ class _HomePageState extends State<HomePage> {
 
     final mainContent = Stack(
       children: [
-        IndexedStack(index: _selectedIndex, children: pages),
+        IndexedStack(index: selectedIndex, children: pages),
         if (autoHideActive)
           Positioned(
             left: 0,
@@ -409,11 +506,12 @@ class _HomePageState extends State<HomePage> {
           key: _scaffoldKey,
           drawer: GlobalSidebarDrawer(
             pluginManager: core.pluginManager,
-            selectedIndex: _selectedIndex,
+            selectedIndex: selectedIndex,
             destinations: destinations,
             playlistKey: _playlistKey,
             moodsKey: _moodsKey,
-            onSelectDestination: (i) => setState(() => _selectedIndex = i),
+            onSelectDestination: (i) =>
+                setState(() => _selectedDestinationId = destinationIds[i]),
           ),
           // Wide layout: the rail sits beside the content permanently —
           // unlike the bottom bar it's never subject to
