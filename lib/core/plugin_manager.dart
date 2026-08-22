@@ -19,8 +19,8 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/semver.dart';
 import 'package:omnis/core/service_registry.dart';
 import 'package:omnis/plugin_api/events.dart';
+import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis_plugin_api/plugin_destination.dart';
 import 'package:path/path.dart' as p;
 
 /// A plugin that is loaded at runtime.
