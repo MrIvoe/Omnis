@@ -451,6 +451,22 @@ class PluginManager {
           final adapter = SandboxedArtistImageProvider(runtime);
           services.register(IArtistImageProvider, adapter);
           plugin.providedServices[IArtistImageProvider] = adapter;
+        case 'favorites':
+          final adapter = SandboxedFavoritesProvider(runtime);
+          services.register(IFavoritesProvider, adapter);
+          plugin.providedServices[IFavoritesProvider] = adapter;
+        case 'ratings':
+          final adapter = SandboxedRatingsProvider(runtime);
+          services.register(IRatingsProvider, adapter);
+          plugin.providedServices[IRatingsProvider] = adapter;
+        case 'thumbs':
+          final adapter = SandboxedThumbsProvider(runtime);
+          services.register(IThumbsProvider, adapter);
+          plugin.providedServices[IThumbsProvider] = adapter;
+        case 'online_search':
+          final adapter = SandboxedOnlineSearchProvider(runtime);
+          services.register(IOnlineSearchProvider, adapter);
+          plugin.providedServices[IOnlineSearchProvider] = adapter;
       }
     }
   }
@@ -475,6 +491,10 @@ class PluginManager {
         'queue_builder' => IQueueBuilder,
         'play_history' => IPlayHistoryProvider,
         'artist_image' => IArtistImageProvider,
+        'favorites' => IFavoritesProvider,
+        'ratings' => IRatingsProvider,
+        'thumbs' => IThumbsProvider,
+        'online_search' => IOnlineSearchProvider,
         _ => null,
       };
 

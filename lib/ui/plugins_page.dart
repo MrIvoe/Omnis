@@ -347,9 +347,20 @@ class _PluginsPageState extends State<PluginsPage> {
         return 'Library — can read your music library (titles, artists, '
             'albums — read-only)';
       case 'events':
-        return 'Events — can be notified when things like favorites change';
+        return 'Events — can be notified when things like favorites change, '
+            'and announce its own changes to other plugins';
       case 'playback':
-        return 'Playback control — can play, pause, skip, and seek';
+        return 'Playback control — can play, pause, skip, seek, and change '
+            'repeat/shuffle mode';
+      case 'queue':
+        return 'Queue control — can replace or change what\'s in your '
+            'playback queue';
+      case 'volume':
+        return 'Volume — can read and change the volume, and contribute '
+            'its own gain adjustment';
+      case 'state':
+        return 'Saved settings — can remember a small amount of its own '
+            'data on this device';
       default:
         return perm;
     }
@@ -366,6 +377,14 @@ class _PluginsPageState extends State<PluginsPage> {
         return 'Play history — can supply recently/most played track data';
       case 'artist_image':
         return 'Artist photos — can supply a photo URL for an artist';
+      case 'favorites':
+        return 'Favorites — can supply which tracks are favorited';
+      case 'ratings':
+        return 'Ratings — can supply star ratings for tracks';
+      case 'thumbs':
+        return 'Thumbs — can supply thumbs up/down state for tracks';
+      case 'online_search':
+        return 'Online search — adds a source to the Online search tab';
       default:
         return capability;
     }

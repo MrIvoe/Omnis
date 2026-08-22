@@ -551,6 +551,68 @@ generically — there's currently no `plugin_settings` support for
 declarative payloads beyond a read-only text/badge summary, since real
 form fields need a real `Widget`.
 
+### Reaching back into the app (the sandbox bridge)
+
+A hook doesn't have to be purely reactive. `import 'package:omnis/sandbox_api.dart';`
+gives a plugin real (permission-gated) capabilities, each unlocked by
+declaring the matching entry in `permissions:`:
+
+| Permission | Functions | What it does |
+|---|---|---|
+| `library` | `loadLibraryTracks()`, `loadPlaylists()`, `getCurrentTrack()`, `getQueue()`, `getIsPlaying()`, `getCurrentIndex()` | Read-only library/playback state |
+| `playback` | `playbackPlay()`, `playbackPause()`, `playbackNext(wrap)`, `playbackPrevious()`, `playbackSeek(positionMs)`, `setRepeatMode(mode)`, `setShuffleEnabled(enabled)` | Transport control and playback mode toggles |
+| `queue` | `setQueue(tracks, startIndex)`, `addTrack(track)`, `playNextTrack(track)`, `removeTrackAt(index)`, `playAt(index)` | Replace or edit what's actually in the queue |
+| `volume` | `getVolume()`, `setVolume(volume)`, `setGain(multiplier)`, `clearGain()` | Read/adjust volume; `setGain`/`clearGain` are scoped to your own plugin id automatically — you can't touch another plugin's contribution |
+| `state` | `pluginStorageGetString/SetString`, `GetBool/SetBool`, `GetDouble/SetDouble`, `GetInt/SetInt`, `pluginStorageRemove` (all keyed by a `String key`) | A small persistent key-value store scoped to your plugin — for remembering settings, not a general database |
+| `events` | `emitEvent(type, data)` | Announce something happened. Only a small, fixed set of event types is recognized (today: `'favorite_changed'` with `{'trackId': ..., 'isFavorite': ...}`) — an unrecognized type throws |
+| `network` / `network:host` | `httpGet(url)` | GET-only; a bare `network` allows any host, `network:api.example.com` scopes to one |
+
+`getVolume`/`getCurrentTrack`/etc. return their value directly (not a
+Future); everything that changes app state returns a `Future` and should
+be `await`ed.
+
+`provides:` works the other direction — your plugin can *become* a real
+data source other features read from, by declaring one of `lyrics`,
+`queue_builder`, `play_history`, `artist_image`, `favorites`, `ratings`,
+`thumbs`, or `online_search` and implementing that capability's fixed
+hook names (see `providedCapabilityHooks` in the app's
+`lib/core/plugin_sandbox_services.dart` for the exact names each expects).
+
+#### A real dart_eval gotcha: never pass a bare literal to a bridge function from `async` code
+
+This one will cost you an afternoon if you don't know about it going in.
+The interpreter this sandbox runs on (`dart_eval` 0.8.3) has a real bug:
+inside an `async` function, once execution has entered its
+Future/`Completer` machinery, boxing a **fresh String/Map/List literal
+constant** — `'one'`, `{'a': 1}`, even `[]` — crashes with something like
+`type 'Null' is not a subtype of type 'String' in type cast`, deep
+inside dart_eval's own bytecode interpreter. It doesn't matter what
+you're passing the literal *to* — a bridge function, a plain local
+function, doesn't matter; it's the act of boxing the literal itself.
+
+```dart
+// DON'T — crashes almost every time once inside an async function:
+dynamic run(dynamic arg) async {
+  await setRepeatMode('one');           // crash
+  await pluginStorageGetString('key');  // crash
+}
+
+// DO — derive the value from something already a real runtime value
+// (your hook's own argument, a value read back from a bridge call,
+// string interpolation of a *variable*), never a bare literal:
+dynamic run(dynamic arg) async {
+  await setRepeatMode(arg['mode']);              // fine
+  await pluginStorageGetString(arg['storageKey']); // fine
+}
+```
+
+A synchronous (non-`async`) function is unaffected — this only bites
+`async` functions that have entered their Completer-driven execution
+path. If a hook needs a fixed value with no natural source, put it in
+the metadata Map `createPlugin` returns (which is real, already-boxed
+data by the time your hooks run) and read it back from there rather
+than writing a fresh literal inline in an `async` hook body.
+
 See [`sample_logger`](https://github.com/MrIvoe/Omnis-Plugins/tree/main/sample_logger)
 in the [Omnis-Plugins](https://github.com/MrIvoe/Omnis-Plugins) catalog
 repo for a complete, working example — it's exercised by

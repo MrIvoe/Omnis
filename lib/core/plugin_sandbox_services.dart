@@ -62,6 +62,10 @@ const providedCapabilityHooks = {
     'playHistoryPlayCountFor',
   ],
   'artist_image': ['artistImageUrlFor'],
+  'favorites': ['favoritesIsFavorite', 'favoritesFavoriteIds'],
+  'ratings': ['ratingsRatingOf'],
+  'thumbs': ['thumbsThumbOf'],
+  'online_search': ['onlineSearchIsConfigured', 'onlineSearchSearch'],
 };
 
 class SandboxedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvider {
@@ -222,5 +226,123 @@ class SandboxedArtistImageProvider implements IArtistImageProvider {
       // contract for a legitimate miss.
     }
     return null;
+  }
+}
+
+class SandboxedFavoritesProvider implements IFavoritesProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedFavoritesProvider(this.runtime);
+
+  @override
+  bool isFavorite(String trackId) {
+    try {
+      final result = runtime.callHook('favoritesIsFavorite', [trackId]);
+      if (result is bool) return result;
+    } catch (_) {
+      // Degrades to "not favorited" — the same default an unregistered
+      // provider's absence already implies.
+    }
+    return false;
+  }
+
+  @override
+  List<String> favoriteIds() {
+    try {
+      final result = runtime.callHook('favoritesFavoriteIds', []);
+      if (result is List) return result.map((e) => e.toString()).toList();
+    } catch (_) {
+      // Falls through to empty below.
+    }
+    return const [];
+  }
+}
+
+class SandboxedRatingsProvider implements IRatingsProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedRatingsProvider(this.runtime);
+
+  @override
+  int ratingOf(String trackId) {
+    try {
+      final result = runtime.callHook('ratingsRatingOf', [trackId]);
+      if (result is int) return result;
+    } catch (_) {
+      // Falls through to 0 (unrated) below — matches
+      // `IRatingsProvider.ratingOf`'s own "0 means unrated" contract.
+    }
+    return 0;
+  }
+}
+
+class SandboxedThumbsProvider implements IThumbsProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedThumbsProvider(this.runtime);
+
+  @override
+  ThumbState thumbOf(String trackId) {
+    try {
+      final result = runtime.callHook('thumbsThumbOf', [trackId]);
+      if (result is String) {
+        return ThumbState.values
+                .where((s) => s.name == result)
+                .cast<ThumbState?>()
+                .firstWhere((_) => true, orElse: () => null) ??
+            ThumbState.none;
+      }
+    } catch (_) {
+      // Falls through to none below.
+    }
+    return ThumbState.none;
+  }
+}
+
+/// Search results are inherently untrusted output from a sandboxed
+/// plugin, but the interface's own contract already treats every
+/// result as a directly playable [BaseTrack] — the same trust level a
+/// bundled `IOnlineSearchProvider` result already gets, since both are
+/// only ever data (a URL/title/duration), never executable. Malformed
+/// entries are simply dropped, not surfaced as a partial error, matching
+/// [IOnlineSearchProvider.search]'s own "never throws" contract.
+class SandboxedOnlineSearchProvider implements IOnlineSearchProvider {
+  final PluginRuntime runtime;
+
+  const SandboxedOnlineSearchProvider(this.runtime);
+
+  @override
+  String get providerName => runtime.name;
+
+  @override
+  bool get isConfigured {
+    try {
+      final result = runtime.callHook('onlineSearchIsConfigured', []);
+      if (result is bool) return result;
+    } catch (_) {
+      // An unconfigured/misbehaving provider is hidden from the "Online"
+      // tab entirely — the same as `isConfigured` returning false for
+      // any other reason.
+    }
+    return false;
+  }
+
+  @override
+  Future<List<BaseTrack>> search(String query, {int limit = 25}) async {
+    try {
+      var result = runtime.callHook('onlineSearchSearch', [query, limit]);
+      if (result is Future) result = await result;
+      if (result is List) {
+        return result
+            .whereType<Map>()
+            .map((m) => BaseTrack.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+      }
+    } catch (_) {
+      // A throwing, timing-out, or misbehaving guest hook degrades to
+      // "nothing found" — the same fail-soft contract every other
+      // sandboxed adapter in this file uses.
+    }
+    return const [];
   }
 }

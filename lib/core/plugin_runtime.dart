@@ -97,6 +97,12 @@ class PluginRuntime {
   }) {
     Map<dynamic, dynamic> metadata;
     Runtime runtime;
+    // Set below once `createPlugin()`'s metadata is parsed — read by the
+    // bridge's storage/gain functions, which are only ever called later
+    // from a hook, by which point this is always non-null. See
+    // `PluginSandboxBridge.getPluginId`'s own doc for why this can't just
+    // be a constructor argument here.
+    String? pluginId;
     try {
       // Bridge declarations must be registered on both the Compiler (so
       // guest code importing package:omnis/sandbox_api.dart type-checks)
@@ -106,7 +112,7 @@ class PluginRuntime {
       // Registering only one side leaves the guest call throwing
       // UnimplementedError instead of doing anything.
       final bridge = PluginSandboxBridge(getContext ?? () => null,
-          httpClientFactory: httpClientFactory);
+          getPluginId: () => pluginId, httpClientFactory: httpClientFactory);
       final compiler = Compiler()..addPlugin(bridge);
       final program = compiler.compile({
         'default': {'main.dart': pluginSource},
@@ -126,6 +132,15 @@ class PluginRuntime {
       }
       if (declaredPermissions.contains('playback')) {
         runtime.grant(const PlaybackControlPermission());
+      }
+      if (declaredPermissions.contains('queue')) {
+        runtime.grant(const QueuePermission());
+      }
+      if (declaredPermissions.contains('volume')) {
+        runtime.grant(const VolumePermission());
+      }
+      if (declaredPermissions.contains('state')) {
+        runtime.grant(const PluginStatePermission());
       }
       // Granular network scoping: `network:host.example.com` grants only
       // that host (any scheme/path on it — a real dart_eval
@@ -160,6 +175,9 @@ class PluginRuntime {
         );
       }
       metadata = unboxed;
+      // Set before returning, and in particular before any hook call —
+      // the bridge's storage/gain functions read this via `getPluginId`.
+      pluginId = metadata['id']?.toString();
     } catch (e) {
       if (e is PluginRuntimeException) rethrow;
       throw PluginRuntimeException('Failed to load plugin: $e');
