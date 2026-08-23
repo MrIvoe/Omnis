@@ -125,6 +125,31 @@ PlayerLayoutData _dataFor({
       onLongPressAbRepeat: () {},
     );
 
+/// Every hit-testable `IconButton`'s tap-target rect **in global/screen
+/// coordinates** — i.e. after any ancestor `Transform`/`FittedBox` scale has
+/// been applied, not before it.
+///
+/// `RenderBox.size` (what `tester.getSize()` normally reports) is the
+/// widget's *local*, pre-transform layout size — an ancestor scale never
+/// touches it. A `FittedBox(fit: BoxFit.scaleDown)` wrapped around this row
+/// (the exact bug this file's accessibility tests guard against) leaves
+/// every button's local `RenderBox.size` untouched at its natural,
+/// already-≥48dp value while silently shrinking what actually gets
+/// rendered and hit-tested on screen — so asserting on local size alone
+/// would pass on both the fixed *and* the broken code, providing no real
+/// regression coverage. `tester.getRect()` composes the full transform
+/// chain up to the root, so it reports what a real screen/finger actually
+/// sees, which is what the 48dp accessibility floor is about in the first
+/// place.
+List<Rect> iconButtonTapTargetRects(WidgetTester tester) {
+  final elements =
+      tester.elementList(find.byType(IconButton).hitTestable()).toList();
+  return [
+    for (final element in elements)
+      tester.getRect(find.byElementPredicate((e) => e == element)),
+  ];
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -208,13 +233,23 @@ void main() {
       final errors = <FlutterErrorDetails>[];
       final previousOnError = FlutterError.onError;
       FlutterError.onError = (details) => errors.add(details);
-      addTearDown(() => FlutterError.onError = previousOnError);
 
       await tester.pumpWidget(MaterialApp(
         home:
             Scaffold(body: Center(child: PlayerControlsRow(data: _dataFor()))),
       ));
       await tester.pump();
+
+      // Restored immediately, *before* any further expect() in this test
+      // gets a chance to fail -- deferring this to addTearDown left
+      // FlutterError.onError still overridden while a later expect()
+      // failure (exactly what should happen when this test is run against
+      // a real regression) propagated, which trips a framework-internal
+      // consistency assertion ("A test overrode FlutterError.onError but
+      // ... had unexpected additional errors it could not handle") instead
+      // of reporting a clean, readable test failure. Restoring here keeps
+      // this test's own failure mode legible.
+      FlutterError.onError = previousOnError;
 
       expect(errors, isEmpty,
           reason: 'a RenderFlex overflow (or any other render error) at a '
@@ -227,18 +262,19 @@ void main() {
 
       // The direct regression check for the accessibility floor this task
       // restores: a uniform FittedBox(scaleDown) would shrink every
-      // button's *rendered* box below 48x48 at this exact width — assert
-      // directly on each IconButton's real RenderBox size instead of
-      // trusting that removing FittedBox was enough.
-      final buttonBoxes = tester.renderObjectList<RenderBox>(
-          find.byType(IconButton).hitTestable());
-      expect(buttonBoxes, isNotEmpty);
-      for (final box in buttonBoxes) {
-        expect(box.size.width, greaterThanOrEqualTo(kMinInteractiveDimension),
+      // button's *rendered, on-screen* box below 48x48 at this exact
+      // width — measured via tester.getRect() (global, transform-aware),
+      // not tester.getSize()/RenderBox.size (local, pre-transform, and so
+      // blind to exactly the kind of ancestor-scale regression this test
+      // exists to catch — see iconButtonTapTargetRects's own doc comment).
+      final rects = iconButtonTapTargetRects(tester);
+      expect(rects, isNotEmpty);
+      for (final rect in rects) {
+        expect(rect.width, greaterThanOrEqualTo(kMinInteractiveDimension),
             reason: 'every IconButton must keep at least a '
-                '${kMinInteractiveDimension}x$kMinInteractiveDimension tap '
-                'target, even on a ~360dp-wide phone');
-        expect(box.size.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+                '${kMinInteractiveDimension}x$kMinInteractiveDimension '
+                'on-screen tap target, even on a ~360dp-wide phone');
+        expect(rect.height, greaterThanOrEqualTo(kMinInteractiveDimension));
       }
     });
 
@@ -255,7 +291,6 @@ void main() {
       final errors = <FlutterErrorDetails>[];
       final previousOnError = FlutterError.onError;
       FlutterError.onError = (details) => errors.add(details);
-      addTearDown(() => FlutterError.onError = previousOnError);
 
       var cycleCalls = 0;
       await tester.pumpWidget(MaterialApp(
@@ -269,6 +304,10 @@ void main() {
       ));
       await tester.pump();
 
+      // See the sibling 360dp test above for why this is restored here
+      // rather than via addTearDown.
+      FlutterError.onError = previousOnError;
+
       expect(errors, isEmpty,
           reason: 'even this extreme width must not overflow');
       expect(find.byType(PopupMenuButton<int>), findsOneWidget,
@@ -277,13 +316,13 @@ void main() {
 
       // Every remaining directly-tappable control (the popup trigger
       // included — PopupMenuButton renders its own IconButton internally)
-      // still meets the 48dp floor.
-      final buttonBoxes = tester.renderObjectList<RenderBox>(
-          find.byType(IconButton).hitTestable());
-      expect(buttonBoxes, isNotEmpty);
-      for (final box in buttonBoxes) {
-        expect(box.size.width, greaterThanOrEqualTo(kMinInteractiveDimension));
-        expect(box.size.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+      // still meets the 48dp floor on screen (see iconButtonTapTargetRects
+      // for why this must be the global, transform-aware rect).
+      final rects = iconButtonTapTargetRects(tester);
+      expect(rects, isNotEmpty);
+      for (final rect in rects) {
+        expect(rect.width, greaterThanOrEqualTo(kMinInteractiveDimension));
+        expect(rect.height, greaterThanOrEqualTo(kMinInteractiveDimension));
       }
 
       await tester.tap(find.byType(PopupMenuButton<int>));
@@ -295,6 +334,53 @@ void main() {
           reason: 'selecting the single menu item must still cycle play '
               'mode via the same callback the inline button used');
     });
+
+    // Coverage gap closed: the two non-Standard ButtonLayout variants had
+    // zero references anywhere in this file, before or after this task's
+    // FittedBox->LayoutBuilder rewrite. The original overflow bug was
+    // scoped to Standard's 6-button set, so this is deliberately just a
+    // baseline check (renders cleanly + meets the 48dp floor) at a normal
+    // width, not a full width-sweep like Standard got above.
+    for (final layout in [ButtonLayout.compact, ButtonLayout.minimal]) {
+      testWidgets(
+          '$layout renders without error at a normal width, every button '
+          'meeting the 48dp accessibility floor', (tester) async {
+        AppSettings.instance.buttonLayout = layout;
+        addTearDown(() => AppSettings.instance.buttonLayout = ButtonLayout.standard);
+
+        final errors = <FlutterErrorDetails>[];
+        final previousOnError = FlutterError.onError;
+        FlutterError.onError = (details) => errors.add(details);
+        addTearDown(() => FlutterError.onError = previousOnError);
+
+        await tester.pumpWidget(MaterialApp(
+          home: Scaffold(body: Center(child: PlayerControlsRow(data: _dataFor()))),
+        ));
+        await tester.pump();
+
+        expect(errors, isEmpty);
+
+        // Compact keeps previous/play/next; Minimal keeps only play/pause.
+        expect(find.byType(IconButton), findsWidgets);
+        if (layout == ButtonLayout.compact) {
+          expect(find.byIcon(Icons.skip_previous), findsOneWidget);
+          expect(find.byIcon(Icons.skip_next), findsOneWidget);
+        } else {
+          expect(find.byIcon(Icons.skip_previous), findsNothing);
+          expect(find.byIcon(Icons.skip_next), findsNothing);
+        }
+        // Neither variant ever renders a play-mode button/popup.
+        expect(find.byIcon(Icons.repeat), findsNothing);
+        expect(find.byType(PopupMenuButton<int>), findsNothing);
+
+        final rects = iconButtonTapTargetRects(tester);
+        expect(rects, isNotEmpty);
+        for (final rect in rects) {
+          expect(rect.width, greaterThanOrEqualTo(kMinInteractiveDimension));
+          expect(rect.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+        }
+      });
+    }
   });
 
   group('PlayerControlsRow icon style (OmnisIconStyle.current)', () {
