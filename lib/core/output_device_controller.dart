@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:audio_session/audio_session.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 
 /// Broad, UI-facing category for an output device — §21's "Output
 /// devices" only needs enough to pick a sensible icon and label, not the
@@ -131,11 +131,12 @@ class AudioSessionOutputDeviceSource implements OutputDeviceSource {
   }
 
   @override
-  bool get supportsDeviceSelection => Platform.isAndroid;
+  bool get supportsDeviceSelection =>
+      PlatformCapabilities.supportsOutputDeviceSelection;
 
   @override
   Future<String?> selectDevice(OutputDeviceInfo device) async {
-    if (!Platform.isAndroid) {
+    if (!PlatformCapabilities.supportsOutputDeviceSelection) {
       return 'Choosing a specific output device is only supported on '
           'Android right now.';
     }
@@ -165,7 +166,7 @@ class AudioSessionOutputDeviceSource implements OutputDeviceSource {
 
   @override
   Future<void> useSystemDefault() async {
-    if (!Platform.isAndroid) return;
+    if (!PlatformCapabilities.supportsOutputDeviceSelection) return;
     try {
       await AndroidAudioManager().clearCommunicationDevice();
     } catch (_) {

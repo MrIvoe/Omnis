@@ -4,9 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/file_export_io.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/queue_rules.dart';
@@ -178,7 +178,7 @@ class PlaylistPageState extends State<PlaylistPage> {
       bytes: bytes,
     );
     if (path == null) return;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+    if (FileExportIo.requiresManualWrite) {
       await File(path).writeAsBytes(bytes);
     }
     _snack(result.skippedCount == 0
@@ -201,7 +201,7 @@ class PlaylistPageState extends State<PlaylistPage> {
       bytes: bytes,
     );
     if (path == null) return;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+    if (FileExportIo.requiresManualWrite) {
       await File(path).writeAsBytes(bytes);
     }
     _snack(result.skippedCount == 0
@@ -224,7 +224,7 @@ class PlaylistPageState extends State<PlaylistPage> {
       bytes: bytes,
     );
     if (path == null) return;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+    if (FileExportIo.requiresManualWrite) {
       await File(path).writeAsBytes(bytes);
     }
     _snack(result.skippedCount == 0
@@ -250,7 +250,7 @@ class PlaylistPageState extends State<PlaylistPage> {
       bytes: bytes,
     );
     if (path == null) return;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+    if (FileExportIo.requiresManualWrite) {
       await File(path).writeAsBytes(bytes);
     }
     _snack(result.skippedCount == 0
@@ -273,7 +273,7 @@ class PlaylistPageState extends State<PlaylistPage> {
       bytes: bytes,
     );
     if (path == null) return;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+    if (FileExportIo.requiresManualWrite) {
       await File(path).writeAsBytes(bytes);
     }
     _snack(result.skippedCount == 0

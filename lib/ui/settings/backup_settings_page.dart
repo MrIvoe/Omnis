@@ -1,9 +1,9 @@
-import 'dart:io' show File, Platform;
+import 'dart:io' show File;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/file_export_io.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/library_repository.dart';
 
@@ -53,7 +53,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
         bytes: bytes,
       );
       if (path == null) return; // user cancelled the save dialog
-      if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      if (FileExportIo.requiresManualWrite) {
         await File(path).writeAsBytes(bytes);
       }
       _snack('Backup saved.');
