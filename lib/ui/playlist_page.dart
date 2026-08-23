@@ -19,8 +19,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_history_store.dart';
 import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
-import 'package:omnis_plugins/smart_playlist_plugin.dart';
-import 'package:omnis_plugins/smart_playlist_rule.dart';
+import 'package:omnis_plugin_api/smart_playlist_rule.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/queue_history_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
@@ -83,8 +82,8 @@ class PlaylistPageState extends State<PlaylistPage> {
   IFavoritesProvider? get _favorites =>
       widget.pluginManager.services.get<IFavoritesProvider>();
 
-  SmartPlaylistPlugin? get _smartPlaylists =>
-      widget.pluginManager.bundled<SmartPlaylistPlugin>(onlyEnabled: true);
+  ISmartPlaylistProvider? get _smartPlaylists =>
+      widget.pluginManager.services.get<ISmartPlaylistProvider>();
 
   /// Looked up by interface, not by concrete plugin type — whatever is
   /// currently registered as `IPlayHistoryProvider` (today, always
@@ -976,7 +975,7 @@ class PlaylistPageState extends State<PlaylistPage> {
   /// sequence `SmartPlaylistPlugin`'s own settings page already uses for
   /// its "play" action, just reached from here too now.
   Future<void> _playSmartPlaylist(
-      SmartPlaylistPlugin plugin, SmartPlaylistRule rule) async {
+      ISmartPlaylistProvider plugin, SmartPlaylistRule rule) async {
     final queue = plugin.buildQueueForRule(_libraryTracks, rule.id);
     if (queue.isEmpty) {
       _snack('"${rule.name}" has no matching tracks right now.');
@@ -987,7 +986,7 @@ class PlaylistPageState extends State<PlaylistPage> {
   }
 
   Future<void> _deleteSmartPlaylist(
-      SmartPlaylistPlugin plugin, String ruleId) async {
+      ISmartPlaylistProvider plugin, String ruleId) async {
     await plugin.deleteRule(ruleId);
     if (mounted) setState(() {});
   }

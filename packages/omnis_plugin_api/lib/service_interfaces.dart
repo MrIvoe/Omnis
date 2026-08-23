@@ -5,6 +5,7 @@ import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/enrichment_result.dart';
 import 'package:omnis_plugin_api/lyric_line.dart';
 import 'package:omnis_plugin_api/play_record.dart';
+import 'package:omnis_plugin_api/smart_playlist_rule.dart';
 import 'package:omnis_plugin_api/track_tags.dart';
 
 /// Capability contracts a plugin registers against on `ServiceRegistry`
@@ -502,4 +503,27 @@ abstract class ITagWriter {
   /// `true` on success, `false` if there is no snapshot for this file or
   /// the restore itself fails — never throws.
   Future<bool> undoLastEdit(String filePath);
+}
+
+/// Reads and plays a user's saved rule-based smart playlists —
+/// distinct from [IQueueBuilder] (which `SmartPlaylistPlugin` also
+/// implements): that interface matches a *query name* like a mood label
+/// against curated `BaseTrack.mood` tags, while this interface plays a
+/// specific *saved rule* the user built and named through the plugin's
+/// own settings UI. Implemented by `SmartPlaylistPlugin`.
+abstract class ISmartPlaylistProvider {
+  /// Every rule the user has saved, in no particular guaranteed order —
+  /// a caller displaying them decides its own ordering (today,
+  /// insertion/save order).
+  List<SmartPlaylistRule> get savedRules;
+
+  /// Builds a ready-to-play queue by evaluating the saved rule
+  /// [ruleId] against [tracks]. Returns an empty list if no rule with
+  /// that id is saved, or if the rule genuinely matches nothing — never
+  /// throws.
+  List<BaseTrack> buildQueueForRule(List<BaseTrack> tracks, String ruleId);
+
+  /// Deletes the saved rule [ruleId]. A no-op — not an error — if no
+  /// rule with that id exists.
+  Future<void> deleteRule(String ruleId);
 }

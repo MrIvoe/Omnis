@@ -7,8 +7,8 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart' show ThumbState;
 import 'package:omnis_plugins/favorites_plugin.dart';
 import 'package:omnis_plugins/ratings_plugin.dart';
+import 'package:omnis_plugin_api/smart_playlist_rule.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
-import 'package:omnis_plugins/smart_playlist_rule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Real registration/cross-plugin wiring for §42's `rating:` condition —

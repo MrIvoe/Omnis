@@ -9,12 +9,13 @@ import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_store.dart';
 import 'package:omnis/core/playlist_folder_store.dart';
 import 'package:omnis/core/playlist_store.dart';
+import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/queue_operations.dart';
 import 'package:omnis/core/queue_rules.dart';
 import 'package:omnis/ui/playlist_page.dart';
+import 'package:omnis_plugin_api/smart_playlist_rule.dart';
 import 'package:omnis_plugins/smart_playlist_plugin.dart';
-import 'package:omnis_plugins/smart_playlist_rule.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -391,7 +392,13 @@ void main() {
         'has no saved rules', (tester) async {
       await tester.runAsync(() async {
         final manager = PluginManager();
+        manager.attachContext(OmnisPluginContext(
+          audioEngine: _FakeEngine(),
+          services: manager.services,
+          events: manager.events,
+        ));
         manager.register(SmartPlaylistPlugin());
+        await manager.initializeAll();
         await pumpPage(tester, pluginManager: manager);
 
         expect(find.text('Smart playlists'), findsOneWidget);
@@ -415,7 +422,13 @@ void main() {
           ],
         ));
         final manager = PluginManager();
+        manager.attachContext(OmnisPluginContext(
+          audioEngine: _FakeEngine(),
+          services: manager.services,
+          events: manager.events,
+        ));
         manager.register(plugin);
+        await manager.initializeAll();
         await pumpPage(tester, pluginManager: manager);
 
         expect(find.text('Rock Favorites'), findsOneWidget);
@@ -453,8 +466,14 @@ void main() {
           ],
         ));
         final manager = PluginManager();
-        manager.register(plugin);
         final engine = _FakeEngine();
+        manager.attachContext(OmnisPluginContext(
+          audioEngine: engine,
+          services: manager.services,
+          events: manager.events,
+        ));
+        manager.register(plugin);
+        await manager.initializeAll();
         await pumpPage(tester, pluginManager: manager, engine: engine);
 
         await tester.tap(find.text('Rock Favorites'));
@@ -481,7 +500,13 @@ void main() {
           ],
         ));
         final manager = PluginManager();
+        manager.attachContext(OmnisPluginContext(
+          audioEngine: _FakeEngine(),
+          services: manager.services,
+          events: manager.events,
+        ));
         manager.register(plugin);
+        await manager.initializeAll();
         await pumpPage(tester, pluginManager: manager);
         expect(find.text('Rock Favorites'), findsOneWidget);
 
