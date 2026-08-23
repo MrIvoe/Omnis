@@ -25,7 +25,6 @@ import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
-import 'package:omnis_plugins/ratings_plugin.dart';
 import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/calculated_tag_dialog.dart';
@@ -1510,7 +1509,7 @@ class _LibraryPageState extends State<LibraryPage> {
   // Looked up by interface, not concrete plugin type — whatever is
   // currently registered as `IFavoritesProvider` (bundled or a
   // downloadable plugin) answers reads/writes here, the same
-  // interface-not-concrete-type pattern `_ratingsPlugin`'s neighbor
+  // interface-not-concrete-type pattern `_ratingsProvider`'s neighbor
   // `IPlayHistoryProvider` usage below already establishes.
   IFavoritesProvider? get _favoritesProvider =>
       widget.pluginManager.services.get<IFavoritesProvider>();
@@ -1547,10 +1546,13 @@ class _LibraryPageState extends State<LibraryPage> {
     if (mounted) setState(() {});
   }
 
-  RatingsPlugin? get _ratingsPlugin =>
-      widget.pluginManager.bundled<RatingsPlugin>(onlyEnabled: true);
+  IRatingsProvider? get _ratingsProvider =>
+      widget.pluginManager.services.get<IRatingsProvider>();
 
-  int _ratingOf(String trackId) => _ratingsPlugin?.ratingOf(trackId) ?? 0;
+  IThumbsProvider? get _thumbsProvider =>
+      widget.pluginManager.services.get<IThumbsProvider>();
+
+  int _ratingOf(String trackId) => _ratingsProvider?.ratingOf(trackId) ?? 0;
 
   /// Looked up by interface, not concrete plugin type — whatever is
   /// currently registered as `IPlayHistoryProvider` (today, always
@@ -1561,18 +1563,19 @@ class _LibraryPageState extends State<LibraryPage> {
 
   int _playCountOf(String trackId) => _playHistory?.playCountFor(trackId) ?? 0;
 
-  /// [RatingsPlugin] also implements [IThumbsProvider] — same plugin
-  /// instance, an independent signal from the star rating above (§36:
-  /// a coarse "yes/no" preference some listeners prefer over picking a
-  /// specific star count).
+  /// Looked up via [IThumbsProvider], a separate interface from
+  /// [IRatingsProvider] above — an independent signal from the star
+  /// rating (§36: a coarse "yes/no" preference some listeners prefer
+  /// over picking a specific star count), even though both today happen
+  /// to be answered by the same bundled `RatingsPlugin` instance.
   ThumbState _thumbOf(String trackId) =>
-      _ratingsPlugin?.thumbOf(trackId) ?? ThumbState.none;
+      _thumbsProvider?.thumbOf(trackId) ?? ThumbState.none;
 
   /// Toggles [track]'s thumb state: tapping the currently-active thumb
   /// clears it, tapping the other one switches to it — the same
   /// one-tap-no-confirm UX [_toggleFavorite] already uses.
   Future<void> _setThumb(BaseTrack track, ThumbState state) async {
-    final plugin = _ratingsPlugin;
+    final plugin = _thumbsProvider;
     if (plugin == null) {
       _toast('The Ratings plugin is disabled in Settings.');
       return;
@@ -1589,7 +1592,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// "confirm" step, matching how the rest of this page's quick actions
   /// (favorite toggle, playlist add) already work.
   Future<void> _rateTrack(BaseTrack track) async {
-    final plugin = _ratingsPlugin;
+    final plugin = _ratingsProvider;
     if (plugin == null) {
       _toast('The Ratings plugin is disabled in Settings.');
       return;
@@ -1617,7 +1620,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// already rated — never shows here; clearing a whole selection's
   /// ratings is a distinct action this doesn't attempt.
   Future<void> _bulkRate() async {
-    final plugin = _ratingsPlugin;
+    final plugin = _ratingsProvider;
     if (plugin == null) {
       _toast('The Ratings plugin is disabled in Settings.');
       return;

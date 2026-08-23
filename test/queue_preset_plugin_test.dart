@@ -48,6 +48,14 @@ class _FakeRatingsProvider implements IRatingsProvider {
 
   @override
   int ratingOf(String trackId) => ratings[trackId] ?? 0;
+
+  @override
+  double preciseRatingOf(String trackId) => ratingOf(trackId).toDouble();
+
+  @override
+  Future<void> setPreciseRating(String trackId, double rating) async {
+    ratings = {...ratings, trackId: rating.round()};
+  }
 }
 
 /// A controllable [IFavoritesProvider] double, same "fake stands in for

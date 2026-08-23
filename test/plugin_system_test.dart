@@ -2245,6 +2245,70 @@ dynamic artistImageUrlFor(dynamic artistName) => throw 'boom';
 
       expect(await provider.imageUrlFor('queen'), isNull);
     });
+
+    test('SandboxedRatingsProvider.preciseRatingOf returns the int '
+        'ratingOf value as a double', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'ratings_test',
+    'name': 'Ratings Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['ratingsRatingOf'],
+  };
+}
+
+dynamic ratingsRatingOf(dynamic trackId) => 3;
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedRatingsProvider(runtime);
+
+      expect(provider.ratingOf('t1'), 3);
+      expect(provider.preciseRatingOf('t1'), 3.0);
+    });
+
+    test('SandboxedRatingsProvider.setPreciseRating completes without '
+        'throwing — no write-side guest hook exists yet, so this is a '
+        'documented no-op even when the runtime has no matching hook',
+        () async {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'ratings_write_test',
+    'name': 'Ratings Write Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': <String>[],
+  };
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedRatingsProvider(runtime);
+
+      await expectLater(provider.setPreciseRating('t1', 4.5), completes);
+    });
+
+    test('SandboxedThumbsProvider.setThumb completes without throwing — '
+        'no write-side guest hook exists yet, so this is a documented '
+        'no-op even when the runtime has no matching hook', () async {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'thumbs_write_test',
+    'name': 'Thumbs Write Test',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': <String>[],
+  };
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedThumbsProvider(runtime);
+
+      await expectLater(
+          provider.setThumb('t1', ThumbState.up), completes);
+    });
   });
 
   group('PluginManager — service registration (provides:)', () {

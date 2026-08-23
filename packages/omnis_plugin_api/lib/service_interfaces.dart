@@ -119,6 +119,19 @@ abstract class IRatingsProvider {
   /// never needs to special-case "no provider registered" differently
   /// from "registered, but this track has no rating."
   int ratingOf(String trackId);
+
+  /// [trackId]'s rating on the same 0-5 scale as [ratingOf], but as a
+  /// precise `double` rather than a rounded `int` — the picker UI reads
+  /// this to show partial-star state; `0.0` if never rated, matching
+  /// `RatingsPlugin.preciseRatingOf`'s own convention exactly.
+  double preciseRatingOf(String trackId);
+
+  /// Sets [trackId]'s rating to [rating] (0.0-5.0). The write side,
+  /// mirroring [IFavoritesProvider.setFavorite]'s own reasoning: every UI
+  /// call site that used to reach `RatingsPlugin` by concrete type now
+  /// goes through this interface, which is what makes the provider
+  /// swappable at all.
+  Future<void> setPreciseRating(String trackId, double rating);
 }
 
 /// Queries a track's favorited state — real signal `FavoritesPlugin`
@@ -176,6 +189,11 @@ abstract class IThumbsProvider {
   /// [trackId]'s thumb state, or [ThumbState.none] if it's never been
   /// thumbed — matches `RatingsPlugin.thumbOf`'s own convention exactly.
   ThumbState thumbOf(String trackId);
+
+  /// Sets [trackId]'s thumb state. Setting [ThumbState.none] clears it —
+  /// matches `RatingsPlugin.setThumb`'s own convention exactly. The write
+  /// side, same reasoning as [IRatingsProvider.setPreciseRating].
+  Future<void> setThumb(String trackId, ThumbState state);
 }
 
 /// Builds a ready-to-play queue for a named query (a mood/preset label

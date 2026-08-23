@@ -327,6 +327,25 @@ class SandboxedRatingsProvider implements IRatingsProvider {
     }
     return 0;
   }
+
+  /// No dedicated guest hook exists for a *precise* rating read today —
+  /// [ratingOf]'s existing `ratingsRatingOf` hook only ever returns a
+  /// rounded int. Reusing it here (rather than losing precision
+  /// silently) is honest about what's actually available: a sandboxed
+  /// plugin's rating is only ever whole-star today.
+  @override
+  double preciseRatingOf(String trackId) => ratingOf(trackId).toDouble();
+
+  /// Always a no-op — a first cut, same as [SandboxedLyricsProvider
+  /// .syncedLyricsFor]'s documented always-null shortcut. No guest-hook
+  /// bridge exists yet for *writing* a rating from a sandboxed plugin;
+  /// building one (a `setRating`-style bridge function on
+  /// `PluginSandboxBridge`, permission-gated the same way the existing
+  /// queue/volume/state bridge functions are) is real, separate work.
+  /// Silently doing nothing rather than throwing matches every other
+  /// interface here's "never throws" contract.
+  @override
+  Future<void> setPreciseRating(String trackId, double rating) async {}
 }
 
 class SandboxedThumbsProvider implements IThumbsProvider {
@@ -350,6 +369,11 @@ class SandboxedThumbsProvider implements IThumbsProvider {
     }
     return ThumbState.none;
   }
+
+  /// Always a no-op — same reasoning and same future-work pointer as
+  /// [SandboxedRatingsProvider.setPreciseRating].
+  @override
+  Future<void> setThumb(String trackId, ThumbState state) async {}
 }
 
 /// Search results are inherently untrusted output from a sandboxed
