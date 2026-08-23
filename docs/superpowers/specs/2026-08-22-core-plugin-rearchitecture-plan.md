@@ -178,9 +178,9 @@ content until (a) is separately scoped later.
 ### Tier 1 — Parallelizable once Tier 0 lands (concrete-type fixes)
 
 - **T1.1** `LyricsPlugin` in `library_page.dart` (286) — interface already exists, pure call-site fix.
-- **T1.2** `MetadataEnrichmentPlugin` (602) — same, pure call-site fix.
+- **T1.2** `MetadataEnrichmentPlugin` (602) — same, pure call-site fix. **Done, partially**: `lookupArtwork` moved onto `IMetadataProvider`; one reach (`hasAnyCredential`, a provider-specific UI hint) deliberately stays concrete — see `library_page.dart`'s `_enrichmentPlugin` getter.
 - **T1.3** `RatingsPlugin` (1552) — likely needs a write method added to `IRatingsProvider`/`IThumbsProvider`, same shape/cost as Favorites. **Higher risk.**
-- **T1.4** `TagEditorPlugin` (1520) — needs a new, narrowly-scoped write interface (title/artist/album/genre only). **Higher risk.**
+- **T1.4** `TagEditorPlugin` (1520) — needs a new, narrowly-scoped write interface (title/artist/album/genre only). **Higher risk.** **Done, partially**: `ITagWriter` covers 3 of 8 call sites; 5 stay concrete because they also call `splitArtists`/`cleanArtistFields`/`wasAutoTagged`/`markAutoTagged` — not tag I/O. See `library_page.dart`'s `_tagEditorPlugin` getter and the Tier 1 plan's "After This Plan" section for the full accounting and the follow-up (`ITagCleanup` or similar) this implies.
 - **T1.5** `RingtonePlugin` (1523) — no existing interface; small, from-scratch addition.
 - **T1.6** `SmartPlaylistPlugin` in `playlist_page.dart` (87) — `IQueueBuilder` may already cover this via `services.getAll<IQueueBuilder>()`; verify before assuming new interface work is needed.
 - **T1.7** `YoutubePlaybackPlugin`/`SpotifyPlaybackPlugin` in `online_page.dart` (68, 74) — likely needs a small new capability-check interface; do both together.
