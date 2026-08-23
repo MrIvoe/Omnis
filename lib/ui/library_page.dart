@@ -632,7 +632,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// uses — this is genuinely the same "write artwork bytes to the file"
   /// operation, just sourced online instead of from a file picker.
   Future<void> _lookupArtworkOnline(BaseTrack track) async {
-    final enrichment = _enrichmentPlugin;
+    final enrichment = _metadataProvider;
     if (enrichment == null) {
       _toast('The Metadata Enrichment plugin is disabled in Settings.');
       return;
@@ -797,7 +797,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// throughout, since it's making the same kind of MusicBrainz-backed
   /// per-track network call.
   Future<void> _lookupArtworkForAll() async {
-    final enrichment = _enrichmentPlugin;
+    final enrichment = _metadataProvider;
     if (enrichment == null) {
       _toast('The Metadata Enrichment plugin is disabled in Settings.');
       return;

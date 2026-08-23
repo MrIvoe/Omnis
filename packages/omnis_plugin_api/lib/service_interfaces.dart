@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:omnis_plugin_api/audio_analysis_result.dart';
 import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/enrichment_result.dart';
@@ -214,6 +216,12 @@ abstract class IMetadataProvider {
   /// Looks up [track]. Never throws — a failed or unreachable source
   /// returns an empty result, same as "not found."
   Future<EnrichmentResult> enrich(BaseTrack track);
+
+  /// Looks up cover art for [track] from this provider's source(s).
+  /// Returns `null` — never throws — when nothing is found, the lookup
+  /// fails, or this provider is unavailable, the same "fail soft"
+  /// contract [enrich] already uses.
+  Future<Uint8List?> lookupArtwork(BaseTrack track);
 }
 
 /// Analyzes a track's actual audio content (BPM/key/mood via real signal
