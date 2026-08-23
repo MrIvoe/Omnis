@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
@@ -50,16 +51,23 @@ class FullArtGesturesLayout extends PlayerLayout {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: data.onPlayPause,
-        onHorizontalDragEnd: (details) {
-          switch (swipeSkipActionFor(details.primaryVelocity)) {
-            case SwipeSkipAction.next:
-              data.onNext();
-            case SwipeSkipAction.previous:
-              data.onPrevious();
-            case null:
-              break;
-          }
-        },
+        // Swipe-to-skip is a touch-primary affordance; a mouse "drag" isn't
+        // a gesture desktop-primary users reach for, so this is `null`
+        // there rather than a handler nothing points to using — a mouse
+        // click is still a real tap, so `onTap` stays active on every
+        // platform.
+        onHorizontalDragEnd: PlatformCapabilities.isDesktopPrimary
+            ? null
+            : (details) {
+                switch (swipeSkipActionFor(details.primaryVelocity)) {
+                  case SwipeSkipAction.next:
+                    data.onNext();
+                  case SwipeSkipAction.previous:
+                    data.onPrevious();
+                  case null:
+                    break;
+                }
+              },
         child: Stack(
           fit: StackFit.expand,
           children: [

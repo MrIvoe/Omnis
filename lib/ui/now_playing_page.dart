@@ -280,6 +280,12 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   /// gestures *are* the interaction model, not an addition on top of
   /// visible buttons the way this wrapper is for the other layouts.
   Widget _wrapWithGestureMode(Widget child, AppSettings settings) {
+    // Checked before the setting itself: the Gesture mode/Enable player
+    // gestures controls are hidden from Controls & Gestures settings on
+    // desktop-primary platforms (see `controls_settings_page.dart`), so a
+    // persisted `allowSwipeGestures == true` from before that setting was
+    // hidden (or from a shared/synced settings file) shouldn't matter here.
+    if (PlatformCapabilities.isDesktopPrimary) return child;
     if (!settings.allowSwipeGestures) return child;
     switch (settings.gestureMode) {
       case GestureMode.swipe:

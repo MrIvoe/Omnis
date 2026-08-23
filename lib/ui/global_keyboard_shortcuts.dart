@@ -4,6 +4,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/keyboard_shortcut_remap.dart';
 import 'package:omnis/core/mute_toggle.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 
 /// App-wide playback keyboard shortcuts (§45 UI spec's "Keyboard"
 /// settings category — previously a genuine 0%, "no `Shortcuts`/
@@ -193,11 +194,20 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
       listenable: AppSettings.instance,
       builder: (context, _) {
         final bindings = <ShortcutActivator, VoidCallback>{
-          for (final entry in AppSettings.instance.shortcutBindings.entries)
-            entry.value.toActivator(): _callbackFor(entry.key),
+          // Settings-driven keyboard bindings assume a hardware keyboard is
+          // normally attached — not true on touch-primary platforms, where
+          // the Keyboard settings page itself is hidden (see
+          // `settings_page.dart`). Registering these there anyway would let
+          // a Bluetooth keyboard someone happens to pair trigger bindings
+          // no visible setting exposes or explains.
+          if (!PlatformCapabilities.isTouchPrimary)
+            for (final entry in AppSettings.instance.shortcutBindings.entries)
+              entry.value.toActivator(): _callbackFor(entry.key),
           // Hardware media keys are OS/device signals, not something a
-          // user remaps via a keyboard — always on regardless of the
-          // bindings above.
+          // user remaps via a keyboard — always on regardless of platform
+          // or the bindings above, since some Android devices route real
+          // hardware media-key events (Bluetooth headset controls, wired
+          // headset buttons) through exactly this path.
           const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
               _togglePlayPause,
           const SingleActivator(LogicalKeyboardKey.mediaTrackNext): _next,

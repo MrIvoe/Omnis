@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
 /// Controls & Gestures: how you interact with playback — button density,
@@ -68,41 +69,43 @@ class _ControlsSettingsPageState extends State<ControlsSettingsPage> {
               ),
             ),
           ),
-          SettingsHighlight(
-            key: _keys['gesture_mode'],
-            child: ListTile(
-              title: const Text('Gesture mode'),
-              subtitle: const Text(
-                  'Use gestures or tap controls for skipping and returning'),
-              trailing: DropdownButton<GestureMode>(
-                value: settings.gestureMode,
-                items: const [
-                  DropdownMenuItem(
-                      value: GestureMode.swipe, child: Text('Swipe')),
-                  DropdownMenuItem(
-                      value: GestureMode.taps, child: Text('Taps')),
-                  DropdownMenuItem(
-                      value: GestureMode.none, child: Text('None')),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => settings.gestureMode = value);
-                },
+          if (!PlatformCapabilities.isDesktopPrimary) ...[
+            SettingsHighlight(
+              key: _keys['gesture_mode'],
+              child: ListTile(
+                title: const Text('Gesture mode'),
+                subtitle: const Text(
+                    'Use gestures or tap controls for skipping and returning'),
+                trailing: DropdownButton<GestureMode>(
+                  value: settings.gestureMode,
+                  items: const [
+                    DropdownMenuItem(
+                        value: GestureMode.swipe, child: Text('Swipe')),
+                    DropdownMenuItem(
+                        value: GestureMode.taps, child: Text('Taps')),
+                    DropdownMenuItem(
+                        value: GestureMode.none, child: Text('None')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => settings.gestureMode = value);
+                  },
+                ),
               ),
             ),
-          ),
-          SettingsHighlight(
-            key: _keys['enable_gestures'],
-            child: SwitchListTile(
-              title: const Text('Enable player gestures'),
-              subtitle: const Text(
-                  'Master switch for whichever gesture mode is selected above '
-                  '(swipe or tap zones)'),
-              value: settings.allowSwipeGestures,
-              onChanged: (value) =>
-                  setState(() => settings.allowSwipeGestures = value),
+            SettingsHighlight(
+              key: _keys['enable_gestures'],
+              child: SwitchListTile(
+                title: const Text('Enable player gestures'),
+                subtitle: const Text(
+                    'Master switch for whichever gesture mode is selected '
+                    'above (swipe or tap zones)'),
+                value: settings.allowSwipeGestures,
+                onChanged: (value) =>
+                    setState(() => settings.allowSwipeGestures = value),
+              ),
             ),
-          ),
+          ],
           SettingsHighlight(
             key: _keys['auto_hide_nav'],
             child: SwitchListTile(

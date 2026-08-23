@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 /// Static, build-time-fixed platform-class flags — never re-evaluated
 /// mid-session, since Flutter has no reliable signal for a capability
@@ -18,15 +18,42 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class PlatformCapabilities {
   const PlatformCapabilities._();
 
+  /// Test hook: when non-null, [isTouchPrimary] returns this instead of
+  /// evaluating the real `Platform.isX` — there is no other way to make a
+  /// touch-primary-gated code path exercise both branches on a single CI
+  /// host. Mirrors `RecoveryJournal.fileOverride`'s override-field
+  /// convention (a nullable static field, restored via
+  /// [resetOverridesForTesting]), adapted to a class with no instance to
+  /// hang the override off of. Set only from tests; always reset in a
+  /// `tearDown` so one test's override can't leak into the next.
+  @visibleForTesting
+  static bool? debugIsTouchPrimaryOverride;
+
+  /// Test hook: same idea as [debugIsTouchPrimaryOverride], for
+  /// [isDesktopPrimary].
+  @visibleForTesting
+  static bool? debugIsDesktopPrimaryOverride;
+
+  /// Clears both test overrides above. Call from `tearDown` in any test
+  /// that sets one, so a later test file sees this class's real,
+  /// platform-derived values again.
+  @visibleForTesting
+  static void resetOverridesForTesting() {
+    debugIsTouchPrimaryOverride = null;
+    debugIsDesktopPrimaryOverride = null;
+  }
+
   /// Android or iOS: touch is the primary input model, no hardware
   /// keyboard is normally attached.
   static bool get isTouchPrimary =>
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+      debugIsTouchPrimaryOverride ??
+      (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
 
   /// Windows, macOS, or Linux: keyboard+mouse is the primary input model,
   /// no touchscreen is normally present.
   static bool get isDesktopPrimary =>
-      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+      debugIsDesktopPrimaryOverride ??
+      (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux));
 
   /// Whether this platform's `Orientation` (derived from window
   /// width-vs-height, not a physical sensor) reflects an actual device

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/keyboard_shortcut_remap.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -254,6 +255,61 @@ void main() {
     await tester.pump();
 
     expect(engine.playCalled, isFalse);
+  });
+
+  group('touch-primary platforms (Task 5)', () {
+    // `Platform.isX` reflects whatever host this suite actually runs on
+    // (desktop on CI/dev machines) and can't be faked without a seam —
+    // `PlatformCapabilities.debugIsTouchPrimaryOverride` is exactly that
+    // seam (see its own doc comment), letting this group exercise the
+    // touch-primary branch regardless of the real host platform.
+    setUp(() => PlatformCapabilities.debugIsTouchPrimaryOverride = true);
+    tearDown(PlatformCapabilities.resetOverridesForTesting);
+
+    testWidgets(
+        'a settings-driven binding (Space) does not fire on a '
+        'touch-primary platform', (tester) async {
+      final engine = await pumpHarness(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(engine.playCalled, isFalse);
+    });
+
+    testWidgets(
+        'a remapped settings-driven binding still does not fire on a '
+        'touch-primary platform', (tester) async {
+      await AppSettings.instance.setShortcutBinding(
+        ShortcutAction.toggleMute,
+        ShortcutBinding(keyId: LogicalKeyboardKey.keyN.keyId),
+      );
+      final engine = await pumpHarness(tester);
+      engine._volume = 0.7;
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+      await tester.pump();
+      expect(engine.volumeSetTo, isNull);
+    });
+
+    testWidgets(
+        'hardware media play/pause still fires on a touch-primary platform '
+        '— real Bluetooth/wired headset buttons route through this same '
+        'path on Android', (tester) async {
+      final engine = await pumpHarness(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
+      await tester.pump();
+      expect(engine.playCalled, isTrue);
+    });
+
+    testWidgets('hardware media next/previous still fire on a '
+        'touch-primary platform', (tester) async {
+      final engine = await pumpHarness(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackNext);
+      await tester.pump();
+      expect(engine.nextCalled, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackPrevious);
+      await tester.pump();
+      expect(engine.previousCalled, isTrue);
+    });
   });
 
   group('item 48 remapping', () {

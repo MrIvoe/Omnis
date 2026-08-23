@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/ui/about_page.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
@@ -327,32 +328,36 @@ class _SettingsPageState extends State<SettingsPage> {
             highlightField: 'output_devices',
             navigate: (c) =>
                 _openPlayback(c, highlightField: 'output_devices')),
-        _SearchableSetting(
-            title: 'Enable keyboard shortcuts',
-            category: 'Keyboard',
-            categoryIcon: Icons.keyboard_outlined,
-            highlightField: 'keyboard_shortcuts_enabled',
-            navigate: (c) =>
-                _openKeyboard(c, highlightField: 'keyboard_shortcuts_enabled')),
+        if (!PlatformCapabilities.isTouchPrimary)
+          _SearchableSetting(
+              title: 'Enable keyboard shortcuts',
+              category: 'Keyboard',
+              categoryIcon: Icons.keyboard_outlined,
+              highlightField: 'keyboard_shortcuts_enabled',
+              navigate: (c) => _openKeyboard(c,
+                  highlightField: 'keyboard_shortcuts_enabled')),
         _SearchableSetting(
             title: 'Button layout',
             category: 'Controls & Gestures',
             categoryIcon: Icons.touch_app_outlined,
             highlightField: 'button_layout',
             navigate: (c) => _openControls(c, highlightField: 'button_layout')),
-        _SearchableSetting(
-            title: 'Gesture mode',
-            category: 'Controls & Gestures',
-            categoryIcon: Icons.touch_app_outlined,
-            highlightField: 'gesture_mode',
-            navigate: (c) => _openControls(c, highlightField: 'gesture_mode')),
-        _SearchableSetting(
-            title: 'Enable player gestures',
-            category: 'Controls & Gestures',
-            categoryIcon: Icons.touch_app_outlined,
-            highlightField: 'enable_gestures',
-            navigate: (c) =>
-                _openControls(c, highlightField: 'enable_gestures')),
+        if (!PlatformCapabilities.isDesktopPrimary) ...[
+          _SearchableSetting(
+              title: 'Gesture mode',
+              category: 'Controls & Gestures',
+              categoryIcon: Icons.touch_app_outlined,
+              highlightField: 'gesture_mode',
+              navigate: (c) =>
+                  _openControls(c, highlightField: 'gesture_mode')),
+          _SearchableSetting(
+              title: 'Enable player gestures',
+              category: 'Controls & Gestures',
+              categoryIcon: Icons.touch_app_outlined,
+              highlightField: 'enable_gestures',
+              navigate: (c) =>
+                  _openControls(c, highlightField: 'enable_gestures')),
+        ],
         _SearchableSetting(
             title: 'Auto-hide bottom navigation',
             category: 'Controls & Gestures',
@@ -522,13 +527,14 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: 'Reduce motion, reduce transparency, haptic feedback',
               onTap: () => _openAccessibility(context),
             ),
-            _CategoryCard(
-              icon: Icons.keyboard_outlined,
-              title: 'Keyboard',
-              subtitle: 'Global playback shortcuts — play/pause, seek, '
-                  'volume, next/previous',
-              onTap: () => _openKeyboard(context),
-            ),
+            if (!PlatformCapabilities.isTouchPrimary)
+              _CategoryCard(
+                icon: Icons.keyboard_outlined,
+                title: 'Keyboard',
+                subtitle: 'Global playback shortcuts — play/pause, seek, '
+                    'volume, next/previous',
+                onTap: () => _openKeyboard(context),
+              ),
             _CategoryCard(
               icon: Icons.extension_outlined,
               title: 'Plugins',

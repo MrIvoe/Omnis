@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/ui/about_page.dart';
@@ -303,6 +304,66 @@ void main() {
       expect(
           find.widgetWithText(ListTile, 'Enable keyboard shortcuts'),
           findsOneWidget);
+    });
+  });
+
+  group('platform-adaptive entries (Task 5)', () {
+    tearDown(PlatformCapabilities.resetOverridesForTesting);
+
+    testWidgets(
+        'the Keyboard category card and its search entry do not render at '
+        'all on a touch-primary platform', (tester) async {
+      PlatformCapabilities.debugIsTouchPrimaryOverride = true;
+      await pumpSettings(tester);
+
+      expect(find.text('Keyboard'), findsNothing);
+
+      await tester.enterText(
+          find.byType(TextField), 'Enable keyboard shortcuts');
+      await tester.pumpAndSettle();
+      expect(
+          find.widgetWithText(ListTile, 'Enable keyboard shortcuts'),
+          findsNothing);
+    });
+
+    testWidgets(
+        'the Keyboard category card still renders when not touch-primary',
+        (tester) async {
+      PlatformCapabilities.debugIsTouchPrimaryOverride = false;
+      await pumpSettings(tester);
+
+      expect(find.text('Keyboard'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the Gesture mode and Enable player gestures search entries do not '
+        'render on a desktop-primary platform — same "hidden, not just '
+        'defaulted off" treatment as the Controls & Gestures page itself',
+        (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = true;
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Gesture mode');
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Gesture mode'), findsNothing);
+
+      await tester.enterText(
+          find.byType(TextField), 'Enable player gestures');
+      await tester.pumpAndSettle();
+      expect(
+          find.widgetWithText(ListTile, 'Enable player gestures'),
+          findsNothing);
+    });
+
+    testWidgets(
+        'the Gesture mode search entry still renders when not '
+        'desktop-primary', (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = false;
+      await pumpSettings(tester);
+
+      await tester.enterText(find.byType(TextField), 'Gesture mode');
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Gesture mode'), findsOneWidget);
     });
   });
 }

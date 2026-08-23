@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/lyric_line.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -91,6 +92,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AppSettings.instance.initialize();
   });
+
+  tearDown(PlatformCapabilities.resetOverridesForTesting);
 
   // A tall, wide fixed viewport rather than simulated scroll gestures —
   // `tester.scrollUntilVisible`/`dragUntilVisible` are known to throw a
@@ -184,6 +187,81 @@ void main() {
         find.text('The Lyrics plugin is disabled — enable it in Settings.'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('desktop-primary platforms (Task 5): swipe-as-shortcut is hidden',
+      () {
+    testWidgets(
+        'onHorizontalDragEnd is null on a desktop-primary platform — a '
+        'mouse "drag" is not a gesture desktop users reach for',
+        (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = true;
+      await pumpTall(
+        tester,
+        Builder(builder: (context) {
+          return KaraokeGesturesLayout().build(context, _dataFor());
+        }),
+      );
+
+      final detector = tester.widget<GestureDetector>(
+        find.byType(GestureDetector),
+      );
+      expect(detector.onHorizontalDragEnd, isNull);
+    });
+
+    testWidgets(
+        'onHorizontalDragEnd is wired (non-null) when not desktop-primary',
+        (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = false;
+      await pumpTall(
+        tester,
+        Builder(builder: (context) {
+          return KaraokeGesturesLayout().build(context, _dataFor());
+        }),
+      );
+
+      final detector = tester.widget<GestureDetector>(
+        find.byType(GestureDetector),
+      );
+      expect(detector.onHorizontalDragEnd, isNotNull);
+    });
+
+    testWidgets(
+        'onTap (play/pause) stays wired on a desktop-primary platform — a '
+        'mouse click is still a real tap', (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = true;
+      await pumpTall(
+        tester,
+        Builder(builder: (context) {
+          return KaraokeGesturesLayout().build(context, _dataFor());
+        }),
+      );
+
+      final detector = tester.widget<GestureDetector>(
+        find.byType(GestureDetector),
+      );
+      expect(detector.onTap, isNotNull);
+    });
+
+    testWidgets(
+        'Next/Previous screen-reader actions stay wired on a '
+        'desktop-primary platform regardless of swipe being hidden from '
+        'sighted users', (tester) async {
+      PlatformCapabilities.debugIsDesktopPrimaryOverride = true;
+      await pumpTall(
+        tester,
+        Builder(builder: (context) {
+          return KaraokeGesturesLayout().build(context, _dataFor());
+        }),
+      );
+
+      final semanticsWidget = tester.widget<Semantics>(find.byWidgetPredicate(
+          (w) =>
+              w is Semantics && w.properties.customSemanticsActions != null));
+      final actions = semanticsWidget.properties.customSemanticsActions!;
+      expect(actions.keys.map((a) => a.label),
+          containsAll(['Next track', 'Previous track']));
     });
   });
 }
