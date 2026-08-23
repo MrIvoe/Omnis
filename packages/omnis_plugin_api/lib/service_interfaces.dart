@@ -491,10 +491,6 @@ abstract class ITagWriter {
   /// (potentially large) artwork frame when only text fields are needed.
   Future<TrackTags> readTags(String filePath, {bool includeArtwork = true});
 
-  /// Whether [trackId] has already been auto-tagged in a previous batch
-  /// run — lets a caller skip re-processing on repeat runs.
-  bool wasAutoTagged(String trackId);
-
   /// Whether [filePath] has an undo snapshot available right now — lets a
   /// caller (e.g. `TagEditorDialog`'s "Undo last edit" action) enable or
   /// disable itself without attempting the restore just to find out.

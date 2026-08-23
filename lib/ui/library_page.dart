@@ -1519,15 +1519,25 @@ class _LibraryPageState extends State<LibraryPage> {
   // Kept as a concrete-type lookup, distinct from [_tagWriter] above:
   // `_editTags`, `_autoTagLibrary`, `_findReplaceSelected`, and
   // `_calculatedTagsSelected` all call `splitArtists`/`cleanArtistFields`/
-  // `markAutoTagged` in addition to the `ITagWriter` methods — plugin
-  // business logic (title/artist cleanup heuristics) that
-  // `ITagWriter` deliberately doesn't cover, since it's scoped to file
-  // tag I/O only (see `ITagWriter`'s own doc comment). Fully decoupling
-  // those four methods from `TagEditorPlugin` would mean growing
-  // `ITagWriter` well past the tag read/write surface it's named for —
-  // out of scope here. A `TagEditorPlugin` instance already satisfies
-  // `ITagWriter` too, so it still passes straight into
-  // `TagEditorDialog.show(..., plugin: tagEditor)` in `_editTags`.
+  // `wasAutoTagged`/`markAutoTagged` in addition to the `ITagWriter`
+  // methods — `TagEditorPlugin`'s own artist-name cleanup heuristics and
+  // its separate auto-tag-tracking bookkeeping, neither of which is tag
+  // I/O, so `ITagWriter` deliberately doesn't cover them (it's scoped to
+  // writeTags/readTags/hasUndoSnapshot/undoLastEdit — see its own doc
+  // comment). `_undoAutoTagBatch` also stays on this concrete lookup even
+  // though it only calls `undoLastEdit` (an `ITagWriter` method): it's the
+  // undo half of the same write done by `_autoTagLibrary`/
+  // `_findReplaceSelected`/`_calculatedTagsSelected` against that same
+  // plugin's own private undo-snapshot store, so the whole write→undo
+  // pair for this cluster stays on one lookup path rather than risking
+  // undo resolving to a different `ITagWriter` instance than the one that
+  // took the snapshot, once more than one is ever registered. Fully
+  // decoupling this cluster would mean growing `ITagWriter` well past the
+  // tag read/write surface it's named for (or adding a separate
+  // cleanup-scoped interface) — out of scope here. A `TagEditorPlugin`
+  // instance already satisfies `ITagWriter` too, so it still passes
+  // straight into `TagEditorDialog.show(..., plugin: tagEditor)` in
+  // `_editTags`.
   TagEditorPlugin? get _tagEditorPlugin =>
       widget.pluginManager.bundled<TagEditorPlugin>(onlyEnabled: true);
 
@@ -2063,7 +2073,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// restart too — the exact same two-sided update `writeTags`'s own
   /// success path already does, just in reverse.
   Future<void> _undoAutoTagBatch(List<BaseTrack> originalTracks) async {
-    final tagEditor = _tagWriter;
+    final tagEditor = _tagEditorPlugin;
     if (tagEditor == null) return;
     var restored = 0;
     for (final original in originalTracks) {
