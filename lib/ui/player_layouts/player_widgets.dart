@@ -299,6 +299,7 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
 
     final shuffleRepeatSize = compact ? iconSize * 0.55 : iconSize * 0.65;
     final playSize = compact ? playIconSize * 0.8 : playIconSize;
+    final prevNextSize = compact ? iconSize * 0.8 : iconSize;
     final seekIncrement = data.settings.seekIncrementSeconds;
     final seekIcons = switch (seekIncrement) {
       15 => (
@@ -344,85 +345,227 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
             RepeatMode.off => 'Sequential',
           };
 
-    // Wrapped in FittedBox(scaleDown) rather than left as a bare Row:
-    // the Standard layout's full button set (play-mode/prev/seek-back/
-    // play-pause/seek-forward/next, each with its own fixed IconButton
-    // tap-target minimum plus the fixed gaps below) has a real,
-    // documented overflow of a few pixels on a real phone's ~360dp
-    // width — item 47's TV-mode verification found this and explicitly
-    // left it unfixed as out of scope at the time. `scaleDown` is a
-    // no-op whenever the row already fits (every wider screen, and
-    // every existing widget test here, which all render at the
-    // default 800px test viewport), and shrinks the whole row
-    // uniformly by the few percent needed on a genuinely narrow
-    // screen instead of clipping/overflowing by a few pixels — simpler
-    // than hand-computing per-button proportional widths the way
-    // `TvModeLayout`'s own three-button row does, since this row can
-    // have anywhere from 3 to 6 buttons across three `ButtonLayout`
-    // variants and doesn't need TV mode's "Play/Pause deliberately
-    // much larger than its neighbors" width budgeting.
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (layout == ButtonLayout.standard)
-            iconButton(playModeIcon,
+    // Proportional, LayoutBuilder-driven sizing -- the same technique
+    // `TvModeLayout` (see `tv_mode_layout.dart:90-111`) already uses to
+    // keep a button row genuinely fitting an arbitrary width, rather than
+    // this row's old `FittedBox(scaleDown)`, which hid a real, documented
+    // overflow of a few pixels on a ~360dp-wide phone by applying a
+    // uniform scale transform to the whole row -- shrinking every
+    // button's *rendered and hit-tested* box below Flutter's 48dp
+    // accessibility minimum tap-target size on exactly the narrow screens
+    // where it kicked in. An `IconButton` left alone never renders below
+    // that 48dp floor regardless of how small `iconSize` gets (its own
+    // default constraints enforce that); a `Transform`-based scale like
+    // `FittedBox` applies is the one thing that can defeat it, since it
+    // shrinks the already-laid-out box rather than the button's inputs.
+    //
+    // So instead of scaling the finished row down, this computes each
+    // button's `iconSize` up front from the real available width: Play/
+    // Pause keeps its deliberately larger, fixed size for as long as
+    // there's room; the secondary buttons (play-mode/previous/seek/next)
+    // give up their own size first, shrinking toward -- but, thanks to
+    // `IconButton`'s own floor, never actually below -- 48dp. Only once
+    // every secondary is already at that floor does Play/Pause give up
+    // its size advantage too, and only if the full `ButtonLayout.standard`
+    // set *still* doesn't fit even then (well under the ~360dp this app's
+    // narrowest supported phone width actually measures, per the widget
+    // test below -- unreachable in practice, kept as a deliberate safety
+    // net) does the least-essential button -- play-mode, the only one of
+    // the six absent from the other two `ButtonLayout` variants already --
+    // fold into a `PopupMenuButton` instead of continuing to squeeze.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // An IconButton's own default padding (8dp each side) plus its
+        // `iconSize` is its outer tap-target box; below `floorIcon`, that
+        // box already equals `kMinInteractiveDimension` (48dp) on its
+        // own, so "shrink toward 48dp" has nothing left to give past this
+        // point -- shrinking `iconSize` further wouldn't shrink the
+        // button any more, only its glyph.
+        const iconPadding = 16.0;
+        const floorIcon = kMinInteractiveDimension - iconPadding;
+
+        double boxWidth(double icon) {
+          final width = icon + iconPadding;
+          return width < kMinInteractiveDimension
+              ? kMinInteractiveDimension
+              : width;
+        }
+
+        double shrinkToward(double natural, double t) => natural <= floorIcon
+            ? natural
+            : floorIcon + t * (natural - floorIcon);
+
+        final hasPlayMode = layout == ButtonLayout.standard;
+        final hasSeek = layout == ButtonLayout.standard;
+        final hasPrevNext = layout != ButtonLayout.minimal;
+        // Mirrors this row's actual SizedBox gaps below: only the
+        // Standard layout renders the extra 4dp hugging each seek button.
+        final gaps = layout == ButtonLayout.standard ? 40.0 : 32.0;
+
+        var naturalSecondaryTotal = 0.0;
+        var floorSecondaryTotal = 0.0;
+        if (hasPlayMode) {
+          naturalSecondaryTotal += boxWidth(shuffleRepeatSize);
+          floorSecondaryTotal += kMinInteractiveDimension;
+        }
+        if (hasSeek) {
+          naturalSecondaryTotal += boxWidth(shuffleRepeatSize) * 2;
+          floorSecondaryTotal += kMinInteractiveDimension * 2;
+        }
+        if (hasPrevNext) {
+          naturalSecondaryTotal += boxWidth(prevNextSize) * 2;
+          floorSecondaryTotal += kMinInteractiveDimension * 2;
+        }
+        final naturalPlayBox = boxWidth(playSize);
+        final maxWidth = constraints.maxWidth;
+
+        // Tier 1: shrink the secondaries toward 48dp while Play/Pause
+        // keeps its full natural size -- covers every width down to a
+        // genuinely narrow phone (~352dp for the 6-button Standard set).
+        var secondaryT = 1.0;
+        if (maxWidth.isFinite &&
+            naturalPlayBox + naturalSecondaryTotal + gaps > maxWidth) {
+          final budget = naturalSecondaryTotal - floorSecondaryTotal;
+          secondaryT = budget > 0
+              ? ((maxWidth - naturalPlayBox - gaps - floorSecondaryTotal) /
+                      budget)
+                  .clamp(0.0, 1.0)
+              : 0.0;
+        }
+
+        // Tier 2 (last resort -- see the class-level comment above for
+        // why this is unreachable at any width this app actually
+        // supports): even every secondary at 48dp doesn't fit alongside
+        // Play/Pause's natural size, so Play/Pause gives up its own size
+        // advantage too, down to the same shared 48dp floor everything
+        // else already respects. If the full Standard 6-button set still
+        // doesn't fit with *everything* already floored, play-mode is the
+        // one button that can actually be removed from the row's width
+        // budget entirely (unlike a mere widget-type swap in the same
+        // slot, which wouldn't free any space) -- it folds into a
+        // PopupMenuButton rendered above the row instead of inside it.
+        var playT = 1.0;
+        var overflowPlayMode = false;
+        if (maxWidth.isFinite &&
+            naturalPlayBox + floorSecondaryTotal + gaps > maxWidth) {
+          secondaryT = 0.0;
+          var effectiveFloorSecondaryTotal = floorSecondaryTotal;
+          if (hasPlayMode &&
+              kMinInteractiveDimension + floorSecondaryTotal + gaps >
+                  maxWidth) {
+            overflowPlayMode = true;
+            effectiveFloorSecondaryTotal -= kMinInteractiveDimension;
+          }
+          final playBudget = naturalPlayBox - kMinInteractiveDimension;
+          playT = playBudget > 0
+              ? ((maxWidth -
+                          effectiveFloorSecondaryTotal -
+                          gaps -
+                          kMinInteractiveDimension) /
+                      playBudget)
+                  .clamp(0.0, 1.0)
+              : 0.0;
+        }
+
+        final shuffleRepeatFinal = shrinkToward(shuffleRepeatSize, secondaryT);
+        final prevNextFinal = shrinkToward(prevNextSize, secondaryT);
+        final playFinal = shrinkToward(playSize, playT);
+
+        Widget playModeControl() {
+          if (!overflowPlayMode) {
+            return iconButton(playModeIcon,
                 onPressed: data.onCyclePlayMode,
-                size: shuffleRepeatSize,
+                size: shuffleRepeatFinal,
                 tooltip: playModeTooltip,
-                iconColor: playModeActive ? activeColor : inactiveColor),
-          if (layout != ButtonLayout.minimal)
-            iconButton(OmnisIconCatalog.skipPrevious.resolve(),
-                onPressed: data.onPrevious,
-                size: compact ? iconSize * 0.8 : iconSize,
-                tooltip: 'Previous'),
-          if (layout == ButtonLayout.standard) ...[
-            iconButton(seekIcons.$1,
-                onPressed: () => skip(-seekIncrement),
-                size: shuffleRepeatSize,
-                tooltip: 'Back $seekIncrement seconds'),
-            const SizedBox(width: 4),
-          ],
-          const SizedBox(width: 16),
-          data.buffering
-              ? Semantics(
-                  label: 'Buffering',
-                  child: SizedBox(
-                    width: playIconSize - 8,
-                    height: playIconSize - 8,
-                    child: CircularProgressIndicator(color: color),
+                iconColor: playModeActive ? activeColor : inactiveColor);
+          }
+          // Same idea as `PlayerSleepTimerRow`'s own PopupMenuButton
+          // below: a single actionable item, since `onCyclePlayMode` is
+          // the only play-mode callback this row is given (no discrete
+          // per-state setters to offer as separate menu entries).
+          return PopupMenuButton<int>(
+            tooltip: playModeTooltip,
+            icon: Icon(playModeIcon,
+                size: shuffleRepeatFinal,
+                color: playModeActive ? activeColor : inactiveColor),
+            onSelected: (_) => data.onCyclePlayMode(),
+            itemBuilder: (context) => [
+              PopupMenuItem(value: 0, child: Text(playModeTooltip)),
+            ],
+          );
+        }
+
+        final row = Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (layout == ButtonLayout.standard && !overflowPlayMode)
+              playModeControl(),
+            if (layout != ButtonLayout.minimal)
+              iconButton(OmnisIconCatalog.skipPrevious.resolve(),
+                  onPressed: data.onPrevious,
+                  size: prevNextFinal,
+                  tooltip: 'Previous'),
+            if (layout == ButtonLayout.standard) ...[
+              iconButton(seekIcons.$1,
+                  onPressed: () => skip(-seekIncrement),
+                  size: shuffleRepeatFinal,
+                  tooltip: 'Back $seekIncrement seconds'),
+              const SizedBox(width: 4),
+            ],
+            const SizedBox(width: 16),
+            data.buffering
+                ? Semantics(
+                    label: 'Buffering',
+                    child: SizedBox(
+                      width: playFinal - 8,
+                      height: playFinal - 8,
+                      child: CircularProgressIndicator(color: color),
+                    ),
+                  )
+                // `AnimatedIcon` morphs the glyph itself (play triangle <->
+                // pause bars) instead of the old hard swap between two
+                // separate `Icons.*_circle_filled` icons.
+                : IconButton(
+                    iconSize: playFinal,
+                    icon: AnimatedIcon(
+                      icon: AnimatedIcons.play_pause,
+                      progress: _playPauseController,
+                      size: playFinal,
+                      color: color ?? theme.colorScheme.onSurface,
+                    ),
+                    tooltip: data.playing ? 'Pause' : 'Play',
+                    onPressed: data.onPlayPause,
                   ),
-                )
-              // `AnimatedIcon` morphs the glyph itself (play triangle <->
-              // pause bars) instead of the old hard swap between two
-              // separate `Icons.*_circle_filled` icons.
-              : IconButton(
-                  iconSize: playSize,
-                  icon: AnimatedIcon(
-                    icon: AnimatedIcons.play_pause,
-                    progress: _playPauseController,
-                    size: playSize,
-                    color: color ?? theme.colorScheme.onSurface,
-                  ),
-                  tooltip: data.playing ? 'Pause' : 'Play',
-                  onPressed: data.onPlayPause,
-                ),
-          const SizedBox(width: 16),
-          if (layout == ButtonLayout.standard) ...[
-            const SizedBox(width: 4),
-            iconButton(seekIcons.$2,
-                onPressed: () => skip(seekIncrement),
-                size: shuffleRepeatSize,
-                tooltip: 'Forward $seekIncrement seconds'),
+            const SizedBox(width: 16),
+            if (layout == ButtonLayout.standard) ...[
+              const SizedBox(width: 4),
+              iconButton(seekIcons.$2,
+                  onPressed: () => skip(seekIncrement),
+                  size: shuffleRepeatFinal,
+                  tooltip: 'Forward $seekIncrement seconds'),
+            ],
+            if (layout != ButtonLayout.minimal)
+              iconButton(OmnisIconCatalog.skipNext.resolve(),
+                  onPressed: data.onNext,
+                  size: prevNextFinal,
+                  tooltip: 'Next'),
           ],
-          if (layout != ButtonLayout.minimal)
-            iconButton(OmnisIconCatalog.skipNext.resolve(),
-                onPressed: data.onNext,
-                size: compact ? iconSize * 0.8 : iconSize,
-                tooltip: 'Next'),
-        ],
-      ),
+        );
+
+        if (!overflowPlayMode) return row;
+        // Rendered above the transport row rather than inline: unlike a
+        // mere widget-type swap in the same slot, this is what actually
+        // removes play-mode's box from the row's width budget, letting
+        // the remaining five buttons fit where the full six-wide set no
+        // longer could.
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(alignment: Alignment.centerLeft, child: playModeControl()),
+            row,
+          ],
+        );
+      },
     );
   }
 }

@@ -197,8 +197,9 @@ void main() {
     testWidgets(
         'the full 6-button standard layout does not overflow at a real '
         'narrow phone width — item 47\'s TV-mode verification found this '
-        'exact overflow (~4.6px on a real ~360dp device) and left it '
-        'unfixed at the time; FittedBox(scaleDown) is the fix', (tester) async {
+        'exact overflow (~4.6px on a real ~360dp device); every button\'s '
+        'tap target still meets the 48x48dp accessibility minimum there, '
+        'which the old FittedBox(scaleDown) fix violated', (tester) async {
       tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -219,10 +220,80 @@ void main() {
           reason: 'a RenderFlex overflow (or any other render error) at a '
               'narrow width means the button row is clipping/overflowing '
               'again');
-      // All six buttons are still genuinely present and tappable —
-      // scaleDown shrinks the row, it doesn't drop any of its children.
+      // All six buttons are still genuinely present and tappable — the
+      // row reflows/shrinks toward 48dp, it doesn't drop any children.
       expect(find.byIcon(Icons.skip_previous), findsOneWidget);
       expect(find.byIcon(Icons.skip_next), findsOneWidget);
+
+      // The direct regression check for the accessibility floor this task
+      // restores: a uniform FittedBox(scaleDown) would shrink every
+      // button's *rendered* box below 48x48 at this exact width — assert
+      // directly on each IconButton's real RenderBox size instead of
+      // trusting that removing FittedBox was enough.
+      final buttonBoxes = tester.renderObjectList<RenderBox>(
+          find.byType(IconButton).hitTestable());
+      expect(buttonBoxes, isNotEmpty);
+      for (final box in buttonBoxes) {
+        expect(box.size.width, greaterThanOrEqualTo(kMinInteractiveDimension),
+            reason: 'every IconButton must keep at least a '
+                '${kMinInteractiveDimension}x$kMinInteractiveDimension tap '
+                'target, even on a ~360dp-wide phone');
+        expect(box.size.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+      }
+    });
+
+    testWidgets(
+        'below the accessibility floor for every secondary button, '
+        'play-mode folds into a PopupMenuButton instead of shrinking '
+        'further — an extreme width no supported phone actually reaches, '
+        'but this is the row\'s own documented last resort', (tester) async {
+      tester.view.physicalSize = const Size(300, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final errors = <FlutterErrorDetails>[];
+      final previousOnError = FlutterError.onError;
+      FlutterError.onError = (details) => errors.add(details);
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      var cycleCalls = 0;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: PlayerControlsRow(
+              data: _dataFor(onCyclePlayMode: () => cycleCalls++),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(errors, isEmpty,
+          reason: 'even this extreme width must not overflow');
+      expect(find.byType(PopupMenuButton<int>), findsOneWidget,
+          reason: 'play-mode must fold into a PopupMenuButton once even '
+              'the fully-floored row does not fit');
+
+      // Every remaining directly-tappable control (the popup trigger
+      // included — PopupMenuButton renders its own IconButton internally)
+      // still meets the 48dp floor.
+      final buttonBoxes = tester.renderObjectList<RenderBox>(
+          find.byType(IconButton).hitTestable());
+      expect(buttonBoxes, isNotEmpty);
+      for (final box in buttonBoxes) {
+        expect(box.size.width, greaterThanOrEqualTo(kMinInteractiveDimension));
+        expect(box.size.height, greaterThanOrEqualTo(kMinInteractiveDimension));
+      }
+
+      await tester.tap(find.byType(PopupMenuButton<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sequential'));
+      await tester.pumpAndSettle();
+
+      expect(cycleCalls, 1,
+          reason: 'selecting the single menu item must still cycle play '
+              'mode via the same callback the inline button used');
     });
   });
 
