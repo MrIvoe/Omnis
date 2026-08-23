@@ -666,6 +666,156 @@ void main() {
     });
   });
 
+  group('ReorderMenuButton fallback (Task 6, item task-6/§1)', () {
+    BaseTrack track(String id) => BaseTrack(
+          id: id,
+          title: 'Song $id',
+          artists: const ['Artist'],
+          album: 'Album',
+          duration: 180,
+          type: TrackType.local,
+        );
+
+    Future<void> tapReorderMenuItem(
+        WidgetTester tester, String rowText, String item) async {
+      final row = find.ancestor(
+          of: find.text(rowText), matching: find.byType(ListTile));
+      await tester.tap(
+          find.descendant(of: row, matching: find.byIcon(Icons.swap_vert)));
+      await _settle(tester);
+      await tester.tap(find.text(item));
+      await _settle(tester);
+    }
+
+    testWidgets(
+        'in a saved playlist, "Move down" on the first track reorders it '
+        'exactly like a real drag would, and persists the new order',
+        (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([track('a'), track('b'), track('c')]);
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Road Trip',
+              trackIds: const ['a', 'b', 'c'],
+              createdAt: DateTime(2025)),
+        ]);
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Road Trip'));
+        await _settle(tester);
+
+        await tapReorderMenuItem(tester, 'Song a', 'Move down');
+
+        final saved = await PlaylistStore.instance.load();
+        expect(saved.single.trackIds, ['b', 'a', 'c']);
+      });
+    });
+
+    testWidgets(
+        'in a saved playlist, "Move up" on the last track reorders it '
+        'exactly like a real drag would, and persists the new order',
+        (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([track('a'), track('b'), track('c')]);
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Road Trip',
+              trackIds: const ['a', 'b', 'c'],
+              createdAt: DateTime(2025)),
+        ]);
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Road Trip'));
+        await _settle(tester);
+
+        await tapReorderMenuItem(tester, 'Song c', 'Move up');
+
+        final saved = await PlaylistStore.instance.load();
+        expect(saved.single.trackIds, ['a', 'c', 'b']);
+      });
+    });
+
+    testWidgets(
+        "in a saved playlist, the first track has no 'Move up' item, and "
+        "the last has no 'Move down' item", (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([track('a'), track('b'), track('c')]);
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Road Trip',
+              trackIds: const ['a', 'b', 'c'],
+              createdAt: DateTime(2025)),
+        ]);
+
+        await pumpPage(tester);
+        await tester.tap(find.text('Road Trip'));
+        await _settle(tester);
+
+        final firstRow = find.ancestor(
+            of: find.text('Song a'), matching: find.byType(ListTile));
+        await tester.tap(find.descendant(
+            of: firstRow, matching: find.byIcon(Icons.swap_vert)));
+        await _settle(tester);
+        expect(find.text('Move up'), findsNothing);
+        expect(find.text('Move down'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 5));
+        await _settle(tester);
+
+        final lastRow = find.ancestor(
+            of: find.text('Song c'), matching: find.byType(ListTile));
+        await tester.tap(find.descendant(
+            of: lastRow, matching: find.byIcon(Icons.swap_vert)));
+        await _settle(tester);
+        expect(find.text('Move down'), findsNothing);
+        expect(find.text('Move up'), findsOneWidget);
+      });
+    });
+
+    testWidgets(
+        'in the live queue smart list, "Move down" on the first track '
+        'calls AudioEngine.moveTrack with the (from, to) pair a real drag '
+        'would produce', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('c')]
+          ..fakeCurrentIndex = -1;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+
+        await tapReorderMenuItem(tester, 'Song a', 'Move down');
+
+        expect(engine.queue.map((t) => t.id).toList(), ['b', 'a', 'c']);
+      });
+    });
+
+    testWidgets(
+        'in the live queue smart list, "Move up" on the last track calls '
+        'AudioEngine.moveTrack with the (from, to) pair a real drag would '
+        'produce', (tester) async {
+      await tester.runAsync(() async {
+        final engine = _FakeEngine()
+          ..fakeQueue = [track('a'), track('b'), track('c')]
+          ..fakeCurrentIndex = -1;
+        await pumpPage(tester, engine: engine);
+
+        await tester.tap(find.text('Current queue'));
+        await _settle(tester);
+
+        await tapReorderMenuItem(tester, 'Song c', 'Move up');
+
+        expect(engine.queue.map((t) => t.id).toList(), ['a', 'c', 'b']);
+      });
+    });
+  });
+
   group('CSV/JSON playlist export (item 13, §46)', () {
     testWidgets('the playlist row menu offers Export as CSV/JSON alongside '
         'the existing M3U/PLS/XSPF entries', (tester) async {

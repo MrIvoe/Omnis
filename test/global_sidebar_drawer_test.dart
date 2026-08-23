@@ -232,4 +232,111 @@ void main() {
       expect(find.text('Late Night Drive'), findsOneWidget);
     });
   });
+
+  group('ReorderMenuButton fallback (Task 6, item task-6/§1)', () {
+    Future<void> seedThreePlaylists(WidgetTester tester) async {
+      await PlaylistStore.instance.save([
+        Playlist(
+            id: 'p1', name: 'Alpha', trackIds: const [], createdAt: DateTime(2026)),
+        Playlist(
+            id: 'p2', name: 'Beta', trackIds: const [], createdAt: DateTime(2026)),
+        Playlist(
+            id: 'p3', name: 'Gamma', trackIds: const [], createdAt: DateTime(2026)),
+      ]);
+      await SidebarConfigStore.instance.save([
+        const SidebarSection(
+          id: 'my_playlists',
+          title: 'My playlists',
+          kind: SidebarItemKind.playlist,
+          items: [
+            SidebarItem(kind: SidebarItemKind.playlist, refId: 'p1'),
+            SidebarItem(kind: SidebarItemKind.playlist, refId: 'p2'),
+            SidebarItem(kind: SidebarItemKind.playlist, refId: 'p3'),
+          ],
+        ),
+        const SidebarSection(
+            id: 'my_moods', title: 'My moods', kind: SidebarItemKind.mood),
+      ]);
+    }
+
+    Future<void> tapReorderMenuItem(
+        WidgetTester tester, String rowText, String item) async {
+      await tester.ensureVisible(find.text(rowText));
+      await _settle(tester);
+      final row = find.ancestor(
+          of: find.text(rowText), matching: find.byType(ListTile));
+      await tester.tap(
+          find.descendant(of: row, matching: find.byIcon(Icons.swap_vert)));
+      await _settle(tester);
+      await tester.tap(find.text(item));
+      await _settle(tester);
+    }
+
+    testWidgets(
+        '"Move down" on the first pinned playlist reorders it exactly like '
+        'a real drag would, and persists the new order', (tester) async {
+      await tester.runAsync(() async {
+        await seedThreePlaylists(tester);
+        await _pumpDrawer(tester);
+
+        await tapReorderMenuItem(tester, 'Alpha', 'Move down');
+
+        final saved = await SidebarConfigStore.instance.load();
+        final ids = saved
+            .firstWhere((s) => s.id == 'my_playlists')
+            .items
+            .map((i) => i.refId)
+            .toList();
+        expect(ids, ['p2', 'p1', 'p3']);
+      });
+    });
+
+    testWidgets(
+        '"Move up" on the last pinned playlist reorders it exactly like a '
+        'real drag would, and persists the new order', (tester) async {
+      await tester.runAsync(() async {
+        await seedThreePlaylists(tester);
+        await _pumpDrawer(tester);
+
+        await tapReorderMenuItem(tester, 'Gamma', 'Move up');
+
+        final saved = await SidebarConfigStore.instance.load();
+        final ids = saved
+            .firstWhere((s) => s.id == 'my_playlists')
+            .items
+            .map((i) => i.refId)
+            .toList();
+        expect(ids, ['p1', 'p3', 'p2']);
+      });
+    });
+
+    testWidgets(
+        'the first pinned playlist has no "Move up" item, and the last has '
+        'no "Move down" item', (tester) async {
+      await tester.runAsync(() async {
+        await seedThreePlaylists(tester);
+        await _pumpDrawer(tester);
+
+        final firstRow = find.ancestor(
+            of: find.text('Alpha'), matching: find.byType(ListTile));
+        await tester.tap(find.descendant(
+            of: firstRow, matching: find.byIcon(Icons.swap_vert)));
+        await _settle(tester);
+        expect(find.text('Move up'), findsNothing);
+        expect(find.text('Move down'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 5));
+        await _settle(tester);
+
+        await tester.ensureVisible(find.text('Gamma'));
+        await _settle(tester);
+        final lastRow = find.ancestor(
+            of: find.text('Gamma'), matching: find.byType(ListTile));
+        await tester.tap(find.descendant(
+            of: lastRow, matching: find.byIcon(Icons.swap_vert)));
+        await _settle(tester);
+        expect(find.text('Move down'), findsNothing);
+        expect(find.text('Move up'), findsOneWidget);
+      });
+    });
+  });
 }

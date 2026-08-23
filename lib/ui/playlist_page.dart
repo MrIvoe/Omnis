@@ -23,6 +23,7 @@ import 'package:omnis_plugin_api/smart_playlist_rule.dart';
 import 'package:omnis/ui/plugin_settings_page.dart';
 import 'package:omnis/ui/queue_history_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
+import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// The four always-present "smart" entries shown above the user's real
@@ -119,7 +120,8 @@ class PlaylistPageState extends State<PlaylistPage> {
     // ever caught up the next time something unrelated triggered a
     // rebuild. Proof that the event bus (`PluginManager.events`) actually
     // decouples two pages that don't otherwise know about each other.
-    _favoriteSub = widget.pluginManager.events.on<FavoriteChangedEvent>().listen((_) {
+    _favoriteSub =
+        widget.pluginManager.events.on<FavoriteChangedEvent>().listen((_) {
       if (mounted) setState(() {});
     });
     // A tag edit, scan, or delete on the Library page previously left
@@ -159,7 +161,8 @@ class PlaylistPageState extends State<PlaylistPage> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Exports [playlist] as an M3U8 file via the platform's save dialog.
@@ -575,15 +578,16 @@ class PlaylistPageState extends State<PlaylistPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final hadFolderAssignment = _folderData.assignments.containsKey(playlist.id);
+    final hadFolderAssignment =
+        _folderData.assignments.containsKey(playlist.id);
     setState(() {
       _playlists = _playlists.where((p) => p.id != playlist.id).toList();
       if (_openPlaylist?.id == playlist.id) _openPlaylist = null;
       if (hadFolderAssignment) {
         final assignments = Map<String, String>.from(_folderData.assignments)
           ..remove(playlist.id);
-        _folderData =
-            PlaylistFolderData(folders: _folderData.folders, assignments: assignments);
+        _folderData = PlaylistFolderData(
+            folders: _folderData.folders, assignments: assignments);
       }
     });
     await _savePlaylists();
@@ -737,7 +741,8 @@ class PlaylistPageState extends State<PlaylistPage> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                      child: Text(folder.name, overflow: TextOverflow.ellipsis)),
+                      child:
+                          Text(folder.name, overflow: TextOverflow.ellipsis)),
                 ],
               ),
             ),
@@ -775,7 +780,8 @@ class PlaylistPageState extends State<PlaylistPage> {
       } else {
         assignments[playlist.id] = selected;
       }
-      _folderData = PlaylistFolderData(folders: folders, assignments: assignments);
+      _folderData =
+          PlaylistFolderData(folders: folders, assignments: assignments);
     });
     await _saveFolders();
   }
@@ -1033,12 +1039,14 @@ class PlaylistPageState extends State<PlaylistPage> {
   Widget _buildIndex() {
     final theme = Theme.of(context);
     final queue = widget.engine.queue;
-    final favorites = _favorites?.favoritesWithSnapshots(_libraryTracks) ?? const [];
+    final favorites =
+        _favorites?.favoritesWithSnapshots(_libraryTracks) ?? const [];
     final scrobble = _playHistory;
     final recentCount = scrobble?.recentlyPlayed().length ?? 0;
     final mostPlayedCount = scrobble?.mostPlayedIds().length ?? 0;
     final smartPlaylistPlugin = _smartPlaylists;
-    final smartRules = smartPlaylistPlugin?.savedRules ?? const <SmartPlaylistRule>[];
+    final smartRules =
+        smartPlaylistPlugin?.savedRules ?? const <SmartPlaylistRule>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -1148,7 +1156,8 @@ class PlaylistPageState extends State<PlaylistPage> {
               for (final rule in smartRules)
                 Card(
                   child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.auto_awesome)),
+                    leading:
+                        const CircleAvatar(child: Icon(Icons.auto_awesome)),
                     title: Text(rule.name,
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(_smartPlaylistSubtitle(rule)),
@@ -1158,8 +1167,7 @@ class PlaylistPageState extends State<PlaylistPage> {
                       onPressed: () =>
                           _deleteSmartPlaylist(smartPlaylistPlugin, rule.id),
                     ),
-                    onTap: () =>
-                        _playSmartPlaylist(smartPlaylistPlugin, rule),
+                    onTap: () => _playSmartPlaylist(smartPlaylistPlugin, rule),
                   ),
                 ),
           ],
@@ -1316,14 +1324,11 @@ class PlaylistPageState extends State<PlaylistPage> {
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'rename', child: Text('Rename')),
               PopupMenuItem(value: 'move', child: Text('Move to folder…')),
-              PopupMenuItem(
-                  value: 'export', child: Text('Export as M3U')),
-              PopupMenuItem(
-                  value: 'export_pls', child: Text('Export as PLS')),
+              PopupMenuItem(value: 'export', child: Text('Export as M3U')),
+              PopupMenuItem(value: 'export_pls', child: Text('Export as PLS')),
               PopupMenuItem(
                   value: 'export_xspf', child: Text('Export as XSPF')),
-              PopupMenuItem(
-                  value: 'export_csv', child: Text('Export as CSV')),
+              PopupMenuItem(value: 'export_csv', child: Text('Export as CSV')),
               PopupMenuItem(
                   value: 'export_json', child: Text('Export as JSON')),
               PopupMenuItem(value: 'delete', child: Text('Delete playlist')),
@@ -1354,10 +1359,22 @@ class PlaylistPageState extends State<PlaylistPage> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(track.artists.join(', '),
                       maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Remove from playlist',
-                    onPressed: () => _removeFromPlaylist(playlist, track.id),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ReorderMenuButton(
+                        index: index,
+                        lastIndex: tracks.length - 1,
+                        onReorder: (oldIndex, newIndex) =>
+                            _reorderPlaylist(playlist, oldIndex, newIndex),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Remove from playlist',
+                        onPressed: () =>
+                            _removeFromPlaylist(playlist, track.id),
+                      ),
+                    ],
                   ),
                   onTap: () => _playAll(tracks, startIndex: index),
                 );
@@ -1378,7 +1395,8 @@ class PlaylistPageState extends State<PlaylistPage> {
         ),
       _SmartList.favorites => (
           'Favorites',
-          _favorites?.favoritesWithSnapshots(_libraryTracks) ?? const <BaseTrack>[],
+          _favorites?.favoritesWithSnapshots(_libraryTracks) ??
+              const <BaseTrack>[],
           <String, String>{},
         ),
       _SmartList.recent => (
@@ -1411,7 +1429,8 @@ class PlaylistPageState extends State<PlaylistPage> {
       final isCurrent = widget.engine.currentTrack?.id == track.id;
       return Dismissible(
         key: ValueKey('${kind.name}:${track.id}:$index'),
-        direction: isQueue ? DismissDirection.endToStart : DismissDirection.none,
+        direction:
+            isQueue ? DismissDirection.endToStart : DismissDirection.none,
         background: const ColoredBox(
           color: Colors.transparent,
           child: Align(
@@ -1426,10 +1445,11 @@ class PlaylistPageState extends State<PlaylistPage> {
         child: ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: TrackArtwork(
-                track: track, width: 44, height: 44, iconSize: 20),
+            child:
+                TrackArtwork(track: track, width: 44, height: 44, iconSize: 20),
           ),
-          title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title:
+              Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(subtitles[track.id] ?? track.artists.join(', '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           selected: isCurrent,
@@ -1452,6 +1472,11 @@ class PlaylistPageState extends State<PlaylistPage> {
                         tooltip: 'Move to top',
                         onPressed: () => _moveQueueTrackToTop(index),
                       ),
+                    ReorderMenuButton(
+                      index: index,
+                      lastIndex: tracks.length - 1,
+                      onReorder: _reorderQueue,
+                    ),
                   ],
                 ),
           onTap: () => isQueue
@@ -1491,8 +1516,7 @@ class PlaylistPageState extends State<PlaylistPage> {
                 PopupMenuItem(
                     value: 'snapshot', child: Text('Save as snapshot')),
                 PopupMenuItem(
-                    value: 'save_playlist',
-                    child: Text('Save as playlist')),
+                    value: 'save_playlist', child: Text('Save as playlist')),
                 PopupMenuItem(
                     value: 'remove_duplicates',
                     child: Text('Remove duplicates')),

@@ -10,6 +10,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/events.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/now_playing_page.dart';
+import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Home tab: Recently Played / Most Played / Recently Added / Continue
@@ -125,7 +126,8 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
     final mostPlayed = joinStats(await PlayHistoryStore.instance.mostPlayed());
     final continueListening =
         joinStats(await PlayHistoryStore.instance.continueListening());
-    final mostSkipped = joinStats(await PlayHistoryStore.instance.mostSkipped());
+    final mostSkipped =
+        joinStats(await PlayHistoryStore.instance.mostSkipped());
 
     final recentlyAdded = library.where((t) => t.dateAdded != null).toList()
       ..sort((a, b) => b.dateAdded!.compareTo(a.dateAdded!));
@@ -187,8 +189,8 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
 
     final defaultSections = <_HomeSection>[
       if (_continueListening.isNotEmpty)
-        _HomeSection('continue_listening', 'Continue Listening',
-            _continueListening),
+        _HomeSection(
+            'continue_listening', 'Continue Listening', _continueListening),
       if (_recentlyPlayed.isNotEmpty)
         _HomeSection('recently_played', 'Recently Played', _recentlyPlayed),
       if (_mostPlayed.isNotEmpty)
@@ -200,8 +202,7 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
       if (_mostSkipped.isNotEmpty)
         _HomeSection('most_skipped', 'Most Skipped', _mostSkipped),
     ];
-    final sections =
-        applyHomeLayout(defaultSections, _layout, (s) => s.id);
+    final sections = applyHomeLayout(defaultSections, _layout, (s) => s.id);
 
     return Scaffold(
       appBar: AppBar(
@@ -305,7 +306,8 @@ class _HomeCustomizeSheetState extends State<_HomeCustomizeSheet> {
       for (final p in saved)
         if (homeSectionCatalog.containsKey(p.sectionId)) p,
       for (final id in homeSectionCatalog.keys)
-        if (!byId.containsKey(id)) HomeSectionPreference(sectionId: id, visible: true),
+        if (!byId.containsKey(id))
+          HomeSectionPreference(sectionId: id, visible: true),
     ];
     if (!mounted) return;
     setState(() {
@@ -375,17 +377,31 @@ class _HomeCustomizeSheetState extends State<_HomeCustomizeSheet> {
                     _changed = true;
                   }),
                   children: [
-                    for (final pref in _prefs)
+                    for (var i = 0; i < _prefs.length; i++)
                       CheckboxListTile(
-                        key: ValueKey(pref.sectionId),
-                        value: pref.visible,
-                        title: Text(
-                            homeSectionCatalog[pref.sectionId] ?? pref.sectionId),
+                        key: ValueKey(_prefs[i].sectionId),
+                        value: _prefs[i].visible,
+                        // The checkbox itself already owns this tile's
+                        // trailing slot (CheckboxListTile's default
+                        // `controlAffinity`) — `secondary` is the widget
+                        // shown on the opposite (leading) side, the only
+                        // slot left for the keyboard-reachable reorder
+                        // fallback below.
+                        secondary: ReorderMenuButton(
+                          index: i,
+                          lastIndex: _prefs.length - 1,
+                          onReorder: (oldIndex, newIndex) => setState(() {
+                            if (newIndex > oldIndex) newIndex -= 1;
+                            final item = _prefs.removeAt(oldIndex);
+                            _prefs.insert(newIndex, item);
+                            _changed = true;
+                          }),
+                        ),
+                        title: Text(homeSectionCatalog[_prefs[i].sectionId] ??
+                            _prefs[i].sectionId),
                         onChanged: (value) => setState(() {
-                          final index =
-                              _prefs.indexWhere((p) => p.sectionId == pref.sectionId);
-                          _prefs[index] =
-                              _prefs[index].copyWith(visible: value ?? true);
+                          _prefs[i] =
+                              _prefs[i].copyWith(visible: value ?? true);
                           _changed = true;
                         }),
                       ),

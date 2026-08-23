@@ -202,4 +202,102 @@ void main() {
     // internally, is exactly this NEXT-relative-plus-splitAt value.
     expect(engine.lastMoveCall!.$1, 1);
   });
+
+  group('ReorderMenuButton fallback (Task 6, item task-6/§1)', () {
+    // A drag-target-free way to trigger the same reorder path an actual
+    // drag exercises — every reorderable list in the app otherwise
+    // relies entirely on a long-press-then-drag gesture, unreachable by
+    // keyboard, hence this per-row overflow menu.
+    Future<void> tapReorderMenuItem(
+        WidgetTester tester, String rowText, String item) async {
+      final row = find.ancestor(
+          of: find.text(rowText), matching: find.byType(ListTile));
+      await tester.tap(find.descendant(
+          of: row, matching: find.byIcon(Icons.swap_vert)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(item));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        '"Move down" on the first NEXT row calls moveTrack with exactly '
+        'the (from, to) pair the equivalent real drag test above '
+        'produces', (tester) async {
+      final engine = _FakeEngine();
+      engine.emitQueue(
+        [
+          _track('a', title: 'Alpha'),
+          _track('b', title: 'Beta'),
+          _track('c', title: 'Gamma'),
+        ],
+        currentIndex: 0,
+      );
+      await pumpPanel(tester, engine);
+
+      await tapReorderMenuItem(tester, 'Beta', 'Move down');
+
+      expect(engine.lastMoveCall, isNotNull);
+      // Matches the real-drag test above exactly: NEXT-relative (0, 2)
+      // (Flutter's onReorder "as if not yet removed" convention for a
+      // one-position-down move) offset by splitAt=1 becomes real (1, 3).
+      expect(engine.lastMoveCall, (1, 3));
+    });
+
+    testWidgets(
+        '"Move up" on the second NEXT row calls moveTrack with the (from, '
+        'to) pair a real drag upward by one position would produce',
+        (tester) async {
+      final engine = _FakeEngine();
+      engine.emitQueue(
+        [
+          _track('a', title: 'Alpha'),
+          _track('b', title: 'Beta'),
+          _track('c', title: 'Gamma'),
+        ],
+        currentIndex: 0,
+      );
+      await pumpPanel(tester, engine);
+
+      await tapReorderMenuItem(tester, 'Gamma', 'Move up');
+
+      expect(engine.lastMoveCall, isNotNull);
+      // NEXT-relative (1, 0) (no adjustment needed moving up) offset by
+      // splitAt=1 becomes real (2, 1).
+      expect(engine.lastMoveCall, (2, 1));
+    });
+
+    testWidgets(
+        'the first NEXT row has no "Move up" item, and the last has no '
+        '"Move down" item', (tester) async {
+      final engine = _FakeEngine();
+      engine.emitQueue(
+        [
+          _track('a', title: 'Alpha'),
+          _track('b', title: 'Beta'),
+          _track('c', title: 'Gamma'),
+        ],
+        currentIndex: 0,
+      );
+      await pumpPanel(tester, engine);
+
+      final firstRow = find.ancestor(
+          of: find.text('Beta'), matching: find.byType(ListTile));
+      await tester.tap(find.descendant(
+          of: firstRow, matching: find.byIcon(Icons.swap_vert)));
+      await tester.pumpAndSettle();
+      expect(find.text('Move up'), findsNothing);
+      expect(find.text('Move down'), findsOneWidget);
+      // Dismiss the open menu before opening the next one.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      final lastRow = find.ancestor(
+          of: find.text('Gamma'), matching: find.byType(ListTile));
+      await tester.tap(find.descendant(
+          of: lastRow, matching: find.byIcon(Icons.swap_vert)));
+      await tester.pumpAndSettle();
+      expect(find.text('Move down'), findsNothing);
+      expect(find.text('Move up'), findsOneWidget);
+    });
+  });
 }

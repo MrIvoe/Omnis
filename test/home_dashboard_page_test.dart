@@ -443,4 +443,132 @@ void main() {
       });
     });
   });
+
+  group('ReorderMenuButton fallback (Task 6, item task-6/§1)', () {
+    Future<void> tapReorderMenuItem(
+        WidgetTester tester, String rowLabel, String item) async {
+      final row = find.ancestor(
+          of: find.text(rowLabel), matching: find.byType(CheckboxListTile));
+      await tester.ensureVisible(row);
+      await tester.tap(
+          find.descendant(of: row, matching: find.byIcon(Icons.swap_vert)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(item));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        '"Move down" on the first section reorders it exactly like a real '
+        'drag would, and Done persists the new order', (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([_track('a', dateAdded: DateTime(2025))]);
+
+        await tester.pumpWidget(MaterialApp(
+          home: HomeDashboardPage(
+              engine: _FakeEngine(), pluginManager: PluginManager()),
+        ));
+        await _settle(tester);
+
+        await tester.tap(find.byTooltip('Customize'));
+        await _settle(tester);
+        await tester.pumpAndSettle();
+
+        // Default order's first entry is "Continue Listening" — move it
+        // down past "Recently Played".
+        await tapReorderMenuItem(tester, 'Continue Listening', 'Move down');
+
+        await tester.ensureVisible(find.text('Done'));
+        await tester.tap(find.text('Done'));
+        await _settle(tester);
+
+        final saved = await HomeLayoutStore.instance.load();
+        expect(saved.map((p) => p.sectionId).toList(), [
+          'recently_played',
+          'continue_listening',
+          'most_played',
+          'recently_added',
+          'favorites',
+          'most_skipped',
+        ]);
+      });
+    });
+
+    testWidgets(
+        '"Move up" on the last section reorders it exactly like a real '
+        'drag would, and Done persists the new order', (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([_track('a', dateAdded: DateTime(2025))]);
+
+        await tester.pumpWidget(MaterialApp(
+          home: HomeDashboardPage(
+              engine: _FakeEngine(), pluginManager: PluginManager()),
+        ));
+        await _settle(tester);
+
+        await tester.tap(find.byTooltip('Customize'));
+        await _settle(tester);
+        await tester.pumpAndSettle();
+
+        // Default order's last entry is "Most Skipped" — move it up past
+        // "Favorites".
+        await tapReorderMenuItem(tester, 'Most Skipped', 'Move up');
+
+        await tester.ensureVisible(find.text('Done'));
+        await tester.tap(find.text('Done'));
+        await _settle(tester);
+
+        final saved = await HomeLayoutStore.instance.load();
+        expect(saved.map((p) => p.sectionId).toList(), [
+          'continue_listening',
+          'recently_played',
+          'most_played',
+          'recently_added',
+          'most_skipped',
+          'favorites',
+        ]);
+      });
+    });
+
+    testWidgets(
+        'the first section has no "Move up" item, and the last has no '
+        '"Move down" item', (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([_track('a', dateAdded: DateTime(2025))]);
+
+        await tester.pumpWidget(MaterialApp(
+          home: HomeDashboardPage(
+              engine: _FakeEngine(), pluginManager: PluginManager()),
+        ));
+        await _settle(tester);
+
+        await tester.tap(find.byTooltip('Customize'));
+        await _settle(tester);
+        await tester.pumpAndSettle();
+
+        final firstRow = find.ancestor(
+            of: find.text('Continue Listening'),
+            matching: find.byType(CheckboxListTile));
+        await tester.tap(find.descendant(
+            of: firstRow, matching: find.byIcon(Icons.swap_vert)));
+        await tester.pumpAndSettle();
+        expect(find.text('Move up'), findsNothing);
+        expect(find.text('Move down'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 5));
+        await tester.pumpAndSettle();
+
+        final lastRow = find.ancestor(
+            of: find.text('Most Skipped'),
+            matching: find.byType(CheckboxListTile));
+        await tester.ensureVisible(lastRow);
+        await tester.tap(find.descendant(
+            of: lastRow, matching: find.byIcon(Icons.swap_vert)));
+        await tester.pumpAndSettle();
+        expect(find.text('Move down'), findsNothing);
+        expect(find.text('Move up'), findsOneWidget);
+      });
+    });
+  });
 }

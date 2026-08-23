@@ -7,6 +7,7 @@ import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/home_page.dart' show MoodsPageState;
 import 'package:omnis/ui/playlist_page.dart';
+import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 
 /// UI_SPEC §3-5's "pop-out sidebar" — "a global sidebar drawer that can
 /// be summoned from anywhere," "not just navigation... the user's
@@ -154,7 +155,8 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     ]);
     setState(() {
       _sections = [
-        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+        for (final s in _sections)
+          if (s.id == section.id) updatedSection else s,
       ];
     });
     await _persist();
@@ -166,7 +168,8 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     );
     setState(() {
       _sections = [
-        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+        for (final s in _sections)
+          if (s.id == section.id) updatedSection else s,
       ];
     });
     await _persist();
@@ -181,7 +184,8 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     final updatedSection = section.copyWith(items: items);
     setState(() {
       _sections = [
-        for (final s in _sections) if (s.id == section.id) updatedSection else s,
+        for (final s in _sections)
+          if (s.id == section.id) updatedSection else s,
       ];
     });
     await _persist();
@@ -202,6 +206,60 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     return null;
   }
 
+  /// Builds [section]'s drag-to-reorder item list. Extracted to its own
+  /// method (rather than inlined in the `ListView`'s `children` literal)
+  /// so `visibleItems` — the items actually rendered, skipping any whose
+  /// `_labelFor` has gone stale — can be computed once as a local
+  /// variable and reused both for the drag handles and for each row's
+  /// [ReorderMenuButton], which must index by the same "position among
+  /// rendered children" convention `ReorderableListView.onReorder` itself
+  /// uses (not `section.items`' own, possibly-larger index space).
+  Widget _buildSectionReorderList(SidebarSection section) {
+    final visibleItems = [
+      for (final item in section.items)
+        if (_labelFor(item) != null) item,
+    ];
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorder: (oldIndex, newIndex) =>
+          _reorderItem(section, oldIndex, newIndex),
+      children: [
+        for (var i = 0; i < visibleItems.length; i++)
+          ListTile(
+            key: ValueKey('${section.id}_${visibleItems[i].refId}'),
+            contentPadding: const EdgeInsets.only(left: 32, right: 8),
+            title: Text(_labelFor(visibleItems[i])!),
+            leading: ReorderableDragStartListener(
+              index: section.items.indexOf(visibleItems[i]),
+              child: const Icon(Icons.drag_indicator, size: 18),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ReorderMenuButton(
+                  index: i,
+                  lastIndex: visibleItems.length - 1,
+                  onReorder: (oldIndex, newIndex) =>
+                      _reorderItem(section, oldIndex, newIndex),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Remove',
+                  onPressed: () => _removeItem(section, visibleItems[i]),
+                ),
+              ],
+            ),
+            onTap: () => section.kind == SidebarItemKind.playlist
+                ? _selectPlaylist(
+                    _playlists.firstWhere((p) => p.id == visibleItems[i].refId))
+                : _selectMood(visibleItems[i].refId),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -215,7 +273,8 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
                     decoration: BoxDecoration(color: theme.colorScheme.surface),
                     child: Align(
                       alignment: Alignment.bottomLeft,
-                      child: Text('OMNIS', style: theme.textTheme.headlineSmall),
+                      child:
+                          Text('OMNIS', style: theme.textTheme.headlineSmall),
                     ),
                   ),
                   for (var i = 0; i < widget.destinations.length; i++)
@@ -242,36 +301,7 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
                         onPressed: () => _addItem(section),
                       ),
                     ),
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) =>
-                          _reorderItem(section, oldIndex, newIndex),
-                      children: [
-                        for (final item in section.items)
-                          if (_labelFor(item) != null)
-                            ListTile(
-                              key: ValueKey('${section.id}_${item.refId}'),
-                              contentPadding:
-                                  const EdgeInsets.only(left: 32, right: 8),
-                              title: Text(_labelFor(item)!),
-                              leading: ReorderableDragStartListener(
-                                index: section.items.indexOf(item),
-                                child: const Icon(Icons.drag_indicator, size: 18),
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                tooltip: 'Remove',
-                                onPressed: () => _removeItem(section, item),
-                              ),
-                              onTap: () => section.kind == SidebarItemKind.playlist
-                                  ? _selectPlaylist(_playlists
-                                      .firstWhere((p) => p.id == item.refId))
-                                  : _selectMood(item.refId),
-                            ),
-                      ],
-                    ),
+                    _buildSectionReorderList(section),
                   ],
                 ],
               ),

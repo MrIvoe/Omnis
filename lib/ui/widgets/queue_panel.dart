@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// UI_SPEC §40/§41's "Queue" panel — reachable from the mini-player and
@@ -93,10 +94,12 @@ class _QueuePanelState extends State<QueuePanel> {
     final theme = Theme.of(context);
     final queue = widget.engine.queue;
     final currentIndex = widget.engine.currentIndex;
-    final current =
-        currentIndex >= 0 && currentIndex < queue.length ? queue[currentIndex] : null;
+    final current = currentIndex >= 0 && currentIndex < queue.length
+        ? queue[currentIndex]
+        : null;
     final splitAt = currentIndex < 0 ? 0 : currentIndex + 1;
-    final next = queue.length > splitAt ? queue.sublist(splitAt) : const <BaseTrack>[];
+    final next =
+        queue.length > splitAt ? queue.sublist(splitAt) : const <BaseTrack>[];
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
@@ -122,7 +125,8 @@ class _QueuePanelState extends State<QueuePanel> {
           if (current == null)
             Expanded(
               child: Center(
-                child: Text('Nothing playing.', style: theme.textTheme.bodyMedium),
+                child:
+                    Text('Nothing playing.', style: theme.textTheme.bodyMedium),
               ),
             )
           else
@@ -132,8 +136,10 @@ class _QueuePanelState extends State<QueuePanel> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text('NOW PLAYING', style: theme.textTheme.labelSmall),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child:
+                        Text('NOW PLAYING', style: theme.textTheme.labelSmall),
                   ),
                   ListTile(
                     leading: ClipRRect(
@@ -145,12 +151,14 @@ class _QueuePanelState extends State<QueuePanel> {
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(current.artists.join(', '),
                         maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: Icon(Icons.graphic_eq, color: theme.colorScheme.primary),
+                    trailing: Icon(Icons.graphic_eq,
+                        color: theme.colorScheme.primary),
                   ),
                   if (next.isNotEmpty) ...[
                     const Divider(),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       child: Text('NEXT (${next.length})',
                           style: theme.textTheme.labelSmall),
                     ),
@@ -180,13 +188,26 @@ class _QueuePanelState extends State<QueuePanel> {
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: TrackArtwork(
-                                  track: track, width: 44, height: 44, iconSize: 20),
+                                  track: track,
+                                  width: 44,
+                                  height: 44,
+                                  iconSize: 20),
                             ),
                             title: Text(track.title,
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                             subtitle: Text(track.artists.join(', '),
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
-                            trailing: const Icon(Icons.drag_handle),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ReorderMenuButton(
+                                  index: i,
+                                  lastIndex: next.length - 1,
+                                  onReorder: _reorder,
+                                ),
+                                const Icon(Icons.drag_handle),
+                              ],
+                            ),
                             onTap: () => widget.engine.playAt(splitAt + i),
                           ),
                         );

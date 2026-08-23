@@ -10,6 +10,7 @@ import 'package:omnis/core/artwork_candidates.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/calculated_tags.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/plugin_api/enrichment_result.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_search.dart';
@@ -104,15 +105,15 @@ List<LibrarySection> buildLibrarySections(
     final byFolder = <String, List<BaseTrack>>{};
     for (final track in tracks) {
       final path = track.localPath;
-      final folder =
-          (path != null && path.isNotEmpty) ? p.dirname(path) : '';
+      final folder = (path != null && path.isNotEmpty) ? p.dirname(path) : '';
       byFolder.putIfAbsent(folder, () => []).add(track);
     }
     final sections = <LibrarySection>[];
     final sortedFolders = byFolder.keys.toList()..sort();
     for (final folder in sortedFolders) {
       final title = folder.isEmpty ? 'Unknown location' : p.basename(folder);
-      sections.add(LibrarySection(title: title, tracks: byFolder[folder] ?? []));
+      sections
+          .add(LibrarySection(title: title, tracks: byFolder[folder] ?? []));
     }
     return sections;
   }
@@ -389,9 +390,8 @@ class _LibraryPageState extends State<LibraryPage> {
           // data (Android) — on the filesystem-walk path it's left null,
           // so a genuinely new track gets "now" as the best available
           // signal of when the user actually added it.
-          .map((t) => t.dateAdded == null
-              ? t.copyWith(dateAdded: DateTime.now())
-              : t)
+          .map((t) =>
+              t.dateAdded == null ? t.copyWith(dateAdded: DateTime.now()) : t)
           .toList();
       // A previously-known local track whose file no longer exists on
       // disk shouldn't stay in the library forever — scoped to this
@@ -402,9 +402,8 @@ class _LibraryPageState extends State<LibraryPage> {
             t.localPath != null &&
             !File(t.localPath!).existsSync();
       }).toList();
-      final stillPresent = _tracks
-          .where((t) => !missingTracks.contains(t))
-          .toList();
+      final stillPresent =
+          _tracks.where((t) => !missingTracks.contains(t)).toList();
       // Item 5's "no fingerprint-based track identity" gap: a missing
       // local track and a genuinely-new one are reconciled by content
       // fingerprint before being treated as "deleted" + "added" — see
@@ -416,8 +415,11 @@ class _LibraryPageState extends State<LibraryPage> {
         missingTracks: missingTracks,
         candidateNewTracks: newTracks,
       );
-      setState(() =>
-          _tracks = [...stillPresent, ...reconciled.renamed, ...reconciled.trulyNew]);
+      setState(() => _tracks = [
+            ...stillPresent,
+            ...reconciled.renamed,
+            ...reconciled.trulyNew
+          ]);
       // Persist so the library survives app restarts. Deliberately does
       // NOT touch the playback queue or start playback — scanning/adding
       // to the library is a data operation, not a "play something"
@@ -546,7 +548,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Merge an [EnrichmentResult] into the stored track: fills in a missing
@@ -692,8 +695,8 @@ class _LibraryPageState extends State<LibraryPage> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Start')),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Start')),
         ],
       ),
     );
@@ -1001,8 +1004,8 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       _applyAnalysis(track, result);
       await LibraryRepository.instance.save(_tracks);
-      final merged = _tracks.firstWhere((t) => t.id == track.id,
-          orElse: () => track);
+      final merged =
+          _tracks.firstWhere((t) => t.id == track.id, orElse: () => track);
       await _writeAnalysisTagsToFile(merged);
       _toast('Analyzed "${track.title}".');
     } finally {
@@ -1108,8 +1111,8 @@ class _LibraryPageState extends State<LibraryPage> {
         final result = await provider.analyze(track);
         if (!result.isEmpty) {
           _applyAnalysis(track, result);
-          final merged = _tracks.firstWhere((t) => t.id == track.id,
-              orElse: () => track);
+          final merged =
+              _tracks.firstWhere((t) => t.id == track.id, orElse: () => track);
           await _writeAnalysisTagsToFile(merged);
           changed++;
           changedNotifier.value = changed;
@@ -1406,7 +1409,8 @@ class _LibraryPageState extends State<LibraryPage> {
     await LibraryRepository.instance.save(_tracks);
     await widget.engine.setQueue(_tracks);
     if (mounted) {
-      _toast('Deleted ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}.');
+      _toast(
+          'Deleted ${toDelete.length} track${toDelete.length == 1 ? '' : 's'}.');
     }
   }
 
@@ -1513,8 +1517,7 @@ class _LibraryPageState extends State<LibraryPage> {
   IFavoritesProvider? get _favoritesProvider =>
       widget.pluginManager.services.get<IFavoritesProvider>();
 
-  ITagWriter? get _tagWriter =>
-      widget.pluginManager.services.get<ITagWriter>();
+  ITagWriter? get _tagWriter => widget.pluginManager.services.get<ITagWriter>();
 
   // Kept as a concrete-type lookup, distinct from [_tagWriter] above:
   // `_editTags`, `_autoTagLibrary`, `_findReplaceSelected`, and
@@ -1768,7 +1771,8 @@ class _LibraryPageState extends State<LibraryPage> {
       _toast('"${track.title}" has no local file to tag.');
       return;
     }
-    final changed = await TagEditorDialog.show(context, track, plugin: tagEditor);
+    final changed =
+        await TagEditorDialog.show(context, track, plugin: tagEditor);
     if (!changed || !mounted) return;
 
     final tags =
@@ -1792,15 +1796,15 @@ class _LibraryPageState extends State<LibraryPage> {
           ? [tags.genre!.trim()]
           : track.genres,
       year: int.tryParse((tags.year ?? '').trim()) ?? track.year,
-      trackNumber:
-          int.tryParse((tags.track ?? '').trim()) ?? track.trackNumber,
+      trackNumber: int.tryParse((tags.track ?? '').trim()) ?? track.trackNumber,
       discNumber: int.tryParse((tags.disc ?? '').trim()) ?? track.discNumber,
       bpm: double.tryParse((tags.bpm ?? '').trim()) ?? track.bpm,
       key: (tags.initialKey?.trim().isNotEmpty ?? false)
           ? tags.initialKey!.trim()
           : track.key,
-      mood:
-          (tags.mood?.trim().isNotEmpty ?? false) ? tags.mood!.trim() : track.mood,
+      mood: (tags.mood?.trim().isNotEmpty ?? false)
+          ? tags.mood!.trim()
+          : track.mood,
     );
     setState(() => _tracks[index] = updated);
     await LibraryRepository.instance.save(_tracks);
@@ -1815,9 +1819,8 @@ class _LibraryPageState extends State<LibraryPage> {
   /// header for shows "Not available" per field rather than a fabricated
   /// guess.
   Future<void> _showAudioInfo(BaseTrack track) async {
-    String field(String? value) => (value == null || value.isEmpty)
-        ? 'Not available'
-        : value;
+    String field(String? value) =>
+        (value == null || value.isEmpty) ? 'Not available' : value;
     final rows = <MapEntry<String, String>>[
       MapEntry('Codec', field(track.codec)),
       MapEntry(
@@ -2112,8 +2115,9 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     final ids = Set<String>.from(_selectedIds);
     if (ids.isEmpty) return;
-    final candidates =
-        _tracks.where((t) => ids.contains(t.id) && t.localPath != null).toList();
+    final candidates = _tracks
+        .where((t) => ids.contains(t.id) && t.localPath != null)
+        .toList();
     if (candidates.isEmpty) {
       _toast('None of the selected tracks have a local file to edit.');
       return;
@@ -2170,9 +2174,7 @@ class _LibraryPageState extends State<LibraryPage> {
       if (index >= 0) {
         final updated = _tracks[index].copyWith(
           title: newTitle,
-          artists: newArtist != null
-              ? tagEditor.splitArtists(newArtist)
-              : null,
+          artists: newArtist != null ? tagEditor.splitArtists(newArtist) : null,
           album: newAlbum,
           genres: newGenre != null ? [newGenre] : null,
         );
@@ -2191,8 +2193,8 @@ class _LibraryPageState extends State<LibraryPage> {
     if (changedOriginals.isNotEmpty) {
       final changed = changedOriginals.length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
+        content:
+            Text('Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: 'Undo',
@@ -2219,8 +2221,9 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     final ids = Set<String>.from(_selectedIds);
     if (ids.isEmpty) return;
-    final candidates =
-        _tracks.where((t) => ids.contains(t.id) && t.localPath != null).toList();
+    final candidates = _tracks
+        .where((t) => ids.contains(t.id) && t.localPath != null)
+        .toList();
     if (candidates.isEmpty) {
       _toast('None of the selected tracks have a local file to edit.');
       return;
@@ -2286,8 +2289,8 @@ class _LibraryPageState extends State<LibraryPage> {
     if (changedOriginals.isNotEmpty) {
       final changed = changedOriginals.length;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
+        content:
+            Text('Updated tags on $changed track${changed == 1 ? '' : 's'}.'),
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: 'Undo',
@@ -2320,7 +2323,8 @@ class _LibraryPageState extends State<LibraryPage> {
                 IconButton(
                   icon: const Icon(Icons.playlist_add),
                   tooltip: 'Add to playlist',
-                  onPressed: () => _addToPlaylist(Set<String>.from(_selectedIds)),
+                  onPressed: () =>
+                      _addToPlaylist(Set<String>.from(_selectedIds)),
                 ),
                 IconButton(
                   icon: const Icon(Icons.favorite_border),
@@ -2454,199 +2458,199 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _buildBody(ThemeData theme, List<LibrarySection> sections) {
     return _loading
-          ? const LibraryShimmerList()
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
+        ? const LibraryShimmerList()
+        : _error != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline,
+                          size: 48, color: theme.colorScheme.error),
+                      const SizedBox(height: 12),
+                      Text(_error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: theme.colorScheme.error)),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(
+                        onPressed: () => setState(() => _error = null),
+                        child: const Text('Dismiss'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : _tracks.isEmpty
+                ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline,
-                            size: 48, color: theme.colorScheme.error),
-                        const SizedBox(height: 12),
-                        Text(_error!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: theme.colorScheme.error)),
-                        const SizedBox(height: 12),
-                        FilledButton.tonal(
-                          onPressed: () => setState(() => _error = null),
-                          child: const Text('Dismiss'),
+                        Icon(Icons.library_music,
+                            size: 72, color: theme.colorScheme.outline),
+                        const SizedBox(height: 16),
+                        const Text('No tracks yet'),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          onPressed: _pickAndAdd,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add audio files'),
                         ),
                       ],
                     ),
-                  ),
-                )
-              : _tracks.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.library_music,
-                              size: 72, color: theme.colorScheme.outline),
-                          const SizedBox(height: 16),
-                          const Text('No tracks yet'),
-                          const SizedBox(height: 8),
-                          FilledButton.icon(
-                            onPressed: _pickAndAdd,
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add audio files'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              TextField(
-                                controller: _searchController,
-                                decoration: InputDecoration(
-                                  hintText: 'Search library',
-                                  prefixIcon: const Icon(Icons.search),
-                                  border: const OutlineInputBorder(),
-                                  isDense: true,
-                                  suffixIcon: _searchQuery.isEmpty
-                                      ? null
-                                      : IconButton(
-                                          icon: const Icon(Icons.clear),
-                                          tooltip: 'Clear search',
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            setState(() => _searchQuery = '');
-                                          },
-                                        ),
-                                ),
-                                onChanged: (value) =>
-                                    setState(() => _searchQuery = value),
-                              ),
-                              const SizedBox(height: 8),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: SegmentedButton<LibraryViewMode>(
-                                  // Icons resolved through OmnisIconCatalog
-                                  // (not `const Icon(Icons.xxx)`) so this
-                                  // segmented button follows the active
-                                  // theme's `icons.style` like the other
-                                  // high-visibility icon call sites.
-                                  segments: [
-                                    ButtonSegment(
-                                        value: LibraryViewMode.songs,
-                                        label: const Text('Songs'),
-                                        icon: Icon(
-                                            OmnisIconCatalog.musicNote.resolve())),
-                                    ButtonSegment(
-                                        value: LibraryViewMode.albums,
-                                        label: const Text('Albums'),
-                                        icon: Icon(
-                                            OmnisIconCatalog.album.resolve())),
-                                    ButtonSegment(
-                                        value: LibraryViewMode.artists,
-                                        label: const Text('Artists'),
-                                        icon: Icon(
-                                            OmnisIconCatalog.person.resolve())),
-                                    ButtonSegment(
-                                        value: LibraryViewMode.genres,
-                                        label: const Text('Genres'),
-                                        icon: Icon(
-                                            OmnisIconCatalog.tag.resolve())),
-                                    ButtonSegment(
-                                        value: LibraryViewMode.folders,
-                                        label: const Text('Folders'),
-                                        icon: Icon(
-                                            OmnisIconCatalog.folder.resolve())),
-                                  ],
-                                  selected: {_viewMode},
-                                  onSelectionChanged: (value) {
-                                    setState(() => _viewMode = value.first);
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  if (_viewMode == LibraryViewMode.artists ||
-                                      _viewMode == LibraryViewMode.genres)
-                                    FilterChip(
-                                      label: const Text('Nest albums'),
-                                      selected: _showAlbums,
-                                      onSelected: (value) =>
-                                          setState(() => _showAlbums = value),
-                                    ),
-                                  const Spacer(),
-                                  if (_gridCapable) ...[
-                                    if (_displayMode == LibraryDisplayMode.grid)
-                                      PopupMenuButton<int>(
-                                        tooltip: 'Grid columns',
-                                        onSelected: _setGridColumns,
-                                        itemBuilder: (context) => [2, 3, 4, 5]
-                                            .map((n) => PopupMenuItem(
-                                                  value: n,
-                                                  child: Text('$n×$n grid'),
-                                                ))
-                                            .toList(),
-                                        child: Chip(
-                                          label:
-                                              Text('$_gridColumns×$_gridColumns'),
-                                        ),
+                  )
+                : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _searchController,
+                              decoration: InputDecoration(
+                                hintText: 'Search library',
+                                prefixIcon: const Icon(Icons.search),
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                                suffixIcon: _searchQuery.isEmpty
+                                    ? null
+                                    : IconButton(
+                                        icon: const Icon(Icons.clear),
+                                        tooltip: 'Clear search',
+                                        onPressed: () {
+                                          _searchController.clear();
+                                          setState(() => _searchQuery = '');
+                                        },
                                       ),
-                                    IconButton(
-                                      tooltip: _displayMode == LibraryDisplayMode.grid
-                                          ? 'List view'
-                                          : 'Grid view',
-                                      icon: Icon(
-                                          _displayMode == LibraryDisplayMode.grid
-                                              ? OmnisIconCatalog.viewList
-                                                  .resolve()
-                                              : OmnisIconCatalog.gridView
-                                                  .resolve()),
-                                      onPressed: () => _setDisplayMode(
-                                          _displayMode == LibraryDisplayMode.grid
-                                              ? LibraryDisplayMode.list
-                                              : LibraryDisplayMode.grid),
-                                    ),
-                                  ],
-                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: sections.isEmpty && _searchQuery.trim().isNotEmpty
-                              ? Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.search_off,
-                                            size: 48,
-                                            color: theme.colorScheme.outline),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                            'No results for '
-                                            '"${_searchController.text}"',
-                                            textAlign: TextAlign.center),
-                                      ],
-                                    ),
+                              onChanged: (value) =>
+                                  setState(() => _searchQuery = value),
+                            ),
+                            const SizedBox(height: 8),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SegmentedButton<LibraryViewMode>(
+                                // Icons resolved through OmnisIconCatalog
+                                // (not `const Icon(Icons.xxx)`) so this
+                                // segmented button follows the active
+                                // theme's `icons.style` like the other
+                                // high-visibility icon call sites.
+                                segments: [
+                                  ButtonSegment(
+                                      value: LibraryViewMode.songs,
+                                      label: const Text('Songs'),
+                                      icon: Icon(OmnisIconCatalog.musicNote
+                                          .resolve())),
+                                  ButtonSegment(
+                                      value: LibraryViewMode.albums,
+                                      label: const Text('Albums'),
+                                      icon: Icon(
+                                          OmnisIconCatalog.album.resolve())),
+                                  ButtonSegment(
+                                      value: LibraryViewMode.artists,
+                                      label: const Text('Artists'),
+                                      icon: Icon(
+                                          OmnisIconCatalog.person.resolve())),
+                                  ButtonSegment(
+                                      value: LibraryViewMode.genres,
+                                      label: const Text('Genres'),
+                                      icon:
+                                          Icon(OmnisIconCatalog.tag.resolve())),
+                                  ButtonSegment(
+                                      value: LibraryViewMode.folders,
+                                      label: const Text('Folders'),
+                                      icon: Icon(
+                                          OmnisIconCatalog.folder.resolve())),
+                                ],
+                                selected: {_viewMode},
+                                onSelectionChanged: (value) {
+                                  setState(() => _viewMode = value.first);
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                if (_viewMode == LibraryViewMode.artists ||
+                                    _viewMode == LibraryViewMode.genres)
+                                  FilterChip(
+                                    label: const Text('Nest albums'),
+                                    selected: _showAlbums,
+                                    onSelected: (value) =>
+                                        setState(() => _showAlbums = value),
                                   ),
-                                )
-                              : (_gridCapable &&
-                                      _displayMode == LibraryDisplayMode.grid)
-                                  ? _buildGrid()
-                                  : ListView.builder(
-                                      itemCount: sections.length,
-                                      itemBuilder: (context, index) {
-                                        final section = sections[index];
-                                        return _buildSection(section, depth: 0);
-                                      },
+                                const Spacer(),
+                                if (_gridCapable) ...[
+                                  if (_displayMode == LibraryDisplayMode.grid)
+                                    PopupMenuButton<int>(
+                                      tooltip: 'Grid columns',
+                                      onSelected: _setGridColumns,
+                                      itemBuilder: (context) => [2, 3, 4, 5]
+                                          .map((n) => PopupMenuItem(
+                                                value: n,
+                                                child: Text('$n×$n grid'),
+                                              ))
+                                          .toList(),
+                                      child: Chip(
+                                        label:
+                                            Text('$_gridColumns×$_gridColumns'),
+                                      ),
                                     ),
+                                  IconButton(
+                                    tooltip:
+                                        _displayMode == LibraryDisplayMode.grid
+                                            ? 'List view'
+                                            : 'Grid view',
+                                    icon: Icon(_displayMode ==
+                                            LibraryDisplayMode.grid
+                                        ? OmnisIconCatalog.viewList.resolve()
+                                        : OmnisIconCatalog.gridView.resolve()),
+                                    onPressed: () => _setDisplayMode(
+                                        _displayMode == LibraryDisplayMode.grid
+                                            ? LibraryDisplayMode.list
+                                            : LibraryDisplayMode.grid),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    );
+                      ),
+                      Expanded(
+                        child: sections.isEmpty &&
+                                _searchQuery.trim().isNotEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.search_off,
+                                          size: 48,
+                                          color: theme.colorScheme.outline),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                          'No results for '
+                                          '"${_searchController.text}"',
+                                          textAlign: TextAlign.center),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : (_gridCapable &&
+                                    _displayMode == LibraryDisplayMode.grid)
+                                ? _buildGrid()
+                                : ListView.builder(
+                                    itemCount: sections.length,
+                                    itemBuilder: (context, index) {
+                                      final section = sections[index];
+                                      return _buildSection(section, depth: 0);
+                                    },
+                                  ),
+                      ),
+                    ],
+                  );
   }
 
   /// Grid view is a flat "one tile per item" layout — it doesn't apply to
@@ -2749,18 +2753,26 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _buildGridTile(LibrarySection section) {
     final theme = Theme.of(context);
     final cover = section.tracks.isNotEmpty ? section.tracks.first : null;
-    final selected =
-        section.tracks.isNotEmpty && section.tracks.every((t) => _selectedIds.contains(t.id));
-    final gridRatingBadge =
-        (_viewMode == LibraryViewMode.albums || _viewMode == LibraryViewMode.artists)
-            ? _groupRatingBadge(section.tracks)
-            : null;
+    final selected = section.tracks.isNotEmpty &&
+        section.tracks.every((t) => _selectedIds.contains(t.id));
+    final gridRatingBadge = (_viewMode == LibraryViewMode.albums ||
+            _viewMode == LibraryViewMode.artists)
+        ? _groupRatingBadge(section.tracks)
+        : null;
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => _selectionMode
           ? _toggleSelectedGroup(section.tracks)
           : _playSection(section),
       onLongPress: () => _toggleSelectedGroup(section.tracks),
+      // Right-click is a desktop user's natural alternative to
+      // long-press for entering multi-select — gated on
+      // `supportsRightClick` (unlike the keyboard-reorder fallback
+      // above) since a touch device has no "right-click" for this to
+      // parity with.
+      onSecondaryTap: PlatformCapabilities.supportsRightClick
+          ? () => _toggleSelectedGroup(section.tracks)
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2838,8 +2850,8 @@ class _LibraryPageState extends State<LibraryPage> {
     return Text(
       '★ ${summary.average.toStringAsFixed(1)} '
       '(${summary.ratedCount} rated)',
-      style: theme.textTheme.bodySmall
-          ?.copyWith(color: theme.colorScheme.primary),
+      style:
+          theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
     );
   }
 
@@ -2866,8 +2878,8 @@ class _LibraryPageState extends State<LibraryPage> {
             ? Row(
                 children: [
                   Expanded(
-                    child: Text(section.title,
-                        style: theme.textTheme.titleMedium),
+                    child:
+                        Text(section.title, style: theme.textTheme.titleMedium),
                   ),
                   // A custom `trailing` would replace ExpansionTile's own
                   // expand/collapse chevron entirely, so this sits in the
@@ -2887,8 +2899,9 @@ class _LibraryPageState extends State<LibraryPage> {
       );
     }
 
-    final ratingBadge =
-        (isArtistRow || isAlbumRow) ? _groupRatingBadge(section.allTracks) : null;
+    final ratingBadge = (isArtistRow || isAlbumRow)
+        ? _groupRatingBadge(section.allTracks)
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2915,8 +2928,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           IconButton(
                             icon: const Icon(Icons.people_outline, size: 20),
                             tooltip: 'Similar artists',
-                            onPressed: () =>
-                                _showSimilarArtists(section.title),
+                            onPressed: () => _showSimilarArtists(section.title),
                           ),
                         ],
                       )
@@ -2930,180 +2942,198 @@ class _LibraryPageState extends State<LibraryPage> {
           final compact =
               AppSettings.instance.libraryDensity == LibraryDensity.compact;
           final artSize = compact ? 36.0 : 44.0;
-          return ListTile(
-            dense: compact,
-            leading: _selectionMode
-                ? CircleAvatar(
-                    radius: compact ? 18 : 22,
-                    backgroundColor: selected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerHighest,
-                    child: Icon(
-                      selected ? Icons.check : Icons.circle_outlined,
-                      color: selected
-                          ? theme.colorScheme.onPrimary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: TrackArtwork(
-                      track: track,
-                      width: artSize,
-                      height: artSize,
-                      iconSize: compact ? 16 : 20,
-                    ),
-                  ),
-            title:
-                Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(_subtitle(track)),
-            selected: selected,
-            trailing: _selectionMode
-                ? null
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _currentTrackIcon(track),
-                      IconButton(
-                        icon: Icon(
-                          _isFavorite(track.id) ? Icons.favorite : Icons.favorite_border,
-                          size: 20,
-                          color: _isFavorite(track.id) ? theme.colorScheme.primary : null,
-                        ),
-                        tooltip: _isFavorite(track.id)
-                            ? 'Remove from favorites'
-                            : 'Add to favorites',
-                        onPressed: () => _toggleFavorite(track.id),
+          return GestureDetector(
+            // `ListTile` has no `onSecondaryTap` of its own (unlike the
+            // `InkWell`-based grid tile above), so the right-click
+            // alternative to long-press is wired via a wrapping
+            // `GestureDetector` instead — still gated on
+            // `supportsRightClick` since a touch device has no
+            // "right-click" for this to parity with.
+            onSecondaryTap: PlatformCapabilities.supportsRightClick
+                ? () => _toggleSelected(track.id)
+                : null,
+            child: ListTile(
+              dense: compact,
+              leading: _selectionMode
+                  ? CircleAvatar(
+                      radius: compact ? 18 : 22,
+                      backgroundColor: selected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.surfaceContainerHighest,
+                      child: Icon(
+                        selected ? Icons.check : Icons.circle_outlined,
+                        color: selected
+                            ? theme.colorScheme.onPrimary
+                            : theme.colorScheme.onSurfaceVariant,
                       ),
-                      // Only shown once a track actually has a rating —
-                      // unlike the favorite heart, most tracks stay
-                      // unrated, so reserving row space for every track
-                      // would mostly just be clutter. The full picker
-                      // (any rating, including a first one) is always
-                      // reachable via the "Rate track" menu item below.
-                      if (_ratingOf(track.id) > 0)
-                        IconButton(
-                          icon: const Icon(Icons.star, size: 20),
-                          color: theme.colorScheme.primary,
-                          tooltip: 'Rated ${_ratingOf(track.id)}/5',
-                          onPressed: () => _rateTrack(track),
-                        ),
-                      // Same "only shown once set" reasoning as the star
-                      // rating above — an independent signal (§36), so a
-                      // track can show a thumb icon, a star icon, both,
-                      // or neither.
-                      if (_thumbOf(track.id) != ThumbState.none)
+                    )
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: TrackArtwork(
+                        track: track,
+                        width: artSize,
+                        height: artSize,
+                        iconSize: compact ? 16 : 20,
+                      ),
+                    ),
+              title: Text(track.title,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(_subtitle(track)),
+              selected: selected,
+              trailing: _selectionMode
+                  ? null
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _currentTrackIcon(track),
                         IconButton(
                           icon: Icon(
-                            _thumbOf(track.id) == ThumbState.up
-                                ? Icons.thumb_up
-                                : Icons.thumb_down,
+                            _isFavorite(track.id)
+                                ? Icons.favorite
+                                : Icons.favorite_border,
                             size: 20,
+                            color: _isFavorite(track.id)
+                                ? theme.colorScheme.primary
+                                : null,
                           ),
-                          color: theme.colorScheme.primary,
-                          tooltip: _thumbOf(track.id) == ThumbState.up
-                              ? 'Thumbed up'
-                              : 'Thumbed down',
-                          onPressed: () =>
-                              _setThumb(track, _thumbOf(track.id)),
+                          tooltip: _isFavorite(track.id)
+                              ? 'Remove from favorites'
+                              : 'Add to favorites',
+                          onPressed: () => _toggleFavorite(track.id),
                         ),
-                      if (_enrichingIds.contains(track.id) ||
-                          _analyzingIds.contains(track.id))
-                        const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                        // Only shown once a track actually has a rating —
+                        // unlike the favorite heart, most tracks stay
+                        // unrated, so reserving row space for every track
+                        // would mostly just be clutter. The full picker
+                        // (any rating, including a first one) is always
+                        // reachable via the "Rate track" menu item below.
+                        if (_ratingOf(track.id) > 0)
+                          IconButton(
+                            icon: const Icon(Icons.star, size: 20),
+                            color: theme.colorScheme.primary,
+                            tooltip: 'Rated ${_ratingOf(track.id)}/5',
+                            onPressed: () => _rateTrack(track),
                           ),
-                        )
-                      else
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, size: 20),
-                          tooltip: 'Track tools',
-                          onSelected: (value) {
-                            if (value == 'play_next') _playNext(track);
-                            if (value == 'add_to_queue') _addToQueue(track);
-                            if (value == 'play_similar') _playSimilar(track);
-                            if (value == 'edit_tags') _editTags(track);
-                            if (value == 'add_to_playlist') {
-                              _addToPlaylist({track.id});
-                            }
-                            if (value == 'rate') _rateTrack(track);
-                            if (value == 'thumb_up') {
-                              _setThumb(track, ThumbState.up);
-                            }
-                            if (value == 'thumb_down') {
-                              _setThumb(track, ThumbState.down);
-                            }
-                            if (value == 'enrich') _enrichSingle(track);
-                            if (value == 'lookup_artwork') {
-                              _lookupArtworkOnline(track);
-                            }
-                            if (value == 'analyze') _analyzeSingle(track);
-                            if (value == 'set_ringtone') _setAsRingtone(track);
-                            if (value == 'audio_info') _showAudioInfo(track);
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'play_next',
-                              child: Text('Play next'),
+                        // Same "only shown once set" reasoning as the star
+                        // rating above — an independent signal (§36), so a
+                        // track can show a thumb icon, a star icon, both,
+                        // or neither.
+                        if (_thumbOf(track.id) != ThumbState.none)
+                          IconButton(
+                            icon: Icon(
+                              _thumbOf(track.id) == ThumbState.up
+                                  ? Icons.thumb_up
+                                  : Icons.thumb_down,
+                              size: 20,
                             ),
-                            PopupMenuItem(
-                              value: 'add_to_queue',
-                              child: Text('Add to queue'),
+                            color: theme.colorScheme.primary,
+                            tooltip: _thumbOf(track.id) == ThumbState.up
+                                ? 'Thumbed up'
+                                : 'Thumbed down',
+                            onPressed: () =>
+                                _setThumb(track, _thumbOf(track.id)),
+                          ),
+                        if (_enrichingIds.contains(track.id) ||
+                            _analyzingIds.contains(track.id))
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            PopupMenuItem(
-                              value: 'play_similar',
-                              child: Text('Play similar'),
-                            ),
-                            PopupMenuItem(
-                              value: 'edit_tags',
-                              child: Text('Edit tags'),
-                            ),
-                            PopupMenuItem(
-                              value: 'audio_info',
-                              child: Text('Audio info'),
-                            ),
-                            PopupMenuItem(
-                              value: 'add_to_playlist',
-                              child: Text('Add to playlist'),
-                            ),
-                            PopupMenuItem(
-                              value: 'rate',
-                              child: Text('Rate track'),
-                            ),
-                            PopupMenuItem(
-                              value: 'thumb_up',
-                              child: Text('Thumbs up'),
-                            ),
-                            PopupMenuItem(
-                              value: 'thumb_down',
-                              child: Text('Thumbs down'),
-                            ),
-                            PopupMenuItem(
-                              value: 'enrich',
-                              child: Text('Look up metadata'),
-                            ),
-                            PopupMenuItem(
-                              value: 'lookup_artwork',
-                              child: Text('Look up artwork online'),
-                            ),
-                            PopupMenuItem(
-                              value: 'analyze',
-                              child: Text('Analyze audio (BPM/key/mood)'),
-                            ),
-                            PopupMenuItem(
-                              value: 'set_ringtone',
-                              child: Text('Set as ringtone'),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-            onTap: () =>
-                _selectionMode ? _toggleSelected(track.id) : _playTrack(track),
-            onLongPress: () => _toggleSelected(track.id),
+                          )
+                        else
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert, size: 20),
+                            tooltip: 'Track tools',
+                            onSelected: (value) {
+                              if (value == 'play_next') _playNext(track);
+                              if (value == 'add_to_queue') _addToQueue(track);
+                              if (value == 'play_similar') _playSimilar(track);
+                              if (value == 'edit_tags') _editTags(track);
+                              if (value == 'add_to_playlist') {
+                                _addToPlaylist({track.id});
+                              }
+                              if (value == 'rate') _rateTrack(track);
+                              if (value == 'thumb_up') {
+                                _setThumb(track, ThumbState.up);
+                              }
+                              if (value == 'thumb_down') {
+                                _setThumb(track, ThumbState.down);
+                              }
+                              if (value == 'enrich') _enrichSingle(track);
+                              if (value == 'lookup_artwork') {
+                                _lookupArtworkOnline(track);
+                              }
+                              if (value == 'analyze') _analyzeSingle(track);
+                              if (value == 'set_ringtone') {
+                                _setAsRingtone(track);
+                              }
+                              if (value == 'audio_info') _showAudioInfo(track);
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'play_next',
+                                child: Text('Play next'),
+                              ),
+                              PopupMenuItem(
+                                value: 'add_to_queue',
+                                child: Text('Add to queue'),
+                              ),
+                              PopupMenuItem(
+                                value: 'play_similar',
+                                child: Text('Play similar'),
+                              ),
+                              PopupMenuItem(
+                                value: 'edit_tags',
+                                child: Text('Edit tags'),
+                              ),
+                              PopupMenuItem(
+                                value: 'audio_info',
+                                child: Text('Audio info'),
+                              ),
+                              PopupMenuItem(
+                                value: 'add_to_playlist',
+                                child: Text('Add to playlist'),
+                              ),
+                              PopupMenuItem(
+                                value: 'rate',
+                                child: Text('Rate track'),
+                              ),
+                              PopupMenuItem(
+                                value: 'thumb_up',
+                                child: Text('Thumbs up'),
+                              ),
+                              PopupMenuItem(
+                                value: 'thumb_down',
+                                child: Text('Thumbs down'),
+                              ),
+                              PopupMenuItem(
+                                value: 'enrich',
+                                child: Text('Look up metadata'),
+                              ),
+                              PopupMenuItem(
+                                value: 'lookup_artwork',
+                                child: Text('Look up artwork online'),
+                              ),
+                              PopupMenuItem(
+                                value: 'analyze',
+                                child: Text('Analyze audio (BPM/key/mood)'),
+                              ),
+                              PopupMenuItem(
+                                value: 'set_ringtone',
+                                child: Text('Set as ringtone'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+              onTap: () => _selectionMode
+                  ? _toggleSelected(track.id)
+                  : _playTrack(track),
+              onLongPress: () => _toggleSelected(track.id),
+            ),
           );
         }),
       ],
@@ -3151,7 +3181,9 @@ class _LibraryPageState extends State<LibraryPage> {
     if (visible.contains('bitrate') && track.bitrateKbps != null) {
       parts.add('${track.bitrateKbps} kbps');
     }
-    if (visible.contains('format') && track.codec != null && track.codec!.isNotEmpty) {
+    if (visible.contains('format') &&
+        track.codec != null &&
+        track.codec!.isNotEmpty) {
       parts.add(track.codec!);
     }
     if (visible.contains('rating') && _ratingOf(track.id) > 0) {
@@ -3347,7 +3379,8 @@ class _StarPicker extends StatelessWidget {
           GestureDetector(
             onTapUp: (details) {
               final tappedLeftHalf = details.localPosition.dx < iconSize / 2;
-              final rating = snapToHalfStep(tappedLeftHalf ? i - 0.5 : i.toDouble());
+              final rating =
+                  snapToHalfStep(tappedLeftHalf ? i - 0.5 : i.toDouble());
               Navigator.of(context).pop(rating);
             },
             child: Tooltip(
@@ -3439,7 +3472,8 @@ class _LibraryColumnsSheetState extends State<_LibraryColumnsSheet> {
                       _selected.remove(key);
                     }
                   });
-                  await AppSettings.instance.setLibraryVisibleColumns(_selected);
+                  await AppSettings.instance
+                      .setLibraryVisibleColumns(_selected);
                 },
               ),
           ],
