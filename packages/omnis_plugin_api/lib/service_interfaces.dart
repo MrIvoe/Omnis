@@ -33,6 +33,13 @@ abstract class ILyricsProvider {
   /// never need to special-case "no provider" vs. "provider has nothing"
   /// beyond checking whether a provider is registered at all.
   String currentLyricFor(BaseTrack track, Duration position);
+
+  /// Whether [track] has any lyrics stored for it at all — a cheaper,
+  /// synchronous existence check a caller uses to decide whether to show
+  /// a "has lyrics" indicator, without needing the full text
+  /// [currentLyricFor] returns. Matches `LyricsPlugin.hasLyrics`'s own
+  /// convention: `false` for "nothing stored," never a thrown error.
+  bool hasLyrics(BaseTrack track);
 }
 
 /// Supplies the full ordered list of time-synced lyric lines for a

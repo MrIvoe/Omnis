@@ -96,6 +96,23 @@ class SandboxedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvider 
     return _fallback;
   }
 
+  /// A sandboxed plugin has no dedicated "does this exist" hook — the
+  /// only signal available is whether [currentLyricFor] returns
+  /// something other than its own fallback message. Reusing that hook
+  /// here (rather than adding a second guest-hook contract for a cheaper
+  /// existence check) is a first cut, same as [syncedLyricsFor]'s own
+  /// documented always-null shortcut immediately below — a dedicated
+  /// `hasLyrics` guest hook is real, separate work if this ever needs to
+  /// be cheaper than calling `provideLyrics` once.
+  @override
+  bool hasLyrics(BaseTrack track) {
+    try {
+      return currentLyricFor(track, Duration.zero) != _fallback;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Always `null` — a first cut. This adapter's whole job (see the file
   /// doc above) is bridging one narrow, fixed, reviewed guest hook per
   /// interface; [currentLyricFor]'s `provideLyrics` hook is scoped to
