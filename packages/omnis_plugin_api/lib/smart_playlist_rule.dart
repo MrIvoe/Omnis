@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:omnis_plugin_api/base_track.dart';
-import 'package:omnis_plugin_api/service_interfaces.dart' show ThumbState;
+import 'package:omnis_plugin_api/thumb_state.dart';
 
 /// Null-safe "find the first match, or null" — avoids adding
 /// `package:collection` as a dependency just for `firstOrNull`.

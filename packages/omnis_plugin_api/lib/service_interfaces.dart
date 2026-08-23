@@ -6,7 +6,10 @@ import 'package:omnis_plugin_api/enrichment_result.dart';
 import 'package:omnis_plugin_api/lyric_line.dart';
 import 'package:omnis_plugin_api/play_record.dart';
 import 'package:omnis_plugin_api/smart_playlist_rule.dart';
+import 'package:omnis_plugin_api/thumb_state.dart';
 import 'package:omnis_plugin_api/track_tags.dart';
+
+export 'package:omnis_plugin_api/thumb_state.dart' show ThumbState;
 
 /// Capability contracts a plugin registers against on `ServiceRegistry`
 /// (via `PluginContext.services`) instead of a caller depending on a
@@ -175,10 +178,6 @@ abstract class IFavoritesProvider {
   List<BaseTrack> favoritesWithSnapshots(List<BaseTrack> localTracks);
 }
 
-/// A track's thumbs-up/down preference — MusicBee comparison §36:
-/// distinct from [IRatingsProvider]'s 0-5 star scale, a coarse "yes/no"
-/// signal some listeners prefer over picking a specific star count.
-enum ThumbState { none, up, down }
 
 /// Queries a track's thumbs-up/down state — the identical
 /// nothing-outside-the-owning-plugin-can-read-this gap

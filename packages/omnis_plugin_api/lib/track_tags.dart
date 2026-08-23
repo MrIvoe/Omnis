@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:omnis_plugin_api/base_track.dart';
 
 /// Custom `TXXX` key names used for every tag field id3_codec can't write
-/// as its own native ID3v2 frame (see [TagEditorPlugin]'s class doc for
-/// why). Centralised here — as both a single map used to build the
+/// as its own native ID3v2 frame (see the tag-editor implementation's
+/// class doc for why). Centralised here — as both a single map used to build the
 /// custom fields for a write, and looked up by [TrackTags]'s getters —
 /// specifically because using the same literal string in two different
 /// places by hand is exactly how a mismatch bug happens: `TrackTags.genre`
