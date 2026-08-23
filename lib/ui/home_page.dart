@@ -163,7 +163,12 @@ class _HomePageState extends State<HomePage> {
       // build, instead of the first build painting six core tabs and a
       // second one adding the plugin tabs.
       final readyCore = core;
-      if (readyCore != null) {
+      // `mounted` guards against a route push/pop or hot restart that
+      // unmounts HomePage while bootstrap is still awaiting above — without
+      // it, a subscription created here after dispose() already ran would
+      // never be cancelled and would leak for the process lifetime (its
+      // callback's own `mounted` check makes the leak inert, not harmless).
+      if (readyCore != null && mounted) {
         _pluginDestinations = readyCore.pluginManager.homeDestinations;
         _pluginManagerSub = readyCore.pluginManager.changes.listen((_) {
           if (mounted) {

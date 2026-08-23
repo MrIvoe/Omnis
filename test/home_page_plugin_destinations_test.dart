@@ -115,13 +115,6 @@ Future<void> _unregisterCore() async {
   await themeManager.dispose();
 }
 
-/// Even with the core pre-registered above, `_bootstrapCore()` still fires
-/// an unawaited `RecoveryJournal.instance.load()` (real dart:io) the moment
-/// bootstrap resolves. `pumpAndSettle()` alone pumps frames back-to-back
-/// with no real time between them, which never gives that read a chance to
-/// finish — same "even inside `tester.runAsync()`, an explicit real delay
-/// between two pumps is what actually lets it complete" reasoning
-/// `home_dashboard_page_test.dart`'s own `_settle` helper documents.
 /// HomePage's tab `IndexedStack`, identified by how many children it has
 /// (six core destinations plus one per enabled plugin tab) — other
 /// `IndexedStack`s exist deeper in the page tree, and `.first` is not a
@@ -135,6 +128,13 @@ IndexedStack _homeStack(WidgetTester tester, {required int childCount}) {
       .firstWhere((stack) => stack.children.length == childCount);
 }
 
+/// Even with the core pre-registered above, `_bootstrapCore()` still fires
+/// an unawaited `RecoveryJournal.instance.load()` (real dart:io) the moment
+/// bootstrap resolves. `pumpAndSettle()` alone pumps frames back-to-back
+/// with no real time between them, which never gives that read a chance to
+/// finish — same "even inside `tester.runAsync()`, an explicit real delay
+/// between two pumps is what actually lets it complete" reasoning
+/// `home_dashboard_page_test.dart`'s own `_settle` helper documents.
 Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
   await Future<void>.delayed(const Duration(milliseconds: 300));

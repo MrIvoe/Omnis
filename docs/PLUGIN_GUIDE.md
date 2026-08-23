@@ -133,9 +133,13 @@ not a floating branch (see the `omnis_plugins:` entry in this repo's
 two more things happen:
 
 1. Commit and push your change to Omnis-Plugins, then cut a new tag there
-   (e.g. `v0.47.0`). A push to `main` alone changes nothing this app
+   (e.g. `vX.Y.0`). A push to `main` alone changes nothing this app
    builds against, by design: a stray push to Omnis-Plugins must never
-   silently change what Omnis ships.
+   silently change what Omnis ships. If your change also needs a newer
+   `omnis_plugin_api` pin, bump *that* ref in Omnis-Plugins' own
+   `pubspec.yaml` and commit it first — then cut the tag at that commit,
+   not before. See Omnis-Plugins' [VERSIONING.md](https://github.com/MrIvoe/Omnis-Plugins/blob/main/docs/VERSIONING.md)
+   for why the order matters.
 2. In this repo, bump the `ref:` under `omnis_plugins:` in `pubspec.yaml`
    to that new tag and run `flutter pub get`.
 
