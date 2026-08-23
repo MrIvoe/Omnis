@@ -5,8 +5,6 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/radio_page.dart';
 import 'package:omnis/ui/theme/omnis_motion.dart';
-import 'package:omnis_plugins/spotify_playback_plugin.dart';
-import 'package:omnis_plugins/youtube_playback_plugin.dart';
 
 /// "Online" tab (spec §63/item 38's "user access" gap): a single place to
 /// reach every online music source — Radio (unchanged, via [RadioBody]),
@@ -64,17 +62,15 @@ class _OnlinePageState extends State<OnlinePage> {
       .where((p) => p.isConfigured)
       .toList();
 
-  ManagedPlugin? get _youtubePlaybackManaged =>
-      widget.pluginManager.bundled<YoutubePlaybackPlugin>(onlyEnabled: true) ==
-              null
-          ? null
-          : widget.pluginManager.byId('youtube_playback');
+  ManagedPlugin? get _youtubePlaybackManaged {
+    final managed = widget.pluginManager.byId('youtube_playback');
+    return managed != null && managed.enabled ? managed : null;
+  }
 
-  ManagedPlugin? get _spotifyPlaybackManaged =>
-      widget.pluginManager.bundled<SpotifyPlaybackPlugin>(onlyEnabled: true) ==
-              null
-          ? null
-          : widget.pluginManager.byId('spotify_playback');
+  ManagedPlugin? get _spotifyPlaybackManaged {
+    final managed = widget.pluginManager.byId('spotify_playback');
+    return managed != null && managed.enabled ? managed : null;
+  }
 
   List<_OnlineSection> get _sections {
     final sections = <_OnlineSection>[

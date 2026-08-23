@@ -278,4 +278,52 @@ void main() {
       expect(find.byType(ChoiceChip), findsNWidgets(2));
     });
   });
+
+  testWidgets(
+      'a disabled YoutubePlaybackPlugin does not add a YouTube chip',
+      (tester) async {
+    await tester.runAsync(() async {
+      final manager = await managerWith([YoutubePlaybackPlugin()]);
+      // Disable the YouTube plugin
+      final managed =
+          manager.byId('youtube_playback');
+      if (managed != null) {
+        managed.enabled = false;
+      }
+
+      await tester.pumpWidget(MaterialApp(
+        home: OnlinePage(engine: _FakeEngine(), pluginManager: manager),
+      ));
+      await _settle(tester);
+
+      // Only the Radio chip should be present, no YouTube chip
+      expect(find.widgetWithText(ChoiceChip, 'YouTube'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Radio'), findsOneWidget);
+      expect(find.byType(ChoiceChip), findsOneWidget);
+    });
+  });
+
+  testWidgets(
+      'a disabled SpotifyPlaybackPlugin does not add a Spotify chip',
+      (tester) async {
+    await tester.runAsync(() async {
+      final manager = await managerWith([SpotifyPlaybackPlugin()]);
+      // Disable the Spotify plugin
+      final managed =
+          manager.byId('spotify_playback');
+      if (managed != null) {
+        managed.enabled = false;
+      }
+
+      await tester.pumpWidget(MaterialApp(
+        home: OnlinePage(engine: _FakeEngine(), pluginManager: manager),
+      ));
+      await _settle(tester);
+
+      // Only the Radio chip should be present, no Spotify chip
+      expect(find.widgetWithText(ChoiceChip, 'Spotify'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Radio'), findsOneWidget);
+      expect(find.byType(ChoiceChip), findsOneWidget);
+    });
+  });
 }
