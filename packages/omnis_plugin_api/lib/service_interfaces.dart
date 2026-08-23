@@ -434,3 +434,20 @@ abstract class IRadioProvider {
   /// throws, on any failure.
   Future<List<BaseTrack>> searchStations(String query, {int limit = 30});
 }
+
+/// Sets a track as the device ringtone. Implemented by `RingtonePlugin` —
+/// registered under this interface, not the concrete type, the same
+/// "ask for the capability, not the plugin" pattern every interface in
+/// this file follows.
+abstract class IRingtoneProvider {
+  /// Attempts to set [track] as the device ringtone. Returns `true` on
+  /// success. Never throws — see [lastError] for a user-facing reason on
+  /// failure (unsupported platform, no local file, a platform-level
+  /// error), matching `RingtonePlugin.setAsRingtone`'s own convention.
+  Future<bool> setAsRingtone(BaseTrack track);
+
+  /// A user-facing description of why the most recent [setAsRingtone]
+  /// call failed, or `null` if the most recent call succeeded (or none
+  /// has been made yet).
+  String? get lastError;
+}

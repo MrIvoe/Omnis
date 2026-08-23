@@ -25,7 +25,6 @@ import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis/core/track_similarity.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/metadata_enrichment_plugin.dart';
-import 'package:omnis_plugins/ringtone_plugin.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:omnis/ui/calculated_tag_dialog.dart';
 import 'package:omnis/ui/library_cleanup_report_page.dart';
@@ -1517,11 +1516,11 @@ class _LibraryPageState extends State<LibraryPage> {
   TagEditorPlugin? get _tagEditorPlugin =>
       widget.pluginManager.bundled<TagEditorPlugin>(onlyEnabled: true);
 
-  RingtonePlugin? get _ringtonePlugin =>
-      widget.pluginManager.bundled<RingtonePlugin>(onlyEnabled: true);
+  IRingtoneProvider? get _ringtoneProvider =>
+      widget.pluginManager.services.get<IRingtoneProvider>();
 
   Future<void> _setAsRingtone(BaseTrack track) async {
-    final plugin = _ringtonePlugin;
+    final plugin = _ringtoneProvider;
     if (plugin == null) {
       _toast('The Ringtone plugin is disabled in Settings.');
       return;
