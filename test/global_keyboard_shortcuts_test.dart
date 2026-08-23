@@ -216,12 +216,34 @@ void main() {
 
   testWidgets(
       'disabling keyboard shortcuts via AppSettings makes every '
-      'binding a no-op', (tester) async {
+      'settings-driven binding a no-op', (tester) async {
     AppSettings.instance.keyboardShortcutsEnabled = false;
     final engine = await pumpHarness(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(engine.playCalled, isFalse);
+  });
+
+  testWidgets(
+      'hardware media keys still fire even with keyboardShortcutsEnabled '
+      'false — the exact regression a user who disabled the setting '
+      'before the Keyboard page was hidden on touch-primary platforms '
+      'would otherwise hit, with no way back in to re-enable it',
+      (tester) async {
+    AppSettings.instance.keyboardShortcutsEnabled = false;
+    final engine = await pumpHarness(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
+    await tester.pump();
+    expect(engine.playCalled, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackNext);
+    await tester.pump();
+    expect(engine.nextCalled, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackPrevious);
+    await tester.pump();
+    expect(engine.previousCalled, isTrue);
   });
 
   testWidgets(
@@ -309,6 +331,19 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackPrevious);
       await tester.pump();
       expect(engine.previousCalled, isTrue);
+    });
+
+    testWidgets(
+        'hardware media play/pause still fires on a touch-primary '
+        'platform even with a stale keyboardShortcutsEnabled == false '
+        'left over from before the Keyboard settings page was hidden — '
+        'the exact scenario with no recovery path this test suite must '
+        'never regress on', (tester) async {
+      AppSettings.instance.keyboardShortcutsEnabled = false;
+      final engine = await pumpHarness(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.mediaPlayPause);
+      await tester.pump();
+      expect(engine.playCalled, isTrue);
     });
   });
 

@@ -167,6 +167,53 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
     widget.engine.setVolume(result.newVolume);
   }
 
+  /// Hardware media-key play/pause — dispatched from the bindings map's
+  /// unconditional `mediaPlayPause` entry, **not** [_togglePlayPause]
+  /// above, deliberately. [_togglePlayPause] guards on [_enabled], which
+  /// tracks `AppSettings.instance.keyboardShortcutsEnabled` — the exact
+  /// setting whose only UI control (`keyboard_settings_page.dart`'s
+  /// switch) is hidden on touch-primary platforms as of the same change
+  /// that made this binding unconditional (see `settings_page.dart`).
+  /// Reusing [_togglePlayPause] here would have made the map entry
+  /// "unconditional" in name only: any user who had already flipped that
+  /// switch off *before* it was hidden — a real, already-persisted case,
+  /// since the Keyboard category was reachable on every platform,
+  /// including Android/iOS, before this task — would permanently lose
+  /// real Bluetooth/wired-headset button handling with no way back in,
+  /// since there's no settings-reset feature and clearing app data would
+  /// also wipe their library. A hardware media-key press is an OS/device
+  /// signal a user can't "remap" or type accidentally, so it isn't
+  /// gated by the same setting a keyboard letter/arrow shortcut is.
+  ///
+  /// Deliberately **does not** check [_typingInTextField] either, unlike
+  /// every settings-driven handler above: that guard exists (see this
+  /// class's own doc comment, point 3) because ordinary character input —
+  /// Space included — isn't reliably marked "handled" by a focused
+  /// `TextField`, so an unguarded keyboard shortcut would both insert a
+  /// character *and* trigger playback. A hardware media key carries no
+  /// character payload and was never going to insert anything into
+  /// whatever's focused; suppressing it while a text field happens to be
+  /// focused would just make a real headset button silently stop working
+  /// the moment the user taps a search box, with no typing conflict to
+  /// justify it.
+  void _mediaPlayPause() {
+    if (widget.engine.isPlaying) {
+      widget.engine.pause();
+    } else {
+      widget.engine.play();
+    }
+  }
+
+  /// Hardware media-key next-track — see [_mediaPlayPause]'s doc comment
+  /// for why this bypasses both [_enabled] and [_typingInTextField]
+  /// rather than reusing [_next].
+  void _mediaNext() => widget.engine.next();
+
+  /// Hardware media-key previous-track — see [_mediaPlayPause]'s doc
+  /// comment for why this bypasses both [_enabled] and
+  /// [_typingInTextField] rather than reusing [_previous].
+  void _mediaPrevious() => widget.engine.previous();
+
   /// Dispatches to this class's own private handlers — item 48's
   /// per-shortcut remapping only changes *which key* triggers an
   /// action, never what the action itself does.
@@ -203,16 +250,24 @@ class _GlobalKeyboardShortcutsState extends State<GlobalKeyboardShortcuts> {
           if (!PlatformCapabilities.isTouchPrimary)
             for (final entry in AppSettings.instance.shortcutBindings.entries)
               entry.value.toActivator(): _callbackFor(entry.key),
-          // Hardware media keys are OS/device signals, not something a
-          // user remaps via a keyboard — always on regardless of platform
-          // or the bindings above, since some Android devices route real
-          // hardware media-key events (Bluetooth headset controls, wired
-          // headset buttons) through exactly this path.
+          // Hardware media-key signals (a paired Bluetooth headset's or a
+          // wired headset's buttons — real on Android) dispatch to
+          // dedicated `_mediaXxx` handlers, not the settings-driven
+          // `_togglePlayPause`/`_next`/`_previous` used above: those gate
+          // on `_enabled`, the same `keyboardShortcutsEnabled` setting
+          // whose only UI control is hidden on touch-primary platforms.
+          // Routing media keys through the settings-gated handlers would
+          // have made this "unconditional" in the map only — a user who'd
+          // already disabled that setting before it was hidden would have
+          // no way back in to restore hardware media-key handling at all.
+          // See `_mediaPlayPause`'s own doc comment for the full reasoning
+          // (including why it also skips the `_typingInTextField` guard).
           const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
-              _togglePlayPause,
-          const SingleActivator(LogicalKeyboardKey.mediaTrackNext): _next,
+              _mediaPlayPause,
+          const SingleActivator(LogicalKeyboardKey.mediaTrackNext):
+              _mediaNext,
           const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious):
-              _previous,
+              _mediaPrevious,
         };
         return CallbackShortcuts(
           bindings: bindings,
