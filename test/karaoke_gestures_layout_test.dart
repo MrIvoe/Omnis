@@ -23,6 +23,9 @@ class _FakeSyncedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvide
       'single-block fallback — should not render when synced lines exist';
 
   @override
+  bool hasLyrics(BaseTrack track) => lines.isNotEmpty;
+
+  @override
   List<LyricLine>? syncedLyricsFor(BaseTrack track) => lines;
 }
 

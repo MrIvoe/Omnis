@@ -1988,6 +1988,68 @@ dynamic provideLyrics(dynamic track, dynamic positionMs) {
       expect(lyric, 'No lyrics added for this track yet.');
     });
 
+    test('SandboxedLyricsProvider.hasLyrics returns true when the hook '
+        'returns real text', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'lyrics_has',
+    'name': 'Lyrics Has',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) {
+  return 'Real lyric text';
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedLyricsProvider(runtime);
+      final track = BaseTrack(
+        id: 't1',
+        title: 'Sunrise',
+        artists: const ['Ava'],
+        album: 'Morning',
+        duration: 180,
+        type: TrackType.local,
+      );
+
+      expect(provider.hasLyrics(track), isTrue);
+    });
+
+    test('SandboxedLyricsProvider.hasLyrics returns false when the hook '
+        'returns nothing or throws', () {
+      const source = '''
+dynamic createPlugin(dynamic api) {
+  return {
+    'id': 'lyrics_empty',
+    'name': 'Lyrics Empty',
+    'version': '1.0.0',
+    'author': 'test',
+    'hooks': ['provideLyrics'],
+  };
+}
+
+dynamic provideLyrics(dynamic track, dynamic positionMs) {
+  throw 'boom';
+}
+''';
+      final runtime = PluginRuntime.create(source);
+      final provider = SandboxedLyricsProvider(runtime);
+      final track = BaseTrack(
+        id: 't1',
+        title: 'Sunrise',
+        artists: const ['Ava'],
+        album: 'Morning',
+        duration: 180,
+        type: TrackType.local,
+      );
+
+      expect(provider.hasLyrics(track), isFalse);
+    });
+
     test('SandboxedQueueBuilder forwards to buildQueueFor and parses the '
         'returned tracks', () {
       const source = '''

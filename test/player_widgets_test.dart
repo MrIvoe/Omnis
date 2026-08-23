@@ -17,6 +17,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _FakeLyricsProvider implements ILyricsProvider {
   @override
   String currentLyricFor(BaseTrack track, Duration position) => 'La la la';
+
+  @override
+  bool hasLyrics(BaseTrack track) => true;
 }
 
 /// A provider that also implements the separate, optional
@@ -31,6 +34,9 @@ class _FakeSyncedLyricsProvider implements ILyricsProvider, ISyncedLyricsProvide
   @override
   String currentLyricFor(BaseTrack track, Duration position) =>
       'single-block fallback text — should not render when synced lines exist';
+
+  @override
+  bool hasLyrics(BaseTrack track) => lines.isNotEmpty;
 
   @override
   List<LyricLine>? syncedLyricsFor(BaseTrack track) => lines;
