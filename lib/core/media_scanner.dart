@@ -5,6 +5,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_format_reader.dart';
 import 'package:omnis/core/base_track.dart';
+import 'package:omnis_plugin_api/track_tags.dart';
 import 'package:omnis_plugins/tag_editor_plugin.dart';
 import 'package:path_provider/path_provider.dart';
 

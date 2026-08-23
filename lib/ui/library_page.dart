@@ -635,7 +635,7 @@ class _LibraryPageState extends State<LibraryPage> {
       _toast('The Metadata Enrichment plugin is disabled in Settings.');
       return;
     }
-    final tagEditor = _tagEditorPlugin;
+    final tagEditor = _tagWriter;
     if (tagEditor == null) {
       _toast('The Tag Editor plugin is disabled in Settings.');
       return;
@@ -800,7 +800,7 @@ class _LibraryPageState extends State<LibraryPage> {
       _toast('The Metadata Enrichment plugin is disabled in Settings.');
       return;
     }
-    final tagEditor = _tagEditorPlugin;
+    final tagEditor = _tagWriter;
     if (tagEditor == null) {
       _toast('The Tag Editor plugin is disabled in Settings.');
       return;
@@ -964,7 +964,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// library regardless, so this is strictly an additional
   /// make-it-portable step, never the thing a user is blocked on.
   Future<void> _writeAnalysisTagsToFile(BaseTrack track) async {
-    final tagEditor = _tagEditorPlugin;
+    final tagEditor = _tagWriter;
     final path = track.localPath;
     if (tagEditor == null || path == null) return;
     await tagEditor.writeTags(
@@ -1513,6 +1513,21 @@ class _LibraryPageState extends State<LibraryPage> {
   IFavoritesProvider? get _favoritesProvider =>
       widget.pluginManager.services.get<IFavoritesProvider>();
 
+  ITagWriter? get _tagWriter =>
+      widget.pluginManager.services.get<ITagWriter>();
+
+  // Kept as a concrete-type lookup, distinct from [_tagWriter] above:
+  // `_editTags`, `_autoTagLibrary`, `_findReplaceSelected`, and
+  // `_calculatedTagsSelected` all call `splitArtists`/`cleanArtistFields`/
+  // `markAutoTagged` in addition to the `ITagWriter` methods — plugin
+  // business logic (title/artist cleanup heuristics) that
+  // `ITagWriter` deliberately doesn't cover, since it's scoped to file
+  // tag I/O only (see `ITagWriter`'s own doc comment). Fully decoupling
+  // those four methods from `TagEditorPlugin` would mean growing
+  // `ITagWriter` well past the tag read/write surface it's named for —
+  // out of scope here. A `TagEditorPlugin` instance already satisfies
+  // `ITagWriter` too, so it still passes straight into
+  // `TagEditorDialog.show(..., plugin: tagEditor)` in `_editTags`.
   TagEditorPlugin? get _tagEditorPlugin =>
       widget.pluginManager.bundled<TagEditorPlugin>(onlyEnabled: true);
 
@@ -2048,7 +2063,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// restart too — the exact same two-sided update `writeTags`'s own
   /// success path already does, just in reverse.
   Future<void> _undoAutoTagBatch(List<BaseTrack> originalTracks) async {
-    final tagEditor = _tagEditorPlugin;
+    final tagEditor = _tagWriter;
     if (tagEditor == null) return;
     var restored = 0;
     for (final original in originalTracks) {

@@ -3,17 +3,18 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis_plugins/tag_editor_plugin.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
+import 'package:omnis/plugin_api/track_tags.dart';
 import 'package:omnis/ui/widgets/track_artwork.dart';
 
-/// Manual tag editor: every field [TagEditorPlugin] can read or write for
+/// Manual tag editor: every field [ITagWriter] can read or write for
 /// one track, plus artwork and freeform custom fields — not just
 /// title/artist/album. Fields the file doesn't have yet start blank, not
 /// hidden; the same dialog works for a fully-tagged file and a completely
 /// untagged one.
 class TagEditorDialog extends StatefulWidget {
   final BaseTrack track;
-  final TagEditorPlugin plugin;
+  final ITagWriter plugin;
 
   const TagEditorDialog({super.key, required this.track, required this.plugin});
 
@@ -25,7 +26,7 @@ class TagEditorDialog extends StatefulWidget {
   static Future<bool> show(
     BuildContext context,
     BaseTrack track, {
-    required TagEditorPlugin plugin,
+    required ITagWriter plugin,
   }) async {
     final changed = await showDialog<bool>(
       context: context,
@@ -38,7 +39,7 @@ class TagEditorDialog extends StatefulWidget {
   State<TagEditorDialog> createState() => _TagEditorDialogState();
 }
 
-/// (fieldKey, label) pairs for every named field [TagEditorPlugin.writeTags]
+/// (fieldKey, label) pairs for every named field [ITagWriter.writeTags]
 /// actually supports — the fields this editor can both show and save.
 const _coreFields = [
   ('title', 'Title'),
@@ -57,7 +58,7 @@ const _coreFields = [
 ];
 
 class _TagEditorDialogState extends State<TagEditorDialog> {
-  TagEditorPlugin get _plugin => widget.plugin;
+  ITagWriter get _plugin => widget.plugin;
   final Map<String, TextEditingController> _controllers = {
     for (final f in _coreFields) f.$1: TextEditingController(),
   };

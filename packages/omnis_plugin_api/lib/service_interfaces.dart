@@ -5,6 +5,7 @@ import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/enrichment_result.dart';
 import 'package:omnis_plugin_api/lyric_line.dart';
 import 'package:omnis_plugin_api/play_record.dart';
+import 'package:omnis_plugin_api/track_tags.dart';
 
 /// Capability contracts a plugin registers against on `ServiceRegistry`
 /// (via `PluginContext.services`) instead of a caller depending on a
@@ -450,4 +451,59 @@ abstract class IRingtoneProvider {
   /// call failed, or `null` if the most recent call succeeded (or none
   /// has been made yet).
   String? get lastError;
+}
+
+/// Reads and writes every tag field a local audio file supports — the
+/// broader read/write surface `IFileTagWriter` deliberately doesn't
+/// cover (that interface is scoped to one narrow write, `writeLyrics`,
+/// for a different caller — see its own doc comment). Implemented by
+/// `TagEditorPlugin` alongside `IFileTagWriter`; both interfaces exist
+/// independently because they serve different callers with different
+/// needs, not because one supersedes the other.
+abstract class ITagWriter {
+  /// Writes any subset of the given fields into [filePath]'s own tags —
+  /// every parameter left `null` is left unchanged in the file. Returns
+  /// `true` on success. Never throws — an unreadable/unwritable file, or
+  /// an unsupported platform, returns `false`.
+  Future<bool> writeTags(
+    String filePath, {
+    String? title,
+    String? artist,
+    String? album,
+    String? albumArtist,
+    String? genre,
+    String? year,
+    String? track,
+    String? disc,
+    String? composer,
+    String? comment,
+    String? bpm,
+    String? initialKey,
+    String? mood,
+    Uint8List? artworkBytes,
+    Map<String, String>? extraFields,
+  });
+
+  /// Reads every tag from [filePath], as both flattened raw frames (for
+  /// a "show everything" editor UI) and the convenience getters
+  /// `TrackTags` exposes for the fields `BaseTrack` understands
+  /// directly. Set [includeArtwork] to `false` to skip decoding the
+  /// (potentially large) artwork frame when only text fields are needed.
+  Future<TrackTags> readTags(String filePath, {bool includeArtwork = true});
+
+  /// Whether [trackId] has already been auto-tagged in a previous batch
+  /// run — lets a caller skip re-processing on repeat runs.
+  bool wasAutoTagged(String trackId);
+
+  /// Whether [filePath] has an undo snapshot available right now — lets a
+  /// caller (e.g. `TagEditorDialog`'s "Undo last edit" action) enable or
+  /// disable itself without attempting the restore just to find out.
+  bool hasUndoSnapshot(String filePath);
+
+  /// Restores [filePath] to the tag values it had immediately before the
+  /// most recent [writeTags] call that touched it (the snapshot
+  /// [writeTags] itself records on every successful write). Returns
+  /// `true` on success, `false` if there is no snapshot for this file or
+  /// the restore itself fails — never throws.
+  Future<bool> undoLastEdit(String filePath);
 }
