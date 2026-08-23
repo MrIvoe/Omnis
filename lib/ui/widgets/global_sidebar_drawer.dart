@@ -175,12 +175,52 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     await _persist();
   }
 
+  /// [oldIndex]/[newIndex] arrive in `ReorderableListView.onReorder`'s own
+  /// convention — but critically, indexed by *rendered position*, i.e.
+  /// position within `visible` below, not within `section.items`. That's
+  /// not a choice this method makes: `ReorderableListView`'s `children:`
+  /// constructor (used by `_buildSectionReorderList`) always numbers
+  /// `onReorder` by position among the *supplied* children — here,
+  /// `visible`, since any stale item (`_labelFor` == null) is never
+  /// rendered as a child at all — regardless of what other bookkeeping
+  /// this class does. [ReorderMenuButton] deliberately mirrors that same
+  /// convention (see its own doc comment) so both paths feed this method
+  /// identically.
+  ///
+  /// Splicing `moved` into the *full* `section.items` list therefore
+  /// can't be a plain `removeAt`/`insert` at [oldIndex]/[newIndex] — those
+  /// would silently target the wrong element the moment any stale item
+  /// exists anywhere in the section (verified: with `[stale, p1, p2]`,
+  /// moving p1 down past p2 arrives as visible-index `(0, 2)`; naively
+  /// applied to the 3-item full list that removes `stale`, not `p1`).
+  /// Instead: identify `moved` by its *visible* position, compute its new
+  /// *visible* neighbor, then splice it into the full list immediately
+  /// before that neighbor's own full-list position (or at the very end
+  /// if it's now last) — every stale item's position relative to the
+  /// visible items around it is left exactly as it was, and the visible
+  /// ordering ends up exactly as the drag/menu action intended.
   Future<void> _reorderItem(
       SidebarSection section, int oldIndex, int newIndex) async {
-    final items = [...section.items];
+    final visible = [
+      for (final item in section.items)
+        if (_labelFor(item) != null) item,
+    ];
+    if (oldIndex < 0 || oldIndex >= visible.length) return;
     if (newIndex > oldIndex) newIndex -= 1;
-    final moved = items.removeAt(oldIndex);
-    items.insert(newIndex, moved);
+    final moved = visible[oldIndex];
+
+    final newVisible = [...visible]..removeAt(oldIndex);
+    final insertAt = newIndex.clamp(0, newVisible.length);
+    newVisible.insert(insertAt, moved);
+    final followingVisibleItem =
+        insertAt + 1 < newVisible.length ? newVisible[insertAt + 1] : null;
+
+    final items = [...section.items]..remove(moved);
+    final insertFullIndex = followingVisibleItem == null
+        ? items.length
+        : items.indexOf(followingVisibleItem);
+    items.insert(insertFullIndex, moved);
+
     final updatedSection = section.copyWith(items: items);
     setState(() {
       _sections = [
@@ -232,7 +272,7 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
             contentPadding: const EdgeInsets.only(left: 32, right: 8),
             title: Text(_labelFor(visibleItems[i])!),
             leading: ReorderableDragStartListener(
-              index: section.items.indexOf(visibleItems[i]),
+              index: i,
               child: const Icon(Icons.drag_indicator, size: 18),
             ),
             trailing: Row(

@@ -338,5 +338,67 @@ void main() {
         expect(find.text('Move up'), findsOneWidget);
       });
     });
+
+    testWidgets(
+        'reordering around a mid-list stale reference produces the '
+        'correct visible order and leaves the stale entry exactly where '
+        'it was (regression: the drag handle and ReorderMenuButton must '
+        'agree on rendered-position indexing, and _reorderItem must '
+        'translate that back into the full-list splice)', (tester) async {
+      await tester.runAsync(() async {
+        // 'stale-id' has no matching playlist — _labelFor skips it, so
+        // it is never a rendered child of the ReorderableListView, but
+        // it does still occupy a real slot in section.items ahead of
+        // both real entries. This is exactly the divergence between
+        // "position among section.items" and "position among rendered
+        // children" that the fixed code must reconcile correctly.
+        await PlaylistStore.instance.save([
+          Playlist(
+              id: 'p1',
+              name: 'Alpha',
+              trackIds: const [],
+              createdAt: DateTime(2026)),
+          Playlist(
+              id: 'p2',
+              name: 'Beta',
+              trackIds: const [],
+              createdAt: DateTime(2026)),
+        ]);
+        await SidebarConfigStore.instance.save([
+          const SidebarSection(
+            id: 'my_playlists',
+            title: 'My playlists',
+            kind: SidebarItemKind.playlist,
+            items: [
+              SidebarItem(kind: SidebarItemKind.playlist, refId: 'stale-id'),
+              SidebarItem(kind: SidebarItemKind.playlist, refId: 'p1'),
+              SidebarItem(kind: SidebarItemKind.playlist, refId: 'p2'),
+            ],
+          ),
+          const SidebarSection(
+              id: 'my_moods', title: 'My moods', kind: SidebarItemKind.mood),
+        ]);
+        await _pumpDrawer(tester);
+
+        // Only Alpha/Beta render — confirms the stale entry is skipped,
+        // same as the pre-existing single-stale-item test.
+        expect(find.text('Alpha'), findsOneWidget);
+        expect(find.text('Beta'), findsOneWidget);
+
+        // "Move down" on Alpha (rendered position 0) should swap Alpha
+        // and Beta's relative order — and, since the stale entry can
+        // never be rendered or targeted by either index convention,
+        // must leave it exactly where it already was (first).
+        await tapReorderMenuItem(tester, 'Alpha', 'Move down');
+
+        final saved = await SidebarConfigStore.instance.load();
+        final ids = saved
+            .firstWhere((s) => s.id == 'my_playlists')
+            .items
+            .map((i) => i.refId)
+            .toList();
+        expect(ids, ['stale-id', 'p2', 'p1']);
+      });
+    });
   });
 }
