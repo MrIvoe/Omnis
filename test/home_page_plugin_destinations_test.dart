@@ -283,4 +283,29 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  testWidgets(
+      'a wide-but-not-rotated window (the default flutter test viewport, '
+      'and every normal desktop window) does not trigger bottom-nav '
+      'auto-hide even though bottomNavAutoHide defaults to true', (tester) async {
+    await tester.runAsync(() async {
+      _registerBareCore();
+      addTearDown(_unregisterCore);
+
+      // Default settings: bottomNavAutoHide == true. The default test
+      // surface (800x600) is wider than tall, so
+      // `MediaQuery.orientationOf(context) == Orientation.landscape` is
+      // also true here — exactly the desktop-window shape that used to
+      // conflate "wide window" with "device rotated." On the `flutter
+      // test` host platform, `PlatformCapabilities.isRotatable` is
+      // `false` (neither Android nor iOS), so `autoHideActive` must stay
+      // `false` and the reveal FAB must never appear.
+      expect(AppSettings.instance.bottomNavAutoHide, isTrue);
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await _settle(tester);
+
+      expect(find.byTooltip('Show navigation'), findsNothing);
+    });
+  });
 }

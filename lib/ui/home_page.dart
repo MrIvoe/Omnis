@@ -10,6 +10,7 @@ import 'package:omnis/core/custom_mood.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/main_core.dart';
 import 'package:omnis/core/playlist_store.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -386,7 +387,7 @@ class _HomePageState extends State<HomePage> {
     // playback controls by default; a swipe from the bottom edge or the
     // small handle button bring it back without permanently covering the
     // screen the way always-visible nav would in those orientations.
-    final isLandscape =
+    final isLandscape = PlatformCapabilities.isRotatable &&
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final isCarMode = settings.playerLayoutId == 'car_mode';
     final autoHideActive =

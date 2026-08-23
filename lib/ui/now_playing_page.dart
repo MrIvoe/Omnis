@@ -9,6 +9,7 @@ import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
+import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/waveform_store.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
@@ -325,7 +326,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       BuildContext context, AppSettings settings) {
     final selected = _layouts.resolve(settings.playerLayoutId);
     const portraitOriented = {'standard', 'top_controls'};
-    final isLandscape =
+    final isLandscape = PlatformCapabilities.isRotatable &&
         MediaQuery.orientationOf(context) == Orientation.landscape;
     if (settings.autoLandscapeLayout &&
         isLandscape &&
