@@ -28,71 +28,105 @@ class CarModeLayout extends PlayerLayout {
     final theme = Theme.of(context);
     final rightSide = data.settings.carModeControlsOnRight;
 
-    final rail = Container(
-      width: 120,
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _CarButton(
-              icon: Icons.skip_previous,
-              tooltip: 'Previous',
-              onPressed: data.onPrevious,
-            ),
-            _CarButton(
-              icon: data.buffering
-                  ? Icons.hourglass_top
-                  : (data.playing
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_fill),
-              tooltip: data.buffering
-                  ? 'Buffering'
-                  : (data.playing ? 'Pause' : 'Play'),
-              onPressed: data.buffering ? null : data.onPlayPause,
-              size: 84,
-            ),
-            _CarButton(
-              icon: Icons.skip_next,
-              tooltip: 'Next',
-              onPressed: data.onNext,
-            ),
-          ],
-        ),
-      ),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Both the rail's oversized transport buttons and the album art
+        // below are fixed-size direct children of a Row with no
+        // scroll/shrink guard, so either can overflow a short,
+        // freeform-resized desktop window — the same risk
+        // landscape_layout.dart has, and for the same reason (see
+        // PlatformCapabilities.isRotatable's own doc comment for why
+        // "wide" no longer means "physically rotated" on desktop). Clamp
+        // both to whatever height is actually available instead of their
+        // fixed defaults.
+        final availableHeight = constraints.maxHeight;
 
-    final info = Expanded(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PlayerAlbumArt(data: data, size: 140, iconSize: 64),
-              const SizedBox(height: 24),
-              Text(
-                data.track.title,
-                style: theme.textTheme.headlineMedium,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                data.track.artists.join(', '),
-                style: theme.textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              PlayerProgressBar(data: data, interactive: false),
-            ],
+        // Rail: previous/play-pause/next, normally 64/84/64, each padded
+        // 16 on top and bottom by _CarButton's IconButton. Scale every
+        // icon down together (never up) so the three still fit the
+        // rail's own height budget.
+        const railPadding = 16.0 * 2 * 3; // 3 buttons, 16px top+bottom each
+        const baseIconTotal = 64.0 + 84.0 + 64.0;
+        final railScale =
+            ((availableHeight - railPadding) / baseIconTotal).clamp(0.3, 1.0);
+        final prevNextSize = 64.0 * railScale;
+        final playPauseSize = 84.0 * railScale;
+
+        final rail = Container(
+          width: 120,
+          color: theme.colorScheme.surfaceContainerHighest,
+          child: SafeArea(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _CarButton(
+                  icon: Icons.skip_previous,
+                  tooltip: 'Previous',
+                  onPressed: data.onPrevious,
+                  size: prevNextSize,
+                ),
+                _CarButton(
+                  icon: data.buffering
+                      ? Icons.hourglass_top
+                      : (data.playing
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_fill),
+                  tooltip: data.buffering
+                      ? 'Buffering'
+                      : (data.playing ? 'Pause' : 'Play'),
+                  onPressed: data.buffering ? null : data.onPlayPause,
+                  size: playPauseSize,
+                ),
+                _CarButton(
+                  icon: Icons.skip_next,
+                  tooltip: 'Next',
+                  onPressed: data.onNext,
+                  size: prevNextSize,
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
-    );
+        );
 
-    return Row(children: rightSide ? [info, rail] : [rail, info]);
+        // Album art: cap to whatever's left after the title/artist text
+        // and progress bar's own space (minus a little breathing room),
+        // instead of a fixed 140 that can overflow the same way.
+        final artSize = (availableHeight - 176).clamp(48.0, 140.0);
+
+        final info = Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PlayerAlbumArt(
+                      data: data, size: artSize, iconSize: artSize * 0.45),
+                  const SizedBox(height: 24),
+                  Text(
+                    data.track.title,
+                    style: theme.textTheme.headlineMedium,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    data.track.artists.join(', '),
+                    style: theme.textTheme.titleLarge,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  PlayerProgressBar(data: data, interactive: false),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        return Row(children: rightSide ? [info, rail] : [rail, info]);
+      },
+    );
   }
 }
 
