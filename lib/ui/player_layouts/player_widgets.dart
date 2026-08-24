@@ -366,13 +366,29 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
     // give up their own size first, shrinking toward -- but, thanks to
     // `IconButton`'s own floor, never actually below -- 48dp. Only once
     // every secondary is already at that floor does Play/Pause give up
-    // its size advantage too, and only if the full `ButtonLayout.standard`
-    // set *still* doesn't fit even then (well under the ~360dp this app's
-    // narrowest supported phone width actually measures, per the widget
-    // test below -- unreachable in practice, kept as a deliberate safety
-    // net) does the least-essential button -- play-mode, the only one of
-    // the six absent from the other two `ButtonLayout` variants already --
-    // fold into a `PopupMenuButton` instead of continuing to squeeze.
+    // its size advantage too, and once *that's* still not enough, the
+    // least-essential button -- play-mode, the only one of the six absent
+    // from the other two `ButtonLayout` variants already -- folds into a
+    // `PopupMenuButton` instead of continuing to squeeze.
+    //
+    // That fold-out's own trigger, worked through against this row's real
+    // numbers below, is *not* an extreme, unreachable width: at the full
+    // Standard 6-button set's defaults, floored secondaries total 240
+    // (5 buttons x 48dp) and Play/Pause's own box is 72dp, so the row
+    // still needs 48 (kMinInteractiveDimension) + 240 + 40 (this row's
+    // own fixed gaps) = 328dp of *available width* before play-mode drops
+    // out of the row entirely (see `overflowPlayMode` below). Both
+    // screens that render the full Standard set -- `StandardLayout` and
+    // `TopControlsLayout` -- pad this row by 24dp on each side, so that
+    // 328dp of available width needs a 376dp-wide *screen* to avoid the
+    // fold-out, not a 360dp one. A 360dp-class phone (this app's own
+    // documented narrowest supported width, and a genuinely common
+    // Android size, not an edge case) only hands the row 312dp after that
+    // padding -- below the 328dp floor -- so the fold-out is the *normal*
+    // render there today, not a safety net that never fires. Nothing is
+    // functionally broken by this (the 48dp tap-target floor still holds,
+    // and nothing overflows), but it is worth knowing this is shipping
+    // behavior on real, narrow phones rather than a defensive-only path.
     return LayoutBuilder(
       builder: (context, constraints) {
         // An IconButton's own default padding (8dp each side) plus its
@@ -433,16 +449,22 @@ class _PlayerControlsRowState extends State<PlayerControlsRow>
               : 0.0;
         }
 
-        // Tier 2 (last resort -- see the class-level comment above for
-        // why this is unreachable at any width this app actually
-        // supports): even every secondary at 48dp doesn't fit alongside
+        // Tier 2 -- reachable well within phone territory, not a last
+        // resort: even every secondary at 48dp doesn't fit alongside
         // Play/Pause's natural size, so Play/Pause gives up its own size
         // advantage too, down to the same shared 48dp floor everything
-        // else already respects. If the full Standard 6-button set still
-        // doesn't fit with *everything* already floored, play-mode is the
-        // one button that can actually be removed from the row's width
-        // budget entirely (unlike a mere widget-type swap in the same
-        // slot, which wouldn't free any space) -- it folds into a
+        // else already respects. This tier starts as soon as the row's
+        // own available width drops below 352dp (naturalPlayBox 72 +
+        // floorSecondaryTotal 240 + gaps 40); on the two screens that
+        // render the full Standard set with this row's usual 24dp-each-
+        // side padding, that is any screen narrower than 400dp -- most
+        // phones. If the full Standard 6-button set still doesn't fit
+        // with *everything* already floored (available width below
+        // 328dp, i.e. a 376dp-or-narrower screen -- see the class-level
+        // comment above for the full math), play-mode is the one button
+        // that can actually be removed from the row's width budget
+        // entirely (unlike a mere widget-type swap in the same slot,
+        // which wouldn't free any space) -- it folds into a
         // PopupMenuButton rendered above the row instead of inside it.
         var playT = 1.0;
         var overflowPlayMode = false;

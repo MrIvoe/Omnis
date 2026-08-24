@@ -185,5 +185,18 @@ abstract class PlayerLayout {
   /// of visible buttons the other layouts have.
   bool get definesOwnGestures => false;
 
+  /// Whether this layout paints its own full-bleed background (art plus a
+  /// dark scrim) reaching all the way to the top of the screen, making it
+  /// its own "chrome" rather than sitting under the Scaffold's normal
+  /// app bar strip. When true, `NowPlayingPage` extends its body behind
+  /// the app bar and renders that app bar transparent with white icons,
+  /// so the layout's own scrim — not a generic opaque strip — reads as
+  /// the screen's real background. When false (the default), the app bar
+  /// keeps its normal theme-derived colors and the body stops above it,
+  /// since a plain scaffold-colored background behind a transparent app
+  /// bar would leave hardcoded white icons (most critically the back
+  /// button) with no reliable contrast.
+  bool get usesOverlayChrome => false;
+
   Widget build(BuildContext context, PlayerLayoutData data);
 }

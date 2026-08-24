@@ -476,6 +476,25 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
 
     final layout = _resolveActiveLayout(context, settings);
     final body = layout.build(context, data);
+    // Only a layout that paints its own full-bleed art/scrim reaching the
+    // very top of the screen (Standard, Full Art + Gestures — see
+    // `PlayerLayout.usesOverlayChrome`'s own doc) should get the
+    // transparent/white/extended-body app-bar treatment. Every other
+    // layout (Top Controls, Landscape, Car Mode, TV Mode, Karaoke
+    // Gestures) leaves a plain, theme-colored background under the app
+    // bar's area, so a hardcoded-transparent/white app bar there would
+    // leave its back button — the *only* way out of this screen on a
+    // platform with no OS-level back gesture, e.g. Windows — at roughly
+    // no contrast against a light theme.
+    final overlayChrome = layout.usesOverlayChrome;
+
+    final appBar = AppBar(
+      backgroundColor: overlayChrome ? Colors.transparent : null,
+      elevation: 0,
+      foregroundColor: overlayChrome ? Colors.white : null,
+      iconTheme:
+          overlayChrome ? const IconThemeData(color: Colors.white) : null,
+    );
 
     return _DynamicColorScope(
       track: track,
@@ -483,20 +502,40 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       child: Scaffold(
         // Transparent/no-title so the active layout's own art/scrim reads
         // as the screen's actual background rather than sitting behind a
-        // generic opaque strip — several layouts (Full Art Gestures, TV
-        // Mode, ...) are deliberately designed not to look like a
-        // conventional player. White matches the white-on-scrim overlay
-        // convention `StandardLayout.overlayTheme` already establishes
-        // for staying legible over arbitrary album art; the system back
-        // button/gesture alone still provides the way back (AppBar
-        // supplies its default back arrow regardless of a missing title).
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          foregroundColor: Colors.white,
-          iconTheme: const IconThemeData(color: Colors.white),
+        // generic opaque strip, but only for the overlay-chrome layouts
+        // above; everything else omits these overrides entirely so the
+        // app bar inherits `OmnisTheme`'s own `AppBarTheme`
+        // (theme-derived background/foreground colors) instead. White
+        // matches the white-on-scrim overlay convention
+        // `StandardLayout.overlayTheme` already establishes for staying
+        // legible over arbitrary album art; the system back button/
+        // gesture alone still provides the way back (AppBar supplies its
+        // default back arrow regardless of a missing title).
+        //
+        // Wrapped in a `header`-flagged `Semantics` node (via `PreferredSize`
+        // so the wrapper still satisfies `Scaffold.appBar`'s
+        // `PreferredSizeWidget` contract) so a screen reader announces
+        // something identifiable on every layout, including the five that
+        // supply no `Semantics` of their own — dropping the AppBar's
+        // visible title otherwise left this screen with nothing spoken on
+        // open. Wrapping the app bar itself (rather than an invisible
+        // sibling widget) gives this node the app bar's own real,
+        // non-zero size — a zero-size `Semantics` node is invisible to
+        // the framework's semantics tree and gets pruned outright.
+        // `full_art_gestures`/`karaoke_gestures`'s own gesture-area
+        // `Semantics`, further down in `body` and structurally unrelated
+        // to the app bar, still gets announced as its own separate node
+        // right after this heading, the same way a page heading and its
+        // first control coexist on any other screen.
+        appBar: PreferredSize(
+          preferredSize: appBar.preferredSize,
+          child: Semantics(
+            header: true,
+            label: 'Now Playing',
+            child: appBar,
+          ),
         ),
-        extendBodyBehindAppBar: true,
+        extendBodyBehindAppBar: overlayChrome,
         body: Stack(
           children: [
             Positioned.fill(child: NowPlayingBackground(track: track)),

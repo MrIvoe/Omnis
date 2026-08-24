@@ -27,6 +27,12 @@ class FullArtGesturesLayout extends PlayerLayout {
   @override
   bool get definesOwnGestures => true;
 
+  // The full-bleed artwork plus its scrim gradient below both reach the
+  // very top of the screen, under the app bar's area — see
+  // `PlayerLayout.usesOverlayChrome`'s own doc.
+  @override
+  bool get usesOverlayChrome => true;
+
   @override
   Widget build(BuildContext context, PlayerLayoutData data) {
     final theme = Theme.of(context);

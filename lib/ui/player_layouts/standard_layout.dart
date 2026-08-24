@@ -27,6 +27,12 @@ class StandardLayout extends PlayerLayout {
   @override
   IconData get icon => Icons.view_agenda_outlined;
 
+  // The `Positioned.fill` artwork below plus the top-to-bottom scrim right
+  // after it both reach the very top of the screen, under the app bar's
+  // area — see `PlayerLayout.usesOverlayChrome`'s own doc.
+  @override
+  bool get usesOverlayChrome => true;
+
   @override
   Widget build(BuildContext context, PlayerLayoutData data) {
     final theme = Theme.of(context);

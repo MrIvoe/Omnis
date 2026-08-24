@@ -139,5 +139,125 @@ void main() {
     expect(appBar.elevation, 0);
     expect(appBar.title, isNull);
     expect(find.text('Now Playing'), findsNothing);
+    // Standard sets `PlayerLayout.usesOverlayChrome`, so it must keep the
+    // full overlay treatment: white foreground/icon colors and an
+    // extended body so its own full-bleed art/scrim reads as the real
+    // background.
+    expect(appBar.foregroundColor, Colors.white);
+    expect((appBar.iconTheme)?.color, Colors.white);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.extendBodyBehindAppBar, isTrue);
+  });
+
+  testWidgets(
+      'a non-overlay-chrome layout (Top Controls) keeps the app bar '
+      'theme-derived instead of the Standard-only hardcoded transparent/'
+      'white treatment, and does not extend its body behind it',
+      (tester) async {
+    await AppSettings.instance.initialize();
+    AppSettings.instance.playerLayoutId = 'top_controls';
+    final core = MainCore();
+    final layoutManager = LayoutManager();
+    final engine = _FakeEngine(_track());
+    locator.registerSingleton<MainCore>(core);
+    locator.registerSingleton<AudioEngine>(engine);
+    locator.registerSingleton<LayoutManager>(layoutManager);
+    addTearDown(() async {
+      await locator.unregister<AudioEngine>();
+      await locator.unregister<MainCore>();
+      await locator.unregister<LayoutManager>();
+      await layoutManager.dispose();
+      AppSettings.instance.playerLayoutId = 'standard';
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: NowPlayingPage()));
+    await tester.pump();
+
+    // The Critical finding this guards against: Top Controls paints no
+    // full-bleed background of its own, so a hardcoded transparent
+    // background plus hardcoded white icons here would leave the back
+    // button — the only way out of this screen on a platform with no
+    // OS-level back gesture, e.g. Windows — at roughly no contrast
+    // against a plain, light-theme scaffold background.
+    expect(tester.takeException(), isNull);
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.backgroundColor, isNot(Colors.transparent));
+    expect(appBar.foregroundColor, isNull,
+        reason: 'omitting the override lets the app bar inherit '
+            "OmnisTheme's own theme-derived AppBarTheme colors instead of "
+            'a hardcoded white that has no contrast guarantee here');
+    expect(appBar.iconTheme, isNull);
+
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.extendBodyBehindAppBar, isFalse);
+
+    // The Important finding this guards against: real content (Top
+    // Controls' transport row, its first child) must render below the
+    // app bar, not underneath it — the narrow-phone button/back-button
+    // collision the review flagged.
+    final appBarRect = tester.getRect(find.byType(AppBar));
+    final controlsRect =
+        tester.getRect(find.byType(PlayerControlsRow).first);
+    expect(controlsRect.top, greaterThanOrEqualTo(appBarRect.bottom),
+        reason: 'the transport row must not sit underneath the app bar');
+  });
+
+  testWidgets(
+      'announces a "Now Playing" semantic heading even on a layout with '
+      'no Semantics of its own (Car Mode)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await AppSettings.instance.initialize();
+    AppSettings.instance.playerLayoutId = 'car_mode';
+    final core = MainCore();
+    final layoutManager = LayoutManager();
+    final engine = _FakeEngine(_track());
+    locator.registerSingleton<MainCore>(core);
+    locator.registerSingleton<AudioEngine>(engine);
+    locator.registerSingleton<LayoutManager>(layoutManager);
+    addTearDown(() async {
+      await locator.unregister<AudioEngine>();
+      await locator.unregister<MainCore>();
+      await locator.unregister<LayoutManager>();
+      await layoutManager.dispose();
+      AppSettings.instance.playerLayoutId = 'standard';
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: NowPlayingPage()));
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Now Playing'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets(
+      'the "Now Playing" heading coexists with Full Art + Gestures\' own '
+      'gesture-area Semantics rather than replacing it', (tester) async {
+    final handle = tester.ensureSemantics();
+    await AppSettings.instance.initialize();
+    AppSettings.instance.playerLayoutId = 'full_art_gestures';
+    final core = MainCore();
+    final layoutManager = LayoutManager();
+    final engine = _FakeEngine(_track());
+    locator.registerSingleton<MainCore>(core);
+    locator.registerSingleton<AudioEngine>(engine);
+    locator.registerSingleton<LayoutManager>(layoutManager);
+    addTearDown(() async {
+      await locator.unregister<AudioEngine>();
+      await locator.unregister<MainCore>();
+      await locator.unregister<LayoutManager>();
+      await layoutManager.dispose();
+      AppSettings.instance.playerLayoutId = 'standard';
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: NowPlayingPage()));
+    await tester.pump();
+
+    // Both nodes must be reachable — the page's own heading, and the
+    // layout's pre-existing gesture-area label — as two separate
+    // semantics nodes, not one clobbering the other.
+    expect(find.bySemanticsLabel('Now Playing'), findsOneWidget);
+    expect(find.bySemanticsLabel('Now playing. Double tap to play.'),
+        findsOneWidget);
+    handle.dispose();
   });
 }
