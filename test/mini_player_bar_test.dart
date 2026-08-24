@@ -238,6 +238,57 @@ void main() {
   });
 
   testWidgets(
+      'does not overflow at the maximum 1.5x text-scale clamp '
+      '(AppSettings.clampTextScale ceiling)', (tester) async {
+    final engine = _FakeEngine();
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: const TextScaler.linear(1.5)),
+        child: child!,
+      ),
+      home: Scaffold(body: MiniPlayerBar(engine: engine)),
+    ));
+    engine.setTrack(_track());
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'the title/artist row grows instead of overflowing when text scale '
+      'pushes it past its old fixed 56px envelope', (tester) async {
+    // A direct render measurement (not the approximate line-height math
+    // an audit might do on paper) at the real clamp ceiling of 1.5x
+    // shows the title+artist column already fits inside the old fixed
+    // SizedBox(height: 56) with only ~2px to spare using this app's real
+    // theme/fonts — so a bare "no overflow at 1.5x" assertion alone
+    // passes even against the unfixed SizedBox(height: 56) and would not
+    // catch a regression back to it. 3.0x isn't a scale a user can
+    // actually reach (AppSettings.textScaleFactor is clamped to 1.5),
+    // but it's what actually demonstrates the fix: against the old fixed
+    // SizedBox this reliably throws ("A RenderFlex overflowed by 52
+    // pixels on the bottom" was observed directly), and against the
+    // ConstrainedBox(minHeight: 56) fix it doesn't, because the bar
+    // grows with content instead of clipping it. That gap is what makes
+    // this test a genuine regression guard rather than a check that
+    // happens to pass either way.
+    final engine = _FakeEngine();
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: const TextScaler.linear(3.0)),
+        child: child!,
+      ),
+      home: Scaffold(body: MiniPlayerBar(engine: engine)),
+    ));
+    engine.setTrack(_track());
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
       'with reduce motion on, the pushed route has a zero-duration '
       'transition instead of the normal MaterialPageRoute animation',
       (tester) async {

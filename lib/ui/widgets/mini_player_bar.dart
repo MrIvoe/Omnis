@@ -107,8 +107,8 @@ class _MiniPlayerBarState extends State<MiniPlayerBar> {
           child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              height: 56,
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 56),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(

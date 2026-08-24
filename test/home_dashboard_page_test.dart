@@ -319,6 +319,68 @@ void main() {
     });
   });
 
+  group('text-scale overflow (task 8)', () {
+    testWidgets(
+        'a section row does not overflow at the maximum 1.5x text-scale '
+        'clamp (AppSettings.clampTextScale ceiling)', (tester) async {
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([_track('a', dateAdded: DateTime(2025, 1, 1))]);
+
+        await tester.pumpWidget(MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: child!,
+          ),
+          home: HomeDashboardPage(
+              engine: _FakeEngine(), pluginManager: PluginManager()),
+        ));
+        await _settle(tester);
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        'a section row grows instead of clipping _HomeCard when text '
+        'scale pushes its content past the old fixed 190px envelope',
+        (tester) async {
+      // A direct render measurement (not the approximate 130+gap+2-lines
+      // math an audit might do on paper) at the real 1.5x clamp ceiling
+      // shows the art tile + two text lines total *exactly* 190px with
+      // this app's real theme/fonts — zero slack, but not yet an actual
+      // overflow, so a bare "no overflow at 1.5x" assertion alone passes
+      // even against the old fixed SizedBox(height: 190) and would not
+      // catch a regression back to it. 3.0x isn't reachable by a real
+      // user (AppSettings.textScaleFactor is clamped to 1.5), but it's
+      // what actually demonstrates the fix: against the old fixed
+      // SizedBox this reliably throws ("A RenderFlex overflowed by 54
+      // pixels on the bottom" was observed directly), and against the
+      // damped `sectionHeight` scaling it doesn't, because the row grows
+      // with content instead of clipping _HomeCard's Column. That gap is
+      // what makes this test a genuine regression guard rather than a
+      // check that happens to pass either way.
+      await tester.runAsync(() async {
+        await LibraryStore.instance
+            .save([_track('a', dateAdded: DateTime(2025, 1, 1))]);
+
+        await tester.pumpWidget(MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(3.0)),
+            child: child!,
+          ),
+          home: HomeDashboardPage(
+              engine: _FakeEngine(), pluginManager: PluginManager()),
+        ));
+        await _settle(tester);
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
   group('Customize (item 45)', () {
     testWidgets('the Customize sheet lists every known section, checked '
         'by default when nothing has been saved yet', (tester) async {

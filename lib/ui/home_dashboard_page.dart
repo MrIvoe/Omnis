@@ -234,6 +234,23 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
 
   Widget _buildSection(_HomeSection section) {
     final theme = Theme.of(context);
+    // The 190px row height was sized for the 130x130 art tile + a 6px
+    // gap + two single-line text rows at the *default* 1.0x text scale
+    // (130 + 6 + 20 + 16 = 172, leaving ~18px of slack). At
+    // `AppSettings.textScaleFactor`'s own clamp ceiling of 1.5x (see
+    // `clampTextScale`), the two text rows alone grow to 30 + 24 = 54px
+    // — a confirmed render at that exact scale shows the card's content
+    // then totals exactly 190px, leaving zero slack (verified via a
+    // direct widget-tree measurement, not the approximate arithmetic
+    // above), one rounding/locale/font-substitution nudge away from
+    // clipping. A damped scale (full growth is deliberately avoided —
+    // ballooning the whole horizontal-scroll row for a bit of extra
+    // text headroom would look wrong on its own) restores real margin
+    // at the ceiling without changing anything below 1.0x scale.
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final sectionHeight = textScale > 1.0
+        ? 190.0 * (1.0 + (textScale - 1.0) * 0.4)
+        : 190.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
@@ -246,7 +263,7 @@ class HomeDashboardPageState extends State<HomeDashboardPage> {
           const SizedBox(height: 8),
           SizedBox(
             key: ValueKey('home_section_${section.title}'),
-            height: 190,
+            height: sectionHeight,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
