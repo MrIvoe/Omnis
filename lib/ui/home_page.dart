@@ -75,7 +75,7 @@ class _HomePageState extends State<HomePage> {
   /// destination *look* vanished: `indexOf` returns -1 and `build()`
   /// falls back to Home deliberately. The render index is derived from
   /// this id at build time and never stored.
-  String _selectedDestinationId = _coreDestinationIds.first;
+  String _selectedDestinationId = AppSettings.instance.defaultLaunchTabId;
   bool _coreReady = false;
 
   /// Plugin-contributed tabs, cached rather than read from

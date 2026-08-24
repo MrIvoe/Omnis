@@ -102,7 +102,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _openControls(BuildContext context, {String? highlightField}) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ControlsSettingsPage(highlightField: highlightField),
+        builder: (_) => ControlsSettingsPage(
+            pluginManager: widget.pluginManager,
+            highlightField: highlightField),
       ));
 
   void _openAccessibility(BuildContext context, {String? highlightField}) =>
@@ -364,6 +366,13 @@ class _SettingsPageState extends State<SettingsPage> {
             categoryIcon: Icons.touch_app_outlined,
             highlightField: 'auto_hide_nav',
             navigate: (c) => _openControls(c, highlightField: 'auto_hide_nav')),
+        _SearchableSetting(
+            title: 'Default launch tab',
+            category: 'Controls & Gestures',
+            categoryIcon: Icons.touch_app_outlined,
+            highlightField: 'default_launch_tab',
+            navigate: (c) =>
+                _openControls(c, highlightField: 'default_launch_tab')),
         _SearchableSetting(
             title: 'Library source',
             category: 'Library',

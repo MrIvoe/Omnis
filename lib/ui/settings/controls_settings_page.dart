@@ -1,18 +1,43 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/platform_capabilities.dart';
+import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
+
+/// The six fixed core destinations' ids and display labels, in the same
+/// order `home_page.dart`'s own `_coreDestinationIds`/`destinations`
+/// lists pair them. Duplicated here rather than imported — Dart's
+/// leading-underscore privacy keeps `home_page.dart`'s versions scoped to
+/// that file — so this page's launch-tab picker can list every
+/// destination a user might choose as their default. Kept in sync by
+/// hand, the same tradeoff `settings_page.dart`'s own `_SearchableSetting`
+/// index already accepts for the same "no runtime introspection
+/// mechanism exists for this" reason.
+const _coreLaunchTabOptions = <(String, String)>[
+  ('home', 'Home'),
+  ('library', 'Library'),
+  ('playlist', 'Playlist'),
+  ('moods', 'Moods'),
+  ('online', 'Online'),
+  ('settings', 'Settings'),
+];
 
 /// Controls & Gestures: how you interact with playback — button density,
 /// swipe/tap behavior, and whether the bottom navigation bar stays out of
 /// the way. Distinct from Appearance (what it looks like) even though
 /// both affect the Now Playing screen.
 class ControlsSettingsPage extends StatefulWidget {
+  final PluginManager pluginManager;
+
   /// Set when opened from `SettingsPage`'s search with a specific row in
   /// mind — that row scrolls into view and flashes once this page mounts.
   final String? highlightField;
 
-  const ControlsSettingsPage({super.key, this.highlightField});
+  const ControlsSettingsPage(
+      {super.key, required this.pluginManager, this.highlightField});
 
   @override
   State<ControlsSettingsPage> createState() => _ControlsSettingsPageState();
@@ -21,12 +46,23 @@ class ControlsSettingsPage extends StatefulWidget {
 class _ControlsSettingsPageState extends State<ControlsSettingsPage> {
   late AppSettings _settings;
 
+  /// Plugin-contributed destinations, kept live the same way
+  /// `_HomePageState._pluginDestinations` is — read once here in
+  /// `initState`/on `changes` rather than from `build()`, since
+  /// `PluginManager.homeDestinations` runs every plugin's hook through
+  /// `Sandbox.runSync`, whose failure path can notify listeners
+  /// synchronously (see that field's own doc comment in `home_page.dart`
+  /// for the "setState during build" failure mode this avoids).
+  List<PluginDestination> _pluginDestinations = const [];
+  StreamSubscription<List<ManagedPlugin>>? _pluginManagerSub;
+
   final Map<String, GlobalKey<SettingsHighlightState>> _keys = {
     for (final field in [
       'button_layout',
       'gesture_mode',
       'enable_gestures',
       'auto_hide_nav',
+      'default_launch_tab',
     ])
       field: GlobalKey<SettingsHighlightState>(),
   };
@@ -35,12 +71,38 @@ class _ControlsSettingsPageState extends State<ControlsSettingsPage> {
   void initState() {
     super.initState();
     _settings = AppSettings.instance;
+    _pluginDestinations = widget.pluginManager.homeDestinations;
+    _pluginManagerSub = widget.pluginManager.changes.listen((_) {
+      if (mounted) {
+        setState(() {
+          _pluginDestinations = widget.pluginManager.homeDestinations;
+        });
+      }
+    });
     scrollToAndFlashSetting(_keys[widget.highlightField]);
+  }
+
+  @override
+  void dispose() {
+    _pluginManagerSub?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = _settings;
+    // Core destinations first, then whatever plugins currently contribute
+    // a tab — mirrors the order `home_page.dart`'s own `destinationIds`
+    // list builds in (core ids, then `pluginDestinations`), so this
+    // dropdown's order matches where each entry actually renders in the
+    // nav bar.
+    final launchTabOptions = <(String, String)>[
+      ..._coreLaunchTabOptions,
+      for (final d in _pluginDestinations) (d.id, d.label),
+    ];
+    final currentLaunchTabId = settings.defaultLaunchTabId;
+    final isCurrentLaunchTabAvailable =
+        launchTabOptions.any((o) => o.$1 == currentLaunchTabId);
     return Scaffold(
       appBar: AppBar(title: const Text('Controls & Gestures')),
       body: ListView(
@@ -117,6 +179,34 @@ class _ControlsSettingsPageState extends State<ControlsSettingsPage> {
               value: settings.bottomNavAutoHide,
               onChanged: (value) =>
                   setState(() => settings.bottomNavAutoHide = value),
+            ),
+          ),
+          SettingsHighlight(
+            key: _keys['default_launch_tab'],
+            child: ListTile(
+              title: const Text('Default launch tab'),
+              subtitle: const Text(
+                  'Which tab Omnis opens to on startup — a disabled '
+                  "plugin's tab falls back to the first available one"),
+              trailing: DropdownButton<String>(
+                // `null` rather than an unrecognised id: `DropdownButton`
+                // asserts that a non-null `value` matches exactly one
+                // `item`, which a stale id (a since-disabled plugin's tab)
+                // would violate. `HomePage`'s own build() falls back to
+                // the first destination for the same "no longer exists"
+                // case; this dropdown just shows no selection instead.
+                value:
+                    isCurrentLaunchTabAvailable ? currentLaunchTabId : null,
+                hint: const Text('First available'),
+                items: [
+                  for (final (id, label) in launchTabOptions)
+                    DropdownMenuItem(value: id, child: Text(label)),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => settings.defaultLaunchTabId = value);
+                },
+              ),
             ),
           ),
         ],

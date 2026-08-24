@@ -81,6 +81,17 @@ void main() {
     }
   });
 
+  test('defaultLaunchTabId defaults to library and persists once set',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await AppSettings.instance.initialize();
+
+    expect(AppSettings.instance.defaultLaunchTabId, 'library');
+
+    AppSettings.instance.defaultLaunchTabId = 'moods';
+    expect(AppSettings.instance.defaultLaunchTabId, 'moods');
+  });
+
   test('hasCompletedOnboarding defaults to false and persists once set',
       () async {
     SharedPreferences.setMockInitialValues({});

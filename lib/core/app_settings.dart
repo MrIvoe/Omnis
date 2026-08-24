@@ -128,6 +128,7 @@ class AppSettings extends ChangeNotifier {
   static const _queueRuleAvoidRepeatAlbumKey =
       'app_queue_rule_avoid_repeat_album';
   static const _libraryVisibleColumnsKey = 'app_library_visible_columns';
+  static const _defaultLaunchTabIdKey = 'app_default_launch_tab_id';
 
   SharedPreferences? _prefs;
   bool _initialized = false;
@@ -1206,6 +1207,24 @@ class AppSettings extends ChangeNotifier {
   Future<void> setLibraryVisibleColumns(Set<String> columns) async {
     _ensurePrefs();
     await _prefs!.setStringList(_libraryVisibleColumnsKey, columns.toList());
+    notifyListeners();
+  }
+
+  /// Which destination id `HomePage` opens to on cold start. Defaults to
+  /// `'library'` — the one destination guaranteed to exist regardless of
+  /// which plugins are installed, unlike `'home'` before Tier 2, which
+  /// assumed a Home-dashboard tab always existed. Resolved against
+  /// whatever destinations actually exist at launch time with the same
+  /// "fall back to the first one if this id no longer exists" logic
+  /// `HomePage`'s own tab-selection already uses — a user who picked a
+  /// plugin-contributed tab as their launch default and later disabled
+  /// that plugin doesn't see a crash, just a fallback.
+  String get defaultLaunchTabId =>
+      _prefs?.getString(_defaultLaunchTabIdKey) ?? 'library';
+
+  set defaultLaunchTabId(String value) {
+    _ensurePrefs();
+    _prefs!.setString(_defaultLaunchTabIdKey, value);
     notifyListeners();
   }
 

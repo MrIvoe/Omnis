@@ -285,6 +285,48 @@ void main() {
   });
 
   testWidgets(
+      'opens to the destination named by AppSettings.defaultLaunchTabId '
+      'instead of always defaulting to the first core tab', (tester) async {
+    await tester.runAsync(() async {
+      _registerBareCore();
+      addTearDown(_unregisterCore);
+      // 'settings' is the last of the six core destinations — nowhere
+      // near `_coreDestinationIds.first`, so this only passes if the
+      // initial `_selectedDestinationId` actually comes from the
+      // persisted setting rather than from that constant.
+      AppSettings.instance.defaultLaunchTabId = 'settings';
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await _settle(tester);
+
+      // Six core tabs, no plugins registered; 'settings' is index 5.
+      expect(_homeStack(tester, childCount: 6).index, 5);
+    });
+  });
+
+  testWidgets(
+      'falls back to the first available destination, rather than '
+      "crashing, when the persisted default launch tab id doesn't "
+      'currently exist (e.g. a disabled plugin)', (tester) async {
+    await tester.runAsync(() async {
+      _registerBareCore();
+      addTearDown(_unregisterCore);
+      // Names a destination that was never registered at all — the same
+      // "vanished destination" shape a since-disabled plugin's launch-tab
+      // choice would leave behind, exercising the existing Tier 0
+      // fallback logic (`destinationIds.indexOf` returns -1) for this new
+      // call site specifically.
+      AppSettings.instance.defaultLaunchTabId = 'a_disabled_plugin_tab';
+
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await _settle(tester);
+
+      expect(_homeStack(tester, childCount: 6).index, 0);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets(
       'a wide-but-not-rotated window (the default flutter test viewport, '
       'and every normal desktop window) does not trigger bottom-nav '
       'auto-hide even though bottomNavAutoHide defaults to true', (tester) async {
