@@ -831,106 +831,129 @@ class MoodsPageState extends State<MoodsPage> {
       ),
       body: Stack(
         children: [
-          GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              // Was 1.1 — too tight once a two-word preset name
-              // ("Forgotten Favorites") wraps to a second title line;
-              // taller cards give every tile real breathing room
-              // instead of the subtitle text touching the bottom edge.
-              childAspectRatio: 0.95,
-            ),
-            itemCount: presetMoods.length + _customMoods.length,
-            itemBuilder: (context, index) {
-              if (index < presetMoods.length) {
-                final mood = presetMoods[index];
-                return Card(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _loading ? null : () => playMood(mood),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      // A two-word mood/preset name (e.g. "Forgotten
-                      // Favorites") wraps to a second line, which this
-                      // fixed-aspect-ratio grid tile's height doesn't
-                      // budget for — the single-word names this grid was
-                      // originally built for (Chill/Focus/Workout/Sleep)
-                      // never exposed that. Same `SingleChildScrollView`
-                      // guard used elsewhere in this app for exactly
-                      // "fixed-size content might not always fit."
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mood,
-                                size: 36, color: theme.colorScheme.primary),
-                            const SizedBox(height: 12),
-                            Text(mood, style: theme.textTheme.titleMedium),
-                            const SizedBox(height: 4),
-                            Text('Tap to build and play a queue',
-                                style: theme.textTheme.bodySmall),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-              final mood = _customMoods[index - presetMoods.length];
-              // UI_SPEC §14's "mood visuals": a user-picked color/icon
-              // identify this tile, distinct from every preset tile's
-              // generic `Icons.mood`/theme-primary look above.
-              final tileColor = mood.color ?? theme.colorScheme.primary;
-              return Card(
-                child: Stack(
-                  children: [
-                    InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: _loading ? null : () => playCustomMood(mood),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(mood.icon.icon, size: 36, color: tileColor),
-                              const SizedBox(height: 12),
-                              Text(mood.name,
-                                  style: theme.textTheme.titleMedium),
-                              const SizedBox(height: 4),
-                              Text(
-                                mood.isInTimeWindow(now)
-                                    ? 'Suggested now'
-                                    : 'Tap to build and play a queue',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ],
+          // A fixed `crossAxisCount: 2` looked sparse on a wide desktop
+          // window (two ~800px-wide tiles) and wasted space in between,
+          // but gave every width the same treatment. Deriving the column
+          // count from available width keeps each tile close to a
+          // ~200dp target width instead — floor-divided so tiles don't
+          // shrink below that, clamped so it never drops below the
+          // original 2-column minimum or grows unreasonably wide on a
+          // very large window.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisCount =
+                  (constraints.maxWidth / 200).floor().clamp(2, 5);
+              return GridView.builder(
+                padding: const EdgeInsets.all(16),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  // Was 1.1 — too tight once a two-word preset name
+                  // ("Forgotten Favorites") wraps to a second title line;
+                  // taller cards give every tile real breathing room
+                  // instead of the subtitle text touching the bottom
+                  // edge. Still right once the column count varies: each
+                  // tile's *width* stays pinned near the same ~200dp
+                  // target regardless of column count (more columns
+                  // only appear because more width is available), so
+                  // this ratio keeps producing a similarly-proportioned
+                  // tile at every width instead of needing a
+                  // per-column-count value.
+                  childAspectRatio: 0.95,
+                ),
+                itemCount: presetMoods.length + _customMoods.length,
+                itemBuilder: (context, index) {
+                  if (index < presetMoods.length) {
+                    final mood = presetMoods[index];
+                    return Card(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: _loading ? null : () => playMood(mood),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          // A two-word mood/preset name (e.g. "Forgotten
+                          // Favorites") wraps to a second line, which this
+                          // fixed-aspect-ratio grid tile's height doesn't
+                          // budget for — the single-word names this grid was
+                          // originally built for (Chill/Focus/Workout/Sleep)
+                          // never exposed that. Same `SingleChildScrollView`
+                          // guard used elsewhere in this app for exactly
+                          // "fixed-size content might not always fit."
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.mood,
+                                    size: 36, color: theme.colorScheme.primary),
+                                const SizedBox(height: 12),
+                                Text(mood, style: theme.textTheme.titleMedium),
+                                const SizedBox(height: 4),
+                                Text('Tap to build and play a queue',
+                                    style: theme.textTheme.bodySmall),
+                              ],
+                            ),
                           ),
                         ),
                       ),
+                    );
+                  }
+                  final mood = _customMoods[index - presetMoods.length];
+                  // UI_SPEC §14's "mood visuals": a user-picked color/icon
+                  // identify this tile, distinct from every preset tile's
+                  // generic `Icons.mood`/theme-primary look above.
+                  final tileColor = mood.color ?? theme.colorScheme.primary;
+                  return Card(
+                    child: Stack(
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _loading ? null : () => playCustomMood(mood),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(mood.icon.icon,
+                                      size: 36, color: tileColor),
+                                  const SizedBox(height: 12),
+                                  Text(mood.name,
+                                      style: theme.textTheme.titleMedium),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    mood.isInTimeWindow(now)
+                                        ? 'Suggested now'
+                                        : 'Tap to build and play a queue',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: PopupMenuButton<String>(
+                            tooltip: 'Mood options',
+                            onSelected: (value) {
+                              if (value == 'edit') _editCustomMood(mood);
+                              if (value == 'delete') _deleteCustomMood(mood);
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(value: 'edit', child: Text('Edit')),
+                              PopupMenuItem(
+                                  value: 'delete', child: Text('Delete')),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: PopupMenuButton<String>(
-                        tooltip: 'Mood options',
-                        onSelected: (value) {
-                          if (value == 'edit') _editCustomMood(mood);
-                          if (value == 'delete') _deleteCustomMood(mood);
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(value: 'edit', child: Text('Edit')),
-                          PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           ),

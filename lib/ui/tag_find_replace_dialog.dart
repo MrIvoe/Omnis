@@ -65,7 +65,14 @@ class _TagFindReplaceDialogState extends State<TagFindReplaceDialog> {
     return AlertDialog(
       title: const Text('Find & Replace tags'),
       content: SizedBox(
-        width: 480,
+        // A fixed 480 either wasted most of a wide desktop window or
+        // (on a narrow phone) fought with AlertDialog's own inset
+        // padding. Scaling with the actual screen width — capped at the
+        // old constant as a ceiling, floored just above what still fits
+        // a narrow phone without that fight — keeps 480 as the
+        // desktop-sized default while letting both extremes size to
+        // what's actually available.
+        width: MediaQuery.sizeOf(context).width.clamp(280, 480),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

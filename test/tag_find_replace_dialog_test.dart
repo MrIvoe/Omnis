@@ -179,4 +179,57 @@ void main() {
 
     expect(find.textContaining('1 change'), findsOneWidget);
   });
+
+  group('dialog width scales with the viewport instead of staying pinned '
+      'to the old fixed 480', () {
+    Future<void> openAt(WidgetTester tester, double width,
+        {double height = 800}) async {
+      tester.view.physicalSize = Size(width, height);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () =>
+                TagFindReplaceDialog.show(context, [_track(id: '1')]),
+            child: const Text('Open'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+    }
+
+    double contentWidth(WidgetTester tester) => tester
+        .widgetList<SizedBox>(find.byType(SizedBox))
+        .firstWhere((s) => s.width != null)
+        .width!;
+
+    testWidgets('at a narrow phone width, the dialog shrinks below the old '
+        'fixed 480 instead of overflowing or staying pinned', (tester) async {
+      await openAt(tester, 320);
+
+      expect(contentWidth(tester), 320,
+          reason: 'below the 480 ceiling and above the 280 floor, the '
+              'width should track the viewport exactly');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('below the 280 floor, width clamps to 280 rather than '
+        'shrinking further or overflowing', (tester) async {
+      await openAt(tester, 250);
+
+      expect(contentWidth(tester), 280);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('at a wide desktop width, the dialog caps at the old fixed '
+        '480 rather than growing to fill the window', (tester) async {
+      await openAt(tester, 1600, height: 1000);
+
+      expect(contentWidth(tester), 480);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
