@@ -43,6 +43,16 @@ class GlobalSidebarDrawer extends StatefulWidget {
   final PluginManager pluginManager;
   final int selectedIndex;
   final List<HomeDestinationInfo> destinations;
+
+  /// The id of each entry in [destinations], in the same order — 1:1
+  /// with `home_page.dart`'s own `destinationIds`. Needed so the "jump
+  /// to Playlist" shortcut in [_selectPlaylist] can resolve `'playlist'`
+  /// to whatever index it currently occupies, rather than assuming a
+  /// fixed position (a bare literal here previously assumed core tab
+  /// index 2, which broke the moment the core tab list's order/length
+  /// changed — see [_selectPlaylist]'s own doc comment).
+  final List<String> destinationIds;
+
   final GlobalKey<PlaylistPageState> playlistKey;
   final GlobalKey<MoodsPageState> moodsKey;
 
@@ -57,6 +67,7 @@ class GlobalSidebarDrawer extends StatefulWidget {
     required this.pluginManager,
     required this.selectedIndex,
     required this.destinations,
+    required this.destinationIds,
     required this.playlistKey,
     required this.moodsKey,
     required this.onSelectDestination,
@@ -102,9 +113,17 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     await SidebarConfigStore.instance.save(_sections);
   }
 
+  /// Jumps to the Playlist tab before opening [playlist] — resolved by id
+  /// via [GlobalSidebarDrawer.destinationIds] rather than a hardcoded
+  /// index, since "Playlist"'s index among the core tabs isn't fixed
+  /// (mirrors `home_page.dart`'s own id-to-index resolution). Falls back
+  /// to `0` if `'playlist'` is somehow absent, matching that same
+  /// fallback pattern — 'playlist' is a permanently-core id, so
+  /// `indexOf` returning `-1` should never actually happen.
   void _selectPlaylist(Playlist playlist) {
     Navigator.of(context).pop();
-    widget.onSelectDestination(2);
+    final playlistIndex = widget.destinationIds.indexOf('playlist');
+    widget.onSelectDestination(playlistIndex < 0 ? 0 : playlistIndex);
     widget.playlistKey.currentState?.openPlaylist(playlist);
   }
 

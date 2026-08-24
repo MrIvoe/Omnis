@@ -38,6 +38,10 @@ const _destinations = [
   HomeDestinationInfo(Icons.settings, 'Settings'),
 ];
 
+/// 1:1 with [_destinations], in the same order — mirrors `home_page.dart`'s
+/// own `destinationIds`.
+const _destinationIds = ['home', 'library', 'playlist', 'moods', 'settings'];
+
 /// `GlobalSidebarDrawer._load` does real dart:io file reads (via
 /// `SidebarConfigStore`/`PlaylistStore`/`CustomMoodStore`), which never
 /// actually complete inside `testWidgets`' fake-async zone — the same
@@ -74,6 +78,8 @@ Future<void> _settle(WidgetTester tester) async {
 Future<void> _pumpDrawer(
   WidgetTester tester, {
   int selectedIndex = 0,
+  List<HomeDestinationInfo> destinations = _destinations,
+  List<String> destinationIds = _destinationIds,
   ValueChanged<int>? onSelectDestination,
 }) async {
   await tester.pumpWidget(MaterialApp(
@@ -82,7 +88,8 @@ Future<void> _pumpDrawer(
       drawer: GlobalSidebarDrawer(
         pluginManager: PluginManager(),
         selectedIndex: selectedIndex,
-        destinations: _destinations,
+        destinations: destinations,
+        destinationIds: destinationIds,
         playlistKey: GlobalKey<PlaylistPageState>(),
         moodsKey: GlobalKey<MoodsPageState>(),
         onSelectDestination: onSelectDestination ?? (_) {},
@@ -136,6 +143,63 @@ void main() {
 
       expect(selected, 1);
       expect(find.text('MY PLAYLISTS'), findsNothing); // drawer closed
+    });
+  });
+
+  testWidgets(
+      'tapping a pinned playlist resolves the Playlist tab by id, not a '
+      'hardcoded index — regression guard for a future core-tab-list '
+      'reorder (e.g. removing "home") shifting every subsequent index, '
+      'even with plugin destinations appended after the core ones',
+      (tester) async {
+    await tester.runAsync(() async {
+      await PlaylistStore.instance.save([
+        Playlist(
+            id: 'p1',
+            name: 'Road Trip',
+            trackIds: const [],
+            createdAt: DateTime(2026)),
+      ]);
+      await SidebarConfigStore.instance.save([
+        const SidebarSection(
+          id: 'my_playlists',
+          title: 'My playlists',
+          kind: SidebarItemKind.playlist,
+          items: [SidebarItem(kind: SidebarItemKind.playlist, refId: 'p1')],
+        ),
+        const SidebarSection(
+            id: 'my_moods', title: 'My moods', kind: SidebarItemKind.mood),
+      ]);
+
+      int? selected;
+      // Simulates the post-"remove 'home' from the core id list" world
+      // this bug guards against, plus a plugin destination appended
+      // after the core ones (plugin destinations always render after
+      // core ones per this plan's Tier 0 contract) — 'playlist' sits at
+      // index 1 here, not the old hardcoded literal `2`.
+      await _pumpDrawer(
+        tester,
+        destinations: const [
+          HomeDestinationInfo(Icons.library_music, 'Library'),
+          HomeDestinationInfo(Icons.playlist_play, 'Playlist'),
+          HomeDestinationInfo(Icons.mood, 'Moods'),
+          HomeDestinationInfo(Icons.settings, 'Settings'),
+          HomeDestinationInfo(Icons.extension, 'Sample Plugin Tab'),
+        ],
+        destinationIds: const [
+          'library',
+          'playlist',
+          'moods',
+          'settings',
+          'sample_plugin_destination',
+        ],
+        onSelectDestination: (i) => selected = i,
+      );
+
+      await tester.tap(find.text('Road Trip'));
+      await _settle(tester);
+
+      expect(selected, 1);
     });
   });
 

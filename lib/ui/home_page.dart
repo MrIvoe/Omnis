@@ -514,6 +514,7 @@ class _HomePageState extends State<HomePage> {
             pluginManager: core.pluginManager,
             selectedIndex: selectedIndex,
             destinations: destinations,
+            destinationIds: destinationIds,
             playlistKey: _playlistKey,
             moodsKey: _moodsKey,
             onSelectDestination: (i) =>
