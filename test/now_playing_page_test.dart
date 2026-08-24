@@ -111,4 +111,33 @@ void main() {
     // correctly suppressed the old orientation-derived override.
     expect(find.byType(PlayerAlbumArt), findsNothing);
   });
+
+  testWidgets(
+      'Task 10 Step 2: the app bar over an active layout is transparent '
+      'and title-less rather than a generic opaque strip, so it doesn\'t '
+      'get in the way of layouts deliberately designed not to look like a '
+      'conventional player', (tester) async {
+    await AppSettings.instance.initialize();
+    final core = MainCore();
+    final layoutManager = LayoutManager();
+    final engine = _FakeEngine(_track());
+    locator.registerSingleton<MainCore>(core);
+    locator.registerSingleton<AudioEngine>(engine);
+    locator.registerSingleton<LayoutManager>(layoutManager);
+    addTearDown(() async {
+      await locator.unregister<AudioEngine>();
+      await locator.unregister<MainCore>();
+      await locator.unregister<LayoutManager>();
+      await layoutManager.dispose();
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: NowPlayingPage()));
+    await tester.pump();
+
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.backgroundColor, Colors.transparent);
+    expect(appBar.elevation, 0);
+    expect(appBar.title, isNull);
+    expect(find.text('Now Playing'), findsNothing);
+  });
 }

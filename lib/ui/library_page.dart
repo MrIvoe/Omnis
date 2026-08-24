@@ -3143,7 +3143,7 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _currentTrackIcon(BaseTrack track) {
     final current = widget.engine.currentTrack;
     if (current != null && current.id == track.id) {
-      return const Icon(Icons.graphic_eq, color: Colors.deepPurple);
+      return Icon(Icons.graphic_eq, color: Theme.of(context).colorScheme.primary);
     }
     return const SizedBox.shrink();
   }

@@ -875,25 +875,36 @@ class PlayerExtrasRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final equalizer = data.equalizerPlugin;
     final visualizer = data.visualizerPlugin;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // `Wrap` (not `Row`) so up to four buttons — Queue, Equalizer,
+    // Visualizer, plus AB-repeat when its plugin slot is present — reflow
+    // onto a second line on a narrow width instead of overflowing or
+    // needing a `FittedBox` to shrink illegibly. All three of
+    // Queue/Equalizer/Visualizer share one visual treatment
+    // (`OutlinedButton.icon`) rather than the previous mix of outlined and
+    // filled-tonal styles.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         PlayerAbRepeatButton(data: data),
-        const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: data.onOpenQueue,
           icon: const Icon(Icons.queue_music),
           label: const Text('Queue'),
         ),
-        if (equalizer != null || visualizer != null) const SizedBox(width: 8),
         if (equalizer != null)
-          FilledButton.tonal(
-              onPressed: data.onOpenEqualizer, child: const Text('Equalizer')),
-        if (equalizer != null && visualizer != null) const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: data.onOpenEqualizer,
+            icon: const Icon(Icons.equalizer),
+            label: const Text('Equalizer'),
+          ),
         if (visualizer != null)
-          OutlinedButton(
-              onPressed: data.onActivateVisualizer,
-              child: const Text('Visualizer')),
+          OutlinedButton.icon(
+            onPressed: data.onActivateVisualizer,
+            icon: const Icon(Icons.graphic_eq),
+            label: const Text('Visualizer'),
+          ),
       ],
     );
   }

@@ -193,8 +193,34 @@ void main() {
       brightness: Brightness.dark,
       preset: reloaded.themePreset,
       accentColor: reloaded.accentColor,
+      cornerRadius: 4,
     );
     expect(theme.cardTheme.color, isNotNull);
     expect(theme.navigationBarTheme.backgroundColor, isNotNull);
+
+    // Task 10 Step 4: dialogs/sheets/snackbars/chips now derive their
+    // shape from the same themed `cornerRadius` as cards/inputs/buttons
+    // already did, rather than falling back to Material's own defaults
+    // (a 4px radius is nowhere close to Material's 28px default dialog
+    // corner or its stadium-shaped default chip, so a match here can only
+    // come from actually reading the themed radius).
+    const radius = 4.0;
+    final dialogShape = theme.dialogTheme.shape as RoundedRectangleBorder;
+    expect(dialogShape.borderRadius, const BorderRadius.all(Radius.circular(radius)));
+
+    final sheetShape = theme.bottomSheetTheme.shape as RoundedRectangleBorder;
+    expect(
+      sheetShape.borderRadius,
+      const BorderRadius.only(
+        topLeft: Radius.circular(radius),
+        topRight: Radius.circular(radius),
+      ),
+    );
+
+    final snackShape = theme.snackBarTheme.shape as RoundedRectangleBorder;
+    expect(snackShape.borderRadius, BorderRadius.circular(radius * 0.5));
+
+    final chipShape = theme.chipTheme.shape as RoundedRectangleBorder;
+    expect(chipShape.borderRadius, BorderRadius.circular(radius * 0.6));
   });
 }

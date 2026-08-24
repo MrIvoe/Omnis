@@ -32,11 +32,17 @@ class _FakePathProvider extends PathProviderPlatform
 class _FakeEngine implements AudioEngine {
   final _trackController = StreamController<BaseTrack?>.broadcast();
 
+  // Defaults to null (every pre-existing test's expectation), but
+  // settable so a test can pre-seed "this track is already playing"
+  // without needing a tap-driven rebuild — see the Task 10 Step 1 test
+  // below.
+  BaseTrack? _current;
+
   @override
   Stream<BaseTrack?> get trackStream => _trackController.stream;
 
   @override
-  BaseTrack? get currentTrack => null;
+  BaseTrack? get currentTrack => _current;
 
   @override
   noSuchMethod(Invocation invocation) =>
@@ -172,6 +178,32 @@ void main() {
 
         expect(find.text('1 selected'), findsNothing);
       });
+    });
+  });
+
+  testWidgets(
+      'Task 10 Step 1: the "now playing" marker on a library track row '
+      'uses the app theme\'s primary color, not a hardcoded purple',
+      (tester) async {
+    await tester.runAsync(() async {
+      final track = _track('a');
+      await LibraryStore.instance.save([track]);
+      final engine = _FakeEngine().._current = track;
+      const themePrimary = Color(0xFF00A876);
+
+      await tester.pumpWidget(MaterialApp(
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: themePrimary)
+              .copyWith(primary: themePrimary),
+        ),
+        home: LibraryPage(engine: engine, pluginManager: PluginManager()),
+      ));
+      await _settle(tester);
+
+      expect(find.text('Track a'), findsOneWidget);
+      final icon = tester.widget<Icon>(find.byIcon(Icons.graphic_eq));
+      expect(icon.color, themePrimary);
+      expect(icon.color, isNot(Colors.deepPurple));
     });
   });
 }

@@ -139,6 +139,24 @@ class OmnisTheme {
                         ? themedScheme.primary
                         : themedScheme.primary.withValues(alpha: 0.3)),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(radius * 0.6)))));
+                    borderRadius: BorderRadius.circular(radius * 0.6)))),
+        // Dialogs/sheets/snackbars/chips previously fell back to Material's
+        // own default shapes, ignoring the user's chosen corner radius —
+        // the same `radius` local (and the same per-widget-type multiplier
+        // conventions already used above) now covers them too.
+        dialogTheme: DialogThemeData(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(radius))),
+        bottomSheetTheme: BottomSheetThemeData(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(radius),
+                    topRight: Radius.circular(radius)))),
+        snackBarTheme: SnackBarThemeData(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(radius * 0.5))),
+        chipTheme: ChipThemeData(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(radius * 0.6))));
   }
 }

@@ -330,7 +330,7 @@ class _ProviderSearchViewState extends State<_ProviderSearchView> {
             onPressed: () => _toggleFavorite(track),
           ),
           isPlaying
-              ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
+              ? Icon(Icons.graphic_eq, color: Theme.of(context).colorScheme.primary)
               : const Icon(Icons.play_circle_outline),
         ],
       ),

@@ -481,7 +481,22 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
       track: track,
       enabled: settings.dynamicColorFromArtEnabled,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Now Playing')),
+        // Transparent/no-title so the active layout's own art/scrim reads
+        // as the screen's actual background rather than sitting behind a
+        // generic opaque strip — several layouts (Full Art Gestures, TV
+        // Mode, ...) are deliberately designed not to look like a
+        // conventional player. White matches the white-on-scrim overlay
+        // convention `StandardLayout.overlayTheme` already establishes
+        // for staying legible over arbitrary album art; the system back
+        // button/gesture alone still provides the way back (AppBar
+        // supplies its default back arrow regardless of a missing title).
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          foregroundColor: Colors.white,
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        extendBodyBehindAppBar: true,
         body: Stack(
           children: [
             Positioned.fill(child: NowPlayingBackground(track: track)),

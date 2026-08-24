@@ -6,6 +6,7 @@ import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/ui/player_layouts/full_art_gestures_layout.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
+import 'package:omnis/ui/widgets/track_artwork.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 BaseTrack _track() => BaseTrack(
@@ -161,5 +162,18 @@ void main() {
       expect(nextCalled, isTrue);
       expect(previousCalled, isTrue);
     });
+  });
+
+  testWidgets(
+      'Task 10 Step 3: renders the track\'s real artwork rather than an '
+      'Icons.album placeholder, despite the whole layout\'s premise being '
+      'fullscreen album art', (tester) async {
+    await pump(
+      tester,
+      _dataFor(onPlayPause: () {}, onNext: () {}, onPrevious: () {}),
+    );
+
+    expect(find.byType(TrackArtwork), findsOneWidget);
+    expect(find.byIcon(Icons.album), findsNothing);
   });
 }

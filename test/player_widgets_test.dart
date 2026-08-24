@@ -11,6 +11,7 @@ import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/theme/omnis_icon_style.dart';
 import 'package:omnis/ui/widgets/seek_position_visualizer.dart';
+import 'package:omnis_plugins/equalizer_plugin.dart';
 import 'package:omnis_plugins/sleep_timer_plugin.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,6 +83,7 @@ PlayerLayoutData _dataFor({
   RepeatMode repeatMode = RepeatMode.off,
   SleepTimerPlugin? sleepTimerPlugin,
   ILyricsProvider? lyricsPlugin,
+  EqualizerPlugin? equalizerPlugin,
   IVisualizerProvider? visualizerPlugin,
   String? lyricText,
   Duration? position,
@@ -101,7 +103,7 @@ PlayerLayoutData _dataFor({
       settings: AppSettings.instance,
       pluginManager: PluginManager(),
       lyricsPlugin: lyricsPlugin,
-      equalizerPlugin: null,
+      equalizerPlugin: equalizerPlugin,
       visualizerPlugin: visualizerPlugin,
       sleepTimerPlugin: sleepTimerPlugin,
       lyricText: lyricText,
@@ -969,6 +971,74 @@ void main() {
       await tester.pump();
 
       expect(opened, isTrue);
+    });
+  });
+
+  group('PlayerExtrasRow layout (Task 10 Step 5)', () {
+    testWidgets(
+        'Queue/Equalizer/Visualizer share one visual treatment '
+        '(OutlinedButton.icon), not a mix of outlined and filled-tonal '
+        'styles', (tester) async {
+      final equalizer = EqualizerPlugin();
+      final visualizer = _FakeVisualizerProvider();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: PlayerExtrasRow(
+            data: _dataFor(
+              equalizerPlugin: equalizer,
+              visualizerPlugin: visualizer,
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(find.text('Queue'), findsOneWidget);
+      expect(find.text('Equalizer'), findsOneWidget);
+      expect(find.text('Visualizer'), findsOneWidget);
+      // AB-repeat (always rendered) + Queue + Equalizer + Visualizer. A
+      // `byWidgetPredicate`/`is` check, not `byType`, because
+      // `OutlinedButton.icon` returns a private `_OutlinedButtonWithIcon`
+      // subtype — `find.byType(OutlinedButton)` matches runtime type
+      // exactly and would (wrongly) find none of them.
+      expect(
+        find.byWidgetPredicate((w) => w is OutlinedButton),
+        findsNWidgets(4),
+      );
+      expect(find.byType(FilledButton), findsNothing);
+      visualizer.close();
+    });
+
+    testWidgets(
+        'reflows onto multiple lines at a narrow width instead of '
+        'overflowing, with all four possible buttons still present',
+        (tester) async {
+      final equalizer = EqualizerPlugin();
+      final visualizer = _FakeVisualizerProvider();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 220,
+              child: PlayerExtrasRow(
+                data: _dataFor(
+                  equalizerPlugin: equalizer,
+                  visualizerPlugin: visualizer,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(Wrap), findsOneWidget);
+      expect(find.text('A-B repeat'), findsOneWidget);
+      expect(find.text('Queue'), findsOneWidget);
+      expect(find.text('Equalizer'), findsOneWidget);
+      expect(find.text('Visualizer'), findsOneWidget);
+      visualizer.close();
     });
   });
 }

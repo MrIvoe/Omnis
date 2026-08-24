@@ -141,6 +141,50 @@ void main() {
     expect(find.text('Beta FM'), findsOneWidget);
   });
 
+  testWidgets(
+      'Task 10 Step 1: the "now playing" marker on a top-station tile uses '
+      'the app theme\'s primary color, not a hardcoded purple',
+      (tester) async {
+    final client = MockClient((req) async {
+      return http.Response(
+        jsonEncode([_station('a', 'Alpha FM'), _station('b', 'Beta FM')]),
+        200,
+      );
+    });
+    final manager = PluginManager();
+    manager.register(RadioPlugin(client: client));
+    // RadioPlugin.search/topStations prefixes each result's `stationuuid`
+    // ('a', per `_station` above) with 'radio:' when building its
+    // BaseTrack — pre-seeding this id as already-current means the first
+    // build after stations load renders the "Alpha FM" tile as playing.
+    final engine = _FakeEngine()
+      .._current = BaseTrack(
+        id: 'radio:a',
+        title: 'Alpha FM',
+        artists: const [],
+        album: '',
+        duration: 0,
+        type: TrackType.radio,
+      );
+    await _wireContext(manager, engine);
+    const themePrimary = Color(0xFF00A876);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: themePrimary)
+            .copyWith(primary: themePrimary),
+      ),
+      home: RadioPage(engine: engine, pluginManager: manager),
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Alpha FM'), findsOneWidget);
+    final icon = tester.widget<Icon>(find.byIcon(Icons.graphic_eq));
+    expect(icon.color, themePrimary);
+    expect(icon.color, isNot(Colors.deepPurple));
+  });
+
   testWidgets('an empty top-stations result shows the empty state, not a '
       'blank screen', (tester) async {
     final client = MockClient((req) async {
@@ -410,6 +454,45 @@ void main() {
         expect(engine.lastQueue!.single.streamUrl,
             'https://stream.example.com/jazz');
         expect(engine.playCalled, isTrue);
+      });
+    });
+
+    testWidgets(
+        'Task 10 Step 1: the "now playing" marker on a custom-station tile '
+        'uses the app theme\'s primary color, not a hardcoded purple',
+        (tester) async {
+      await tester.runAsync(() async {
+        final saved = await CustomRadioStationStore.instance
+            .add('My Jazz Station', 'https://stream.example.com/jazz');
+        // Pre-seed the fake engine's currentTrack with the *actual*
+        // persisted station's own BaseTrack (its id is a
+        // timestamp-derived value assigned by `.add`, not something this
+        // test can predict — reading it back off the store instead of
+        // hardcoding a guess) so the tile renders as playing on first
+        // build, no tap-driven rebuild required.
+        final engine = _FakeEngine().._current = saved.single.toTrack();
+        const themePrimary = Color(0xFF00A876);
+
+        final client =
+            MockClient((req) async => http.Response(jsonEncode([]), 200));
+        final manager = PluginManager();
+        manager.register(RadioPlugin(client: client));
+        manager.register(FavoritesPlugin());
+        await _wireContext(manager, engine);
+
+        await tester.pumpWidget(MaterialApp(
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: themePrimary)
+                .copyWith(primary: themePrimary),
+          ),
+          home: RadioPage(engine: engine, pluginManager: manager),
+        ));
+        await _settle(tester);
+
+        expect(find.text('My Jazz Station'), findsOneWidget);
+        final icon = tester.widget<Icon>(find.byIcon(Icons.graphic_eq));
+        expect(icon.color, themePrimary);
+        expect(icon.color, isNot(Colors.deepPurple));
       });
     });
 

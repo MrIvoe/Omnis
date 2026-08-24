@@ -390,7 +390,7 @@ class RadioBodyState extends State<RadioBody> {
             onPressed: () => _toggleFavorite(station),
           ),
           isPlaying
-              ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
+              ? Icon(Icons.graphic_eq, color: Theme.of(context).colorScheme.primary)
               : const Icon(Icons.play_circle_outline),
         ],
       ),
@@ -433,7 +433,7 @@ class RadioBodyState extends State<RadioBody> {
             onPressed: () => _deleteCustomStation(custom),
           ),
           isPlaying
-              ? const Icon(Icons.graphic_eq, color: Colors.deepPurple)
+              ? Icon(Icons.graphic_eq, color: Theme.of(context).colorScheme.primary)
               : const Icon(Icons.play_circle_outline),
         ],
       ),

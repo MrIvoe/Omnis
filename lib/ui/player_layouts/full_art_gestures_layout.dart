@@ -4,6 +4,7 @@ import 'package:omnis/core/platform_capabilities.dart';
 import 'package:omnis/ui/player_layouts/player_layout.dart';
 import 'package:omnis/ui/player_layouts/player_widgets.dart';
 import 'package:omnis/ui/plugin_slot_view.dart';
+import 'package:omnis/ui/widgets/track_artwork.dart';
 
 /// Full-bleed artwork with no visible buttons at all: tap anywhere to
 /// play/pause, swipe left/right to skip. The whole point is that it
@@ -71,6 +72,17 @@ class FullArtGesturesLayout extends PlayerLayout {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            Positioned.fill(
+              child: ExcludeSemantics(
+                child: TrackArtwork(track: data.track, fit: BoxFit.cover),
+              ),
+            ),
+            // A scrim over the real artwork — needed now that the
+            // background is arbitrary album art rather than a fixed
+            // theme-colored gradient, so the PluginSlotView pinned near
+            // the top (and the track info/controls pinned to the bottom,
+            // via their own scrim below) both stay legible regardless of
+            // how bright or busy the art is.
             ExcludeSemantics(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -78,20 +90,12 @@ class FullArtGesturesLayout extends PlayerLayout {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      theme.colorScheme.primaryContainer,
-                      theme.colorScheme.surface,
+                      theme.colorScheme.scrim.withValues(alpha: 0.45),
+                      Colors.transparent,
+                      theme.colorScheme.scrim.withValues(alpha: 0.35),
                     ],
+                    stops: const [0.0, 0.4, 1.0],
                   ),
-                ),
-              ),
-            ),
-            ExcludeSemantics(
-              child: Center(
-                child: Icon(
-                  Icons.album,
-                  size: 220,
-                  color:
-                      theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                 ),
               ),
             ),
