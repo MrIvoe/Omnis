@@ -41,7 +41,7 @@ import 'package:omnis_plugin_api/service_registry.dart';
 /// happened (`events.emit(...)`) without knowing who — if anyone — is
 /// listening.
 ///
-/// The `playerLayoutId` member, the three `request*Permission` methods,
+/// The `playerLayoutId` member, the four `request*Permission` methods,
 /// and `loadLibraryTracks`/`loadPlaylists` exist because auditing every
 /// bundled plugin found several reaching straight into the app's
 /// `AppSettings`/`OmnisPermissions`/`LibraryStore`/`PlaylistStore`
@@ -253,6 +253,12 @@ abstract class PluginContext {
   /// Requests location access, for a plugin that needs speed/position.
   /// [always] additionally requests background location.
   Future<bool> requestLocationPermission({bool always = false});
+
+  /// Requests microphone access, for a plugin that taps system audio via
+  /// an API the OS gates behind this permission even when it isn't
+  /// actually recording from the physical mic (e.g. Android's Visualizer
+  /// API). Returns whether it was granted.
+  Future<bool> requestMicrophonePermission();
 
   // --- Library / playlist read access — closes the gap that had
   // --- `BluetoothPlaybackPlugin` reaching into `LibraryStore`/

@@ -5,15 +5,22 @@ import 'package:permission_handler/permission_handler.dart';
 /// scanning (see `MediaScanner._scanAndroid`'s `checkAndRequest()` call —
 /// storage/media read is already covered and doesn't go through here).
 ///
-/// Requested contextually, not all upfront: [ensureCorePermissions]
-/// covers what the Core itself needs to function normally (right now:
-/// posting the media notification) and is called once at startup.
-/// Bluetooth/location are requested only when a plugin that actually
-/// uses them runs, via [requestBluetooth]/[requestLocation] — asking for
-/// a permission a fresh install has no use for yet is exactly the kind
-/// of "why does this app want that" moment that makes people distrust an
-/// app, and both Android and iOS guidance says to ask in context, not
-/// upfront.
+/// Not a blanket ask-everything-upfront approach — asking for a permission
+/// a fresh install has no use for yet is exactly the kind of "why does
+/// this app want that" moment that makes people distrust an app, and both
+/// Android and iOS guidance says to ask in context, not upfront. But it
+/// isn't purely contextual/lazy either. [ensureCorePermissions] covers
+/// what the Core itself needs to function normally (right now: posting
+/// the media notification) and is called once at startup, always.
+/// [requestStorageWrite]/[requestBluetooth]/[requestLocation]/
+/// [requestMicrophone] are each plugin-specific asks with two distinct
+/// callers: [ensureUpfrontPermissions] batches them once, at first run,
+/// scoped to whichever plugins are already enabled by then (see that
+/// method's own doc); a plugin enabled *after* first run instead triggers
+/// the same method on its own, contextually, via `PluginContext`, exactly
+/// as before this batching entry point existed. Either way, the
+/// individual `request*` methods stay the single place that actually
+/// calls into `permission_handler`.
 ///
 /// Every method here is best-effort and never throws out to the caller —
 /// a denied or platform-unsupported permission degrades the corresponding
@@ -95,6 +102,46 @@ class OmnisPermissions {
       return background.isGranted;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Requests microphone access, for a plugin that taps system audio via
+  /// an API the OS gates behind this permission even when it isn't
+  /// actually recording from the physical mic (e.g. Android's Visualizer
+  /// API, which VisualizerPlugin uses).
+  static Future<bool> requestMicrophone() async {
+    try {
+      final status = await Permission.microphone.request();
+      return status.isGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Requests everything the Core needs plus whatever [enabledPluginIds]
+  /// need, in one batch — called once, at first run, after the plugin
+  /// manager has completed its first pass over which plugins are enabled
+  /// by default. A plugin enabled *later* still requests its own
+  /// permission contextually via `PluginContext`, unchanged — this method
+  /// only covers what's already enabled at the moment it's called, which
+  /// is what keeps "ask upfront" compatible with "no plugins installed
+  /// means nothing to ask for": a fresh install with every optional
+  /// plugin left at its default (some enabled, some not) only sees
+  /// prompts for what's actually active, not a hypothetical maximum.
+  static Future<void> ensureUpfrontPermissions(
+      Set<String> enabledPluginIds) async {
+    await ensureCorePermissions();
+    if (enabledPluginIds.contains('tag_editor')) {
+      await requestStorageWrite();
+    }
+    if (enabledPluginIds.contains('bluetooth_playback')) {
+      await requestBluetooth();
+    }
+    if (enabledPluginIds.contains('driving_mode')) {
+      await requestLocation();
+    }
+    if (enabledPluginIds.contains('visualizer')) {
+      await requestMicrophone();
     }
   }
 }

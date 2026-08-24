@@ -37,6 +37,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingPermissionsContinue => 'Continue';
 
   @override
+  String get onboardingPermissionsPluginIntro => 'Based on what\'s enabled by default, it\'ll also ask for:';
+
+  @override
+  String get onboardingPermissionsStorageLine => 'Broad file access, so the tag editor can save edits directly to your files.';
+
+  @override
+  String get onboardingPermissionsBluetoothLine => 'Bluetooth access, so Bluetooth playback can detect your connected audio device.';
+
+  @override
+  String get onboardingPermissionsLocationLine => 'Location access, so driving mode can tell when you\'re in the car.';
+
+  @override
+  String get onboardingPermissionsMicrophoneLine => 'Microphone access, only to satisfy the OS API the visualizer reads audio levels through — nothing is recorded.';
+
+  @override
   String get onboardingTourTitle => 'Find your way around';
 
   @override

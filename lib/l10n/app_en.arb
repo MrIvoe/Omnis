@@ -43,6 +43,26 @@
   "@onboardingPermissionsContinue": {
     "description": "Button on the permissions screen — advances and, along the way, triggers the real notification-permission request."
   },
+  "onboardingPermissionsPluginIntro": "Based on what's enabled by default, it'll also ask for:",
+  "@onboardingPermissionsPluginIntro": {
+    "description": "Introduces the conditional bullet list of plugin-specific permissions below the main permissions body text. Only shown when at least one applies."
+  },
+  "onboardingPermissionsStorageLine": "Broad file access, so the tag editor can save edits directly to your files.",
+  "@onboardingPermissionsStorageLine": {
+    "description": "Bullet line shown when the tag editor plugin is enabled by default."
+  },
+  "onboardingPermissionsBluetoothLine": "Bluetooth access, so Bluetooth playback can detect your connected audio device.",
+  "@onboardingPermissionsBluetoothLine": {
+    "description": "Bullet line shown when the Bluetooth playback plugin is enabled by default."
+  },
+  "onboardingPermissionsLocationLine": "Location access, so driving mode can tell when you're in the car.",
+  "@onboardingPermissionsLocationLine": {
+    "description": "Bullet line shown when the driving mode plugin is enabled by default."
+  },
+  "onboardingPermissionsMicrophoneLine": "Microphone access, only to satisfy the OS API the visualizer reads audio levels through — nothing is recorded.",
+  "@onboardingPermissionsMicrophoneLine": {
+    "description": "Bullet line shown when the visualizer plugin is enabled by default."
+  },
 
   "onboardingTourTitle": "Find your way around",
   "@onboardingTourTitle": {

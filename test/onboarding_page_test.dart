@@ -130,4 +130,95 @@ void main() {
     expect(find.text('A couple of permissions'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  group('permissions screen upfront-batching copy (task 9)', () {
+    testWidgets(
+        'names the plugin-specific permissions for every bundled plugin — '
+        'each one is enabled by default in a fresh install, so every '
+        'conditional line applies', (tester) async {
+      await pumpOnboarding(tester);
+
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Based on what's enabled by default, it'll also ask for:"),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('tag editor can save edits directly'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Bluetooth playback can detect'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('driving mode can tell when'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('visualizer reads audio levels through'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'shows no plugin-specific lines (and no intro line) when every '
+        'relevant plugin is disabled before onboarding runs — the disabled '
+        'plugin genuinely stays unmentioned, not just unrequested',
+        (tester) async {
+      // isPluginDisabled (fed by setPluginEnabled below) is exactly what
+      // PluginManager.register() consults to compute ManagedPlugin.enabled
+      // (see plugin_manager.dart), so disabling every id
+      // ensureUpfrontPermissions cares about here is a real, direct
+      // simulation of "these ship disabled by default" — not a
+      // parallel/hardcoded guess at the same fact.
+      await AppSettings.instance.setPluginEnabled('tag_editor', false);
+      await AppSettings.instance.setPluginEnabled('bluetooth_playback', false);
+      await AppSettings.instance.setPluginEnabled('driving_mode', false);
+      await AppSettings.instance.setPluginEnabled('visualizer', false);
+
+      await pumpOnboarding(tester);
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Based on what's enabled by default, it'll also ask for:"),
+        findsNothing,
+      );
+      expect(find.textContaining('tag editor can save edits directly'),
+          findsNothing);
+      expect(find.textContaining('Bluetooth playback can detect'),
+          findsNothing);
+      expect(
+          find.textContaining('driving mode can tell when'), findsNothing);
+      expect(find.textContaining('visualizer reads audio levels through'),
+          findsNothing);
+    });
+
+    testWidgets(
+        'shows only the lines for plugins still enabled when some, but not '
+        'all, relevant plugins are disabled', (tester) async {
+      await AppSettings.instance.setPluginEnabled('bluetooth_playback', false);
+      await AppSettings.instance.setPluginEnabled('driving_mode', false);
+
+      await pumpOnboarding(tester);
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Based on what's enabled by default, it'll also ask for:"),
+        findsOneWidget,
+      );
+      expect(find.textContaining('tag editor can save edits directly'),
+          findsOneWidget);
+      expect(find.textContaining('visualizer reads audio levels through'),
+          findsOneWidget);
+      expect(find.textContaining('Bluetooth playback can detect'),
+          findsNothing);
+      expect(
+          find.textContaining('driving mode can tell when'), findsNothing);
+    });
+  });
 }

@@ -52,6 +52,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
   int _index = 0;
   final Set<int> _entered = {};
 
+  /// The plugin ids [_enabledUpfrontPluginIds] reports as enabled, once
+  /// [_requestUpfrontPermissions] has run — `null` until then (nothing
+  /// plugin-specific to show yet). Drives which conditional lines the
+  /// permissions screen renders below its main body text; see
+  /// [_pluginPermissionLines].
+  Set<String>? _enabledPluginIds;
+
   List<_OnboardingScreen> _screens(AppLocalizations l10n) => [
         _OnboardingScreen(
           icon: Icons.extension_outlined,
@@ -62,7 +69,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           icon: Icons.shield_outlined,
           title: l10n.onboardingPermissionsTitle,
           body: l10n.onboardingPermissionsBody,
-          onEnter: OmnisPermissions.ensureCorePermissions,
+          onEnter: _requestUpfrontPermissions,
         ),
         _OnboardingScreen(
           icon: Icons.explore_outlined,
@@ -75,6 +82,110 @@ class _OnboardingPageState extends State<OnboardingPage> {
           body: l10n.onboardingReadyBody,
         ),
       ];
+
+  /// Which of [OmnisPermissions.ensureUpfrontPermissions]'s bundled-plugin
+  /// ids are enabled, without needing a live `PluginManager`.
+  ///
+  /// This screen is built and shown before `HomePage`/`MainCore` in the
+  /// normal cold-start flow (see `main.dart`'s `home:` chooser), so there
+  /// is no live `PluginManager` to read `.enabled` off of yet. The obvious
+  /// fix — call `ensureCoreReady()` here first, since it's idempotent and
+  /// `HomePage` calls it moments later anyway — turns out not to work:
+  /// confirmed directly while building this (instrumented with debug
+  /// prints), the awaited `ensureCoreReady()` call never resolves inside a
+  /// `flutter test` `testWidgets()` pump cycle on this Windows setup. It's
+  /// the same failure mode `declarative_layout_test.dart`'s own doc
+  /// comment describes for a bare `dart:io` read awaited directly inside a
+  /// `testWidgets()` callback: something about `TestWidgetsFlutterBinding`'s
+  /// zone/scheduler and `dart:io`'s event loop dispatch on Windows, not
+  /// specific to this file. `MainCore.initialize()` (which
+  /// `ensureCoreReady()` awaits) reaches for several `dart:io`-backed
+  /// stores, so it trips the same thing.
+  ///
+  /// Reading `AppSettings` directly instead sidesteps that entirely, and
+  /// is *not* a hardcoded guess at which plugins ship enabled by default:
+  /// `PluginManager.register()`'s own `ManagedPlugin.enabled` is computed
+  /// as exactly `!AppSettings.instance.isPluginDisabled(plugin.id)` (see
+  /// `plugin_manager.dart`), with nothing else factored in at registration
+  /// time — so checking the same four ids
+  /// [OmnisPermissions.ensureUpfrontPermissions] itself checks against
+  /// `AppSettings.instance.isPluginDisabled` directly reproduces exactly
+  /// what a live `PluginManager` would report, from the same underlying
+  /// persisted state, without the detour through one.
+  Set<String> _enabledUpfrontPluginIds() {
+    const relevantIds = [
+      'tag_editor',
+      'bluetooth_playback',
+      'driving_mode',
+      'visualizer',
+    ];
+    return {
+      for (final id in relevantIds)
+        if (!AppSettings.instance.isPluginDisabled(id)) id,
+    };
+  }
+
+  /// The permissions screen's [_OnboardingScreen.onEnter]. Replaces the
+  /// old bare `OmnisPermissions.ensureCorePermissions` call with the
+  /// batched entry point: core permissions always, plus whatever
+  /// already-enabled plugins need, all in one pass.
+  Future<void> _requestUpfrontPermissions() async {
+    final enabledPluginIds = _enabledUpfrontPluginIds();
+    if (mounted) setState(() => _enabledPluginIds = enabledPluginIds);
+    await OmnisPermissions.ensureUpfrontPermissions(enabledPluginIds);
+  }
+
+  /// One line per applicable plugin permission, built in Dart directly
+  /// rather than forced into the `.arb` string-resource format — this
+  /// app's l10n system (`app_en.arb`) has no existing placeholder-based
+  /// or dynamically-sized-list precedent, and which lines apply isn't
+  /// known until [_requestUpfrontPermissions] resolves. Each individual
+  /// line's *text* is still a normal localizable string; only the
+  /// decision of *which* lines to show is dynamic.
+  List<Widget> _pluginPermissionLines(AppLocalizations l10n) {
+    final enabled = _enabledPluginIds;
+    if (enabled == null) return const [];
+    final lines = <MapEntry<IconData, String>>[
+      if (enabled.contains('tag_editor'))
+        MapEntry(Icons.folder_open, l10n.onboardingPermissionsStorageLine),
+      if (enabled.contains('bluetooth_playback'))
+        MapEntry(
+            Icons.bluetooth, l10n.onboardingPermissionsBluetoothLine),
+      if (enabled.contains('driving_mode'))
+        MapEntry(
+            Icons.location_on_outlined, l10n.onboardingPermissionsLocationLine),
+      if (enabled.contains('visualizer'))
+        MapEntry(Icons.mic_none, l10n.onboardingPermissionsMicrophoneLine),
+    ];
+    if (lines.isEmpty) return const [];
+    return [
+      OmnisSpacing.gapMd,
+      Text(
+        l10n.onboardingPermissionsPluginIntro,
+        textAlign: TextAlign.center,
+        style: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      OmnisSpacing.gapSm,
+      for (final line in lines)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: OmnisSpacing.xs),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(line.key,
+                  size: 20, color: Theme.of(context).colorScheme.primary),
+              OmnisSpacing.gapSm,
+              Flexible(
+                child: Text(line.value, style: Theme.of(context).textTheme.bodyMedium),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
 
   @override
   void dispose() {
@@ -153,28 +264,46 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 itemBuilder: (context, index) {
                   if (index == 0) _maybeEnter(0, screens);
                   final screen = screens[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: OmnisSpacing.xl),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(screen.icon,
-                            size: 96, color: theme.colorScheme.primary),
-                        OmnisSpacing.gapXl,
-                        Text(
-                          screen.title,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                  // LayoutBuilder + a min-height ConstrainedBox rather than
+                  // a bare centered Column: the permissions screen's
+                  // conditional plugin lines (_pluginPermissionLines) make
+                  // its content taller than the other three screens', and
+                  // tall enough on a short viewport to overflow a fixed,
+                  // non-scrolling Column. Every screen still centers
+                  // vertically when its content fits (the common case);
+                  // only a screen whose content doesn't fit scrolls instead
+                  // of overflowing.
+                  return LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: OmnisSpacing.xl),
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(screen.icon,
+                                  size: 96, color: theme.colorScheme.primary),
+                              OmnisSpacing.gapXl,
+                              Text(
+                                screen.title,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              OmnisSpacing.gapMd,
+                              Text(
+                                screen.body,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                              if (index == 1) ..._pluginPermissionLines(l10n),
+                            ],
+                          ),
                         ),
-                        OmnisSpacing.gapMd,
-                        Text(
-                          screen.body,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyLarge,
-                        ),
-                      ],
+                      ),
                     ),
                   );
                 },

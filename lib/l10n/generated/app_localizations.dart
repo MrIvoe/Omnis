@@ -153,6 +153,36 @@ abstract class AppLocalizations {
   /// **'Continue'**
   String get onboardingPermissionsContinue;
 
+  /// Introduces the conditional bullet list of plugin-specific permissions below the main permissions body text. Only shown when at least one applies.
+  ///
+  /// In en, this message translates to:
+  /// **'Based on what\'s enabled by default, it\'ll also ask for:'**
+  String get onboardingPermissionsPluginIntro;
+
+  /// Bullet line shown when the tag editor plugin is enabled by default.
+  ///
+  /// In en, this message translates to:
+  /// **'Broad file access, so the tag editor can save edits directly to your files.'**
+  String get onboardingPermissionsStorageLine;
+
+  /// Bullet line shown when the Bluetooth playback plugin is enabled by default.
+  ///
+  /// In en, this message translates to:
+  /// **'Bluetooth access, so Bluetooth playback can detect your connected audio device.'**
+  String get onboardingPermissionsBluetoothLine;
+
+  /// Bullet line shown when the driving mode plugin is enabled by default.
+  ///
+  /// In en, this message translates to:
+  /// **'Location access, so driving mode can tell when you\'re in the car.'**
+  String get onboardingPermissionsLocationLine;
+
+  /// Bullet line shown when the visualizer plugin is enabled by default.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone access, only to satisfy the OS API the visualizer reads audio levels through — nothing is recorded.'**
+  String get onboardingPermissionsMicrophoneLine;
+
   /// Title of the app-tour onboarding screen.
   ///
   /// In en, this message translates to:

@@ -236,6 +236,10 @@ class OmnisPluginContext implements PluginContext {
   Future<bool> requestLocationPermission({bool always = false}) =>
       OmnisPermissions.requestLocation(always: always);
 
+  @override
+  Future<bool> requestMicrophonePermission() =>
+      OmnisPermissions.requestMicrophone();
+
   // --- Library / playlist read access ---
 
   @override

@@ -113,6 +113,12 @@ dev_dependencies:
   # PlatformInterface-mixin pattern, is already declared above).
   # Already a transitive dependency via url_launcher.
   url_launcher_platform_interface: ^2.3.2
+  # Used by test/permissions_test.dart to record exactly which
+  # `Permission`s `ensureUpfrontPermissions` requests, proving it stays
+  # scoped to the plugin ids actually passed in — same "declared directly
+  # since it's imported directly" reasoning as the pairs above. Already a
+  # transitive dependency via permission_handler.
+  permission_handler_platform_interface: ^4.4.0
   flutter_launcher_icons: ^0.14.4
 
 flutter:
