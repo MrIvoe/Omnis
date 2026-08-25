@@ -95,11 +95,14 @@ completes (not batched) — the human partner confirmed this explicitly
 after Task 3. Don't accumulate unpushed commits across tasks without
 asking again if that ever seems to conflict with something.
 
-**Next up:** Task 4 (Moods cluster extraction) — the biggest task in
-this plan (Moods + mood builder + custom moods + forgotten music, a
-`CustomMood`-relocation judgment call). Check the ledger tail for
-whether it's dispatched/in-progress/done by the time you're reading
-this.
+**Task 4 (Moods cluster extraction) is also complete, reviewed clean
+(Approved on first pass, no fix round needed), and pushed** — 5 more
+Minor items parked in the ledger.
+
+**Next up:** Task 5 (Radio+Online extraction), then Task 6 (cross-repo
+pin bump — the first point where the bundled plugins actually become
+reachable without `pubspec_overrides.yaml`'s local sibling-checkout
+override). Check the ledger tail for current status.
 
 ## Lessons already learned this session (don't relitigate)
 
