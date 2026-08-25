@@ -100,8 +100,9 @@ void main() {
 
   testWidgets(
       'Default launch tab defaults to Library and lists every core '
-      'destination — Home is no longer among them (Tier 2 task 3, it is '
-      'now plugin-contributed)', (tester) async {
+      'destination — Home (Tier 2 task 3) and Moods (Tier 2 task 4) are '
+      'no longer among them, both being plugin-contributed now',
+      (tester) async {
     await pumpControls(tester);
 
     expect(find.text('Default launch tab'), findsOneWidget);
@@ -120,18 +121,18 @@ void main() {
     for (final label in [
       'Library',
       'Playlist',
-      'Moods',
       'Online',
       'Settings',
     ]) {
       expect(find.text(label), findsWidgets);
     }
-    // 'Home' isn't a core option with no Home plugin registered — this
-    // bare `PluginManager()` (via `pumpControls`'s default) contributes no
-    // destinations at all, so it must not appear even once, including in
-    // the closed dropdown button (which would show it only if it were the
-    // current selection, and it isn't).
+    // Neither 'Home' nor 'Moods' is a core option with no plugin owning
+    // them — this bare `PluginManager()` (via `pumpControls`'s default)
+    // contributes no destinations at all, so neither must appear even
+    // once, including in the closed dropdown button (which would show one
+    // only if it were the current selection, and it isn't).
     expect(find.text('Home'), findsNothing);
+    expect(find.text('Moods'), findsNothing);
   });
 
   testWidgets(
@@ -170,6 +171,27 @@ void main() {
 
     expect(AppSettings.instance.defaultLaunchTabId, 'home_tab');
     expect(find.text('Home'), findsOneWidget);
+  });
+
+  testWidgets(
+      'lists Moods as a launch tab option when a Moods-owning plugin is '
+      'registered, exactly once (Tier 2 task 4 — Moods is '
+      'plugin-contributed, not core; leaving it in the core list too '
+      'would put a duplicate entry in the dropdown, a real '
+      'DropdownButton assertion crash)', (tester) async {
+    final manager = PluginManager();
+    manager.register(_TabContributingPlugin(id: 'moods', tabLabel: 'Moods'));
+    await pumpControls(tester, pluginManager: manager);
+
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('Moods'), findsOneWidget);
+
+    await tester.tap(find.text('Moods').last);
+    await tester.pumpAndSettle();
+
+    expect(AppSettings.instance.defaultLaunchTabId, 'moods_tab');
+    expect(find.text('Moods'), findsOneWidget);
   });
 
   testWidgets(

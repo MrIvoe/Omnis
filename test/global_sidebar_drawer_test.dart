@@ -2,12 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omnis/core/custom_mood.dart';
+import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/sidebar_config.dart';
+import 'package:omnis/plugin_api/custom_mood.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/home_navigation.dart';
-import 'package:omnis/ui/home_page.dart' show MoodsPageState;
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/widgets/global_sidebar_drawer.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -30,20 +31,61 @@ class _FakePathProvider extends PathProviderPlatform
   Future<String?> getTemporaryPath() async => tempDir;
 }
 
+/// Stands in for whichever plugin owns the Moods tab (the bundled
+/// `MoodsPlugin`), recording which of [IMoodPlayer]'s two play paths the
+/// drawer chose. A fake rather than the real plugin because this suite
+/// tests the *drawer's* resolution logic — custom mood first, preset
+/// fallback — not the plugin's own queue building, which
+/// `Omnis-Plugins`' `moods_plugin_test.dart` covers against its real
+/// page.
+class _FakeMoodPlayer implements IMoodPlayer {
+  @override
+  final List<CustomMood> customMoods;
+
+  final List<String> playedPresetMoods = [];
+  final List<CustomMood> playedCustomMoods = [];
+
+  _FakeMoodPlayer(this.customMoods);
+
+  @override
+  void playMood(String mood) => playedPresetMoods.add(mood);
+
+  @override
+  void playCustomMood(CustomMood custom) => playedCustomMoods.add(custom);
+}
+
+/// Supplies preset mood names the same way `SmartPlaylistPlugin`/
+/// `QueuePresetPlugin` do — the drawer only ever reads
+/// [IQueueBuilder.supportedQueries] from them.
+class _FakeQueueBuilder implements IQueueBuilder {
+  @override
+  final List<String> supportedQueries;
+
+  _FakeQueueBuilder(this.supportedQueries);
+
+  @override
+  List<BaseTrack> buildQueueFor(List<BaseTrack> tracks, String query) =>
+      const [];
+}
+
+/// The core destinations first, then the two Tier 2 extracted them —
+/// 'home' (HomeDashboardPlugin) and 'moods' (MoodsPlugin) — appended as
+/// the plugin-contributed tabs they now are, since plugin destinations
+/// always render after core ones.
 const _destinations = [
-  HomeDestinationInfo(Icons.home, 'Home'),
   HomeDestinationInfo(Icons.library_music, 'Library'),
   HomeDestinationInfo(Icons.playlist_play, 'Playlist'),
-  HomeDestinationInfo(Icons.mood, 'Moods'),
   HomeDestinationInfo(Icons.settings, 'Settings'),
+  HomeDestinationInfo(Icons.home, 'Home'),
+  HomeDestinationInfo(Icons.mood, 'Moods'),
 ];
 
 /// 1:1 with [_destinations], in the same order — mirrors `home_page.dart`'s
 /// own `destinationIds`.
-const _destinationIds = ['home', 'library', 'playlist', 'moods', 'settings'];
+const _destinationIds = ['library', 'playlist', 'settings', 'home', 'moods'];
 
 /// `GlobalSidebarDrawer._load` does real dart:io file reads (via
-/// `SidebarConfigStore`/`PlaylistStore`/`CustomMoodStore`), which never
+/// `SidebarConfigStore`/`PlaylistStore`), which never
 /// actually complete inside `testWidgets`' fake-async zone — the same
 /// established bug class this codebase already works around elsewhere
 /// (see `online_page_test.dart`/`home_navigation_test.dart`'s own
@@ -81,17 +123,17 @@ Future<void> _pumpDrawer(
   List<HomeDestinationInfo> destinations = _destinations,
   List<String> destinationIds = _destinationIds,
   ValueChanged<int>? onSelectDestination,
+  PluginManager? pluginManager,
 }) async {
   await tester.pumpWidget(MaterialApp(
     home: Scaffold(
       body: const SizedBox(),
       drawer: GlobalSidebarDrawer(
-        pluginManager: PluginManager(),
+        pluginManager: pluginManager ?? PluginManager(),
         selectedIndex: selectedIndex,
         destinations: destinations,
         destinationIds: destinationIds,
         playlistKey: GlobalKey<PlaylistPageState>(),
-        moodsKey: GlobalKey<MoodsPageState>(),
         onSelectDestination: onSelectDestination ?? (_) {},
       ),
     ),
@@ -110,7 +152,6 @@ void main() {
             .path;
     PathProviderPlatform.instance = _FakePathProvider(tempDir);
     SidebarConfigStore.instance.resetForTesting();
-    CustomMoodStore.instance.resetForTesting();
     // PlaylistStore has no resetForTesting (matches this codebase's own
     // established convention — see playlist_page_test.dart's identical
     // setUp): its cached file handle sticks across tests in this file,
@@ -138,7 +179,7 @@ void main() {
       int? selected;
       await _pumpDrawer(tester, onSelectDestination: (i) => selected = i);
 
-      await tester.tap(find.text('Library'));
+      await tester.tap(find.text('Playlist'));
       await _settle(tester);
 
       expect(selected, 1);
@@ -283,17 +324,124 @@ void main() {
     });
   });
 
-  testWidgets('a custom mood is available to pin from the My moods section',
-      (tester) async {
-    await tester.runAsync(() async {
-      await CustomMoodStore.instance
-          .save(const [CustomMood(id: 'm1', name: 'Late Night Drive')]);
-      await _pumpDrawer(tester);
+  group('Moods reached through IMoodPlayer (Tier 2 task 4 — the Moods tab '
+      'is plugin-owned, so this widget can no longer hold a '
+      'GlobalKey<MoodsPageState> or read CustomMoodStore directly)', () {
+    /// Pins [refIds] into the default "My moods" section, alongside the
+    /// default "My playlists" one the drawer always renders.
+    Future<void> pinMoods(List<String> refIds) async {
+      await SidebarConfigStore.instance.save([
+        const SidebarSection(
+          id: 'my_playlists',
+          title: 'My playlists',
+          kind: SidebarItemKind.playlist,
+        ),
+        SidebarSection(
+          id: 'my_moods',
+          title: 'My moods',
+          kind: SidebarItemKind.mood,
+          items: [
+            for (final id in refIds)
+              SidebarItem(kind: SidebarItemKind.mood, refId: id),
+          ],
+        ),
+      ]);
+    }
 
-      await tester.tap(find.widgetWithIcon(IconButton, Icons.add).last);
-      await _settle(tester);
+    PluginManager managerWith({
+      _FakeMoodPlayer? moodPlayer,
+      List<String> presetMoods = const [],
+    }) {
+      final manager = PluginManager();
+      if (moodPlayer != null) {
+        manager.services.register(IMoodPlayer, moodPlayer);
+      }
+      if (presetMoods.isNotEmpty) {
+        manager.services
+            .register(IQueueBuilder, _FakeQueueBuilder(presetMoods));
+      }
+      return manager;
+    }
 
-      expect(find.text('Late Night Drive'), findsOneWidget);
+    testWidgets('a custom mood supplied by IMoodPlayer is available to pin '
+        'from the My moods section', (tester) async {
+      await tester.runAsync(() async {
+        final moodPlayer = _FakeMoodPlayer(
+            const [CustomMood(id: 'm1', name: 'Late Night Drive')]);
+        await _pumpDrawer(tester,
+            pluginManager: managerWith(moodPlayer: moodPlayer));
+
+        await tester.tap(find.widgetWithIcon(IconButton, Icons.add).last);
+        await _settle(tester);
+
+        expect(find.text('Late Night Drive'), findsOneWidget);
+      });
+    });
+
+    testWidgets('tapping a pinned custom mood plays it via '
+        'IMoodPlayer.playCustomMood, not playMood', (tester) async {
+      await tester.runAsync(() async {
+        final moodPlayer = _FakeMoodPlayer(
+            const [CustomMood(id: 'm1', name: 'Late Night Drive')]);
+        await pinMoods(['Late Night Drive']);
+        await _pumpDrawer(tester,
+            pluginManager: managerWith(moodPlayer: moodPlayer));
+
+        // The pinned mood tile sits below the fold of the default 800x600
+        // viewport (drawer header + five destinations + two section
+        // headers already fill it), so a bare `tap` would silently miss —
+        // same `ensureVisible` the reorder group below already needs.
+        await tester.ensureVisible(find.text('Late Night Drive'));
+        await _settle(tester);
+        await tester.tap(find.text('Late Night Drive'));
+        await _settle(tester);
+
+        expect(moodPlayer.playedCustomMoods.map((m) => m.id), ['m1']);
+        expect(moodPlayer.playedPresetMoods, isEmpty);
+      });
+    });
+
+    testWidgets('tapping a pinned preset mood plays it via '
+        'IMoodPlayer.playMood', (tester) async {
+      await tester.runAsync(() async {
+        final moodPlayer = _FakeMoodPlayer(const []);
+        await pinMoods(['Chill']);
+        await _pumpDrawer(
+          tester,
+          pluginManager:
+              managerWith(moodPlayer: moodPlayer, presetMoods: const ['Chill']),
+        );
+
+        await tester.ensureVisible(find.text('Chill'));
+        await _settle(tester);
+        await tester.tap(find.text('Chill'));
+        await _settle(tester);
+
+        expect(moodPlayer.playedPresetMoods, ['Chill']);
+        expect(moodPlayer.playedCustomMoods, isEmpty);
+      });
+    });
+
+    testWidgets('with no Moods-owning plugin registered, a pinned custom '
+        'mood is skipped as a stale reference and a pinned preset mood '
+        'taps to a no-op rather than crashing', (tester) async {
+      await tester.runAsync(() async {
+        await pinMoods(['Late Night Drive', 'Chill']);
+        // No IMoodPlayer registered — only a preset source, so 'Chill'
+        // still resolves to a label while the custom mood cannot.
+        await _pumpDrawer(tester,
+            pluginManager: managerWith(presetMoods: const ['Chill']));
+
+        expect(find.text('Late Night Drive'), findsNothing);
+        expect(find.text('Chill'), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Chill'));
+        await _settle(tester);
+        await tester.tap(find.text('Chill'));
+        await _settle(tester);
+
+        expect(tester.takeException(), isNull);
+      });
     });
   });
 

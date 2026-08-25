@@ -13,6 +13,7 @@ import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/ui/home_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
+import 'package:omnis_plugin_api/custom_mood.dart';
 import 'package:omnis_plugin_api/plugin_destination.dart';
 import 'package:omnis_plugin_api/service_interfaces.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -146,6 +147,115 @@ class _SpyHomeCustomizerPlugin extends MusicPlugin implements IHomeCustomizer {
   }
 }
 
+/// The Moods equivalent of [_SpyHomeCustomizerPlugin]: contributes the
+/// `'moods'` destination and records what reaches [IMoodPlayer], without
+/// rendering the real `MoodsPage` (which lives in `omnis_plugins` and has
+/// its own tests there). Also implements [IQueueBuilder] so the command
+/// palette actually has a mood name to offer — that list comes from every
+/// registered queue builder's `supportedQueries`, not from
+/// [IMoodPlayer].
+class _SpyMoodPlayerPlugin extends MusicPlugin
+    implements IMoodPlayer, IQueueBuilder {
+  final List<String> playedMoods = [];
+
+  @override
+  String get id => 'moods';
+  @override
+  String get name => 'Moods (spy)';
+  @override
+  String get description => 'test plugin';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+  @override
+  Future<void> initialize() async {
+    context?.services.register(IMoodPlayer, this);
+    context?.services.register(IQueueBuilder, this);
+  }
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {
+    context?.services.unregister(IMoodPlayer, this);
+    context?.services.unregister(IQueueBuilder, this);
+  }
+  @override
+  Future<void> disable() async {
+    context?.services.unregister(IMoodPlayer, this);
+    context?.services.unregister(IQueueBuilder, this);
+  }
+
+  @override
+  List<PluginDestination> homeDestinations() => [
+        PluginDestination(
+          id: 'moods',
+          icon: Icons.mood,
+          label: 'Moods',
+          pageBuilder: (context) => const Center(child: Text('Moods Content')),
+        ),
+      ];
+
+  @override
+  List<String> get supportedQueries => const ['Moonlight Cruise'];
+
+  @override
+  List<BaseTrack> buildQueueFor(List<BaseTrack> tracks, String query) =>
+      const [];
+
+  @override
+  List<CustomMood> get customMoods => const [];
+
+  @override
+  void playMood(String mood) => playedMoods.add(mood);
+
+  @override
+  void playCustomMood(CustomMood custom) => playedMoods.add(custom.name);
+}
+
+/// Supplies a mood name to the command palette with **no** [IMoodPlayer]
+/// registered alongside it — the "Moods plugin disabled, but some other
+/// queue builder still names moods" shape the no-op degradation test
+/// below needs.
+class _MoodNamingQueueBuilderPlugin extends MusicPlugin
+    implements IQueueBuilder {
+  @override
+  String get id => 'mood_names_only';
+  @override
+  String get name => 'Mood names only';
+  @override
+  String get description => 'test plugin';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+  @override
+  Future<void> initialize() async {
+    context?.services.register(IQueueBuilder, this);
+  }
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {
+    context?.services.unregister(IQueueBuilder, this);
+  }
+
+  @override
+  List<String> get supportedQueries => const ['Moonlight Cruise'];
+
+  @override
+  List<BaseTrack> buildQueueFor(List<BaseTrack> tracks, String query) =>
+      const [];
+}
+
 /// Registers bare (no-I/O) MainCore/AudioEngine/LayoutManager/ThemeManager
 /// singletons directly, instead of going through `ensureCoreReady()`/
 /// `ensureLayoutManagerReady()`/`ensureThemeManagerReady()` — the same
@@ -181,9 +291,9 @@ Future<void> _unregisterCore() async {
 }
 
 /// HomePage's tab `IndexedStack`, identified by how many children it has
-/// (five core destinations — Home was extracted into a bundled plugin at
-/// Tier 2 task 3 and no longer counts — plus one per enabled plugin tab)
-/// — other
+/// (four core destinations — Home and Moods were extracted into bundled
+/// plugins at Tier 2 tasks 3 and 4 and no longer count — plus one per
+/// enabled plugin tab) — other
 /// `IndexedStack`s exist deeper in the page tree, and `.first` is not a
 /// reliable way to pick this one out. Asserting on `index` rather than on
 /// which page's text is rendered matters here: an `IndexedStack` keeps
@@ -278,11 +388,11 @@ void main() {
     await tester.runAsync(() async {
       final core = _registerBareCore();
       addTearDown(_unregisterCore);
-      // Two plugins, so index 6 (the first plugin slot) means something
+      // Two plugins, so index 4 (the first plugin slot) means something
       // *different* after the first one is removed. With selection tracked
-      // by raw index, disabling plugin A while it was selected left index 6
-      // in range — length shrinks 8 -> 7, and `6 >= 7` is false, so no
-      // bounds check fired — and index 6 silently resolved to plugin B's
+      // by raw index, disabling plugin A while it was selected left index 4
+      // in range — length shrinks 6 -> 5, and `4 >= 5` is false, so no
+      // bounds check fired — and index 4 silently resolved to plugin B's
       // tab instead. Keying selection by destination id is what makes the
       // vanished tab read as vanished.
       core.pluginManager.register(
@@ -300,8 +410,8 @@ void main() {
 
       await tester.tap(find.text('Alpha'));
       await tester.pumpAndSettle();
-      // Five core tabs + two plugin tabs; Alpha is the first plugin slot.
-      expect(_homeStack(tester, childCount: 7).index, 5);
+      // Four core tabs + two plugin tabs; Alpha is the first plugin slot.
+      expect(_homeStack(tester, childCount: 6).index, 4);
 
       await core.pluginManager
           .disablePlugin(core.pluginManager.byId('plugin_a')!);
@@ -309,12 +419,12 @@ void main() {
 
       // Beta's *tab* survives — it's only Alpha that went away.
       expect(find.text('Beta'), findsOneWidget);
-      // The point of the test. Index 5 is now Beta; asserting on the
+      // The point of the test. Index 4 is now Beta; asserting on the
       // resolved index rather than on rendered text is deliberate, since
       // an IndexedStack keeps every child mounted and only the selected
       // one is actually shown.
-      expect(_homeStack(tester, childCount: 6).index, isNot(5));
-      expect(_homeStack(tester, childCount: 6).index, 0);
+      expect(_homeStack(tester, childCount: 5).index, isNot(4));
+      expect(_homeStack(tester, childCount: 5).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -357,7 +467,7 @@ void main() {
     await tester.runAsync(() async {
       _registerBareCore();
       addTearDown(_unregisterCore);
-      // 'settings' is the last of the five core destinations — nowhere
+      // 'settings' is the last of the four core destinations — nowhere
       // near `_coreDestinationIds.first`, so this only passes if the
       // initial `_selectedDestinationId` actually comes from the
       // persisted setting rather than from that constant.
@@ -366,8 +476,8 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      // Five core tabs, no plugins registered; 'settings' is index 4.
-      expect(_homeStack(tester, childCount: 5).index, 4);
+      // Four core tabs, no plugins registered; 'settings' is index 3.
+      expect(_homeStack(tester, childCount: 4).index, 3);
     });
   });
 
@@ -388,7 +498,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      expect(_homeStack(tester, childCount: 5).index, 0);
+      expect(_homeStack(tester, childCount: 4).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -430,11 +540,11 @@ void main() {
         await tester.pumpWidget(const MaterialApp(home: HomePage()));
         await _settle(tester);
 
-        // Five core tabs (library/playlist/moods/online/settings), no
-        // "Home" tab among them. The default 800x600 test viewport is
-        // wider than tall, so HomeNavigationBar renders a NavigationRail
-        // (see home_navigation.dart), not the narrow-layout NavigationBar.
-        expect(_homeStack(tester, childCount: 5).index, 0);
+        // Four core tabs (library/playlist/online/settings), no "Home"
+        // tab among them. The default 800x600 test viewport is wider than
+        // tall, so HomeNavigationBar renders a NavigationRail (see
+        // home_navigation.dart), not the narrow-layout NavigationBar.
+        expect(_homeStack(tester, childCount: 4).index, 0);
         expect(
             find.widgetWithText(NavigationRailDestination, 'Home'),
             findsNothing);
@@ -525,6 +635,124 @@ void main() {
         await tester.enterText(find.byType(TextField), 'customize');
         await tester.pumpAndSettle();
         await tester.tap(find.text('Customize home'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
+  group('Moods plugin (Tier 2 task 4 — Moods is no longer a core '
+      'destination)', () {
+    testWidgets(
+        'with no Moods-owning plugin registered, no "moods" tab renders and '
+        'HomePage does not crash', (tester) async {
+      await tester.runAsync(() async {
+        _registerBareCore();
+        addTearDown(_unregisterCore);
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        expect(_homeStack(tester, childCount: 4).index, 0);
+        expect(find.widgetWithText(NavigationRailDestination, 'Moods'),
+            findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        'with a Moods-owning plugin registered and enabled, its "moods" '
+        'destination renders as an ordinary plugin tab', (tester) async {
+      await tester.runAsync(() async {
+        final core = _registerBareCore();
+        addTearDown(_unregisterCore);
+        core.pluginManager.register(_SpyMoodPlayerPlugin());
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        expect(find.text('Moods'), findsWidgets);
+
+        await tester.tap(find.text('Moods').first);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Moods Content'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        "the command palette's mood results reach playMood() on whatever "
+        'is registered as IMoodPlayer — the interface path that replaced '
+        "home_page.dart's own GlobalKey<MoodsPageState> reach once the "
+        'Moods page became plugin-owned', (tester) async {
+      await tester.runAsync(() async {
+        final core = _registerBareCore();
+        addTearDown(_unregisterCore);
+        core.pluginManager.attachContext(OmnisPluginContext(
+          audioEngine: core.audioEngine,
+          services: core.pluginManager.services,
+          events: core.pluginManager.events,
+        ));
+        final plugin = _SpyMoodPlayerPlugin();
+        core.pluginManager.register(plugin);
+        await core.pluginManager.initializeAll();
+        expect(core.pluginManager.services.get<IMoodPlayer>(), same(plugin));
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        await _focusSomethingInsideHomePageScaffold(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await _settle(tester);
+
+        // A prefix, not the whole name, so the result row's own text stays
+        // the only `find.text` match (the query itself renders in the
+        // search field).
+        await tester.enterText(find.byType(TextField), 'moonl');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Moonlight Cruise'));
+        await tester.pumpAndSettle();
+
+        expect(plugin.playedMoods, ['Moonlight Cruise']);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        "the command palette's mood results are a harmless no-op — not a "
+        'crash — when nothing is registered as IMoodPlayer (the Moods '
+        'plugin disabled/never installed, while some other queue builder '
+        'still names moods)', (tester) async {
+      await tester.runAsync(() async {
+        final core = _registerBareCore();
+        addTearDown(_unregisterCore);
+        core.pluginManager.attachContext(OmnisPluginContext(
+          audioEngine: core.audioEngine,
+          services: core.pluginManager.services,
+          events: core.pluginManager.events,
+        ));
+        core.pluginManager.register(_MoodNamingQueueBuilderPlugin());
+        await core.pluginManager.initializeAll();
+        expect(core.pluginManager.services.get<IMoodPlayer>(), isNull);
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        await _focusSomethingInsideHomePageScaffold(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await _settle(tester);
+
+        await tester.enterText(find.byType(TextField), 'moonl');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Moonlight Cruise'));
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);

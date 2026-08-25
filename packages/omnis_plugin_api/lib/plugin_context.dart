@@ -301,4 +301,16 @@ abstract class PluginContext {
   /// convention exactly.
   Future<List<TrackPlayStats>> loadMostSkipped(
       {int limit = 20, int minPlays = 3});
+
+  /// When each track was last played, keyed by track id — matches
+  /// `PlayHistoryStore.lastPlayedByTrackId`'s own convention exactly. A
+  /// track absent from the map has never been played.
+  ///
+  /// Added for `MoodsPlugin`'s Forgotten Music page (Tier 2 task 4),
+  /// which needs the *whole* history rather than a top-N slice: "every
+  /// track not heard in 6+ months" can't be answered from
+  /// [loadRecentlyPlayed]'s limited, newest-first list at all. Same
+  /// carve-out as the four reads above — a genuinely cross-cutting core
+  /// signal with no plugin-private alternative.
+  Future<Map<String, DateTime>> loadLastPlayedByTrackId();
 }

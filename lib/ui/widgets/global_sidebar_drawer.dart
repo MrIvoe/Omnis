@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:omnis/core/custom_mood.dart';
 import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/core/sidebar_config.dart';
+import 'package:omnis/plugin_api/custom_mood.dart';
 import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/home_navigation.dart';
-import 'package:omnis/ui/home_page.dart' show MoodsPageState;
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 
@@ -30,15 +29,17 @@ import 'package:omnis/ui/widgets/reorder_menu_button.dart';
 ///
 /// Tapping a playlist switches to the Playlist tab and opens it (mirrors
 /// the §37 command-palette's own `onSelectPlaylist` wiring in
-/// `home_page.dart` exactly); tapping a mood plays it directly, custom or
-/// preset (mirrors `MoodsPageState.playMood`/`playCustomMood` — resolved
-/// here by checking the custom-mood list first, falling back to treating
-/// the name as a preset `IQueueBuilder` query), reusing
-/// `MoodsPageState`'s already-tested queue-building/snackbar-feedback
-/// logic via the same `GlobalKey`-into-an-already-mounted-`IndexedStack`-
-/// page pattern this app already established for
-/// `HomeDashboardPageState.openCustomizeSheet`/`PlaylistPageState.
-/// openPlaylist`/`MoodsPageState.playMood` itself.
+/// `home_page.dart` exactly) via a `GlobalKey` into that still-core tab's
+/// own page; tapping a mood plays it directly, custom or preset —
+/// resolved here by checking the custom-mood list first, falling back to
+/// treating the name as a preset `IQueueBuilder` query — through
+/// [IMoodPlayer], which reuses the Moods page's already-tested
+/// queue-building/snackbar-feedback logic. That goes through a capability
+/// interface rather than a `GlobalKey` because Tier 2 moved the Moods tab
+/// into a bundled plugin: this widget can no longer hold a key into a page
+/// it doesn't construct. The same [IMoodPlayer] also supplies
+/// [IMoodPlayer.customMoods], which replaced this widget's former direct
+/// read of the (now plugin-private) `CustomMoodStore`.
 class GlobalSidebarDrawer extends StatefulWidget {
   final PluginManager pluginManager;
   final int selectedIndex;
@@ -54,7 +55,6 @@ class GlobalSidebarDrawer extends StatefulWidget {
   final List<String> destinationIds;
 
   final GlobalKey<PlaylistPageState> playlistKey;
-  final GlobalKey<MoodsPageState> moodsKey;
 
   /// Switches `HomePage`'s own selected tab — the drawer itself has no
   /// navigation state of its own, matching every other cross-tab jump in
@@ -69,7 +69,6 @@ class GlobalSidebarDrawer extends StatefulWidget {
     required this.destinations,
     required this.destinationIds,
     required this.playlistKey,
-    required this.moodsKey,
     required this.onSelectDestination,
   });
 
@@ -90,10 +89,19 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     _load();
   }
 
+  IMoodPlayer? get _moodPlayer =>
+      widget.pluginManager.services.get<IMoodPlayer>();
+
   Future<void> _load() async {
     final sections = await SidebarConfigStore.instance.load();
     final playlists = await PlaylistStore.instance.load();
-    final customMoods = await CustomMoodStore.instance.load();
+    // Custom moods belong to whichever plugin owns the Moods tab, which
+    // also owns the store persisting them — so they're read through that
+    // plugin's [IMoodPlayer] rather than from a store this app can reach
+    // directly. With no such plugin enabled the list is empty, and every
+    // pinned custom mood reads as a stale reference `_labelFor` skips,
+    // exactly like a pinned playlist whose playlist was deleted.
+    final customMoods = _moodPlayer?.customMoods ?? const <CustomMood>[];
     final presetMoods = <String>{
       for (final builder
           in widget.pluginManager.services.getAll<IQueueBuilder>())
@@ -127,8 +135,16 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     widget.playlistKey.currentState?.openPlaylist(playlist);
   }
 
+  /// Plays the mood named [name] through [IMoodPlayer] — a custom mood
+  /// when one of that name exists, otherwise treating the name as a
+  /// preset `IQueueBuilder` query, the same custom-first resolution this
+  /// widget has always done. A no-op (never a crash) when no plugin owns
+  /// the Moods tab, matching the null-safe `GlobalKey?.currentState?.`
+  /// behavior this replaced.
   void _selectMood(String name) {
     Navigator.of(context).pop();
+    final moodPlayer = _moodPlayer;
+    if (moodPlayer == null) return;
     CustomMood? custom;
     for (final m in _customMoods) {
       if (m.name == name) {
@@ -137,9 +153,9 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
       }
     }
     if (custom != null) {
-      widget.moodsKey.currentState?.playCustomMood(custom);
+      moodPlayer.playCustomMood(custom);
     } else {
-      widget.moodsKey.currentState?.playMood(name);
+      moodPlayer.playMood(name);
     }
   }
 

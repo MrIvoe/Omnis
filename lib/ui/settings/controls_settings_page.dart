@@ -7,7 +7,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
-/// The five fixed core destinations' ids and display labels, in the same
+/// The four fixed core destinations' ids and display labels, in the same
 /// order `home_page.dart`'s own `_coreDestinationIds`/`destinations`
 /// lists pair them. Duplicated here rather than imported — Dart's
 /// leading-underscore privacy keeps `home_page.dart`'s versions scoped to
@@ -17,14 +17,16 @@ import 'package:omnis/ui/widgets/settings_highlight.dart';
 /// index already accepts for the same "no runtime introspection
 /// mechanism exists for this" reason.
 ///
-/// No `('home', 'Home')` entry here (Tier 2 task 3) — 'home' is no longer
-/// a reserved core id; it's now only reachable via `_pluginDestinations`
-/// below, contributed by the bundled `HomeDashboardPlugin` like any other
-/// plugin destination.
+/// No `('home', 'Home')` entry (Tier 2 task 3) and no `('moods', 'Moods')`
+/// entry (Tier 2 task 4) — neither is a reserved core id any more; both
+/// are now only reachable via `_pluginDestinations` below, contributed by
+/// the bundled `HomeDashboardPlugin`/`MoodsPlugin` like any other plugin
+/// destination. Leaving either here would put a *duplicate* entry in the
+/// dropdown whenever the contributing plugin is enabled — a real
+/// `DropdownButton` assertion crash, not just a cosmetic repeat.
 const _coreLaunchTabOptions = <(String, String)>[
   ('library', 'Library'),
   ('playlist', 'Playlist'),
-  ('moods', 'Moods'),
   ('online', 'Online'),
   ('settings', 'Settings'),
 ];

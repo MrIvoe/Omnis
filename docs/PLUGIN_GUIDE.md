@@ -402,11 +402,12 @@ broken by registration order in `bundled_plugins.dart`. Leave `order`
 alone unless you have a real reason — `0` means "no preference."
 
 `id` must not collide with another plugin's destination id, nor with one
-of the five reserved core ids: **`library`, `playlist`, `moods`,
-`online`, `settings`**. (`home` was a reserved core id before Tier 2
-extracted the Home dashboard into the bundled `HomeDashboardPlugin` — it
-keeps using the string `'home'` for its own destination id, but that's no
-longer a *reserved* id any plugin must avoid, just an ordinary
+of the four reserved core ids: **`library`, `playlist`, `online`,
+`settings`**. (`home` and `moods` were both reserved core ids before
+Tier 2 extracted the Home dashboard into the bundled
+`HomeDashboardPlugin` and the Moods cluster into `MoodsPlugin` — each
+keeps using its original string for its own destination id, but neither
+is a *reserved* id any plugin must avoid any more, just an ordinary
 plugin-chosen one.) Nothing validates this for you; a collision is the
 contributing plugin's bug.
 

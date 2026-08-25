@@ -82,8 +82,9 @@ void main() {
       track(id: 'other', genres: ['Death Metal']),
     ];
 
-    // Simulates HomePage._MoodsPageState._playMood's "first non-empty
-    // result wins" loop.
+    // Simulates MoodsPageState.playMood's "first non-empty result wins"
+    // loop (that page moved to `omnis_plugins` at Tier 2 task 4; the
+    // registration-order contract it depends on is still this app's).
     List<BaseTrack> queue = const [];
     for (final builder in manager.services.getAll<IQueueBuilder>()) {
       final result = builder.buildQueueFor(tracks, 'Chill');

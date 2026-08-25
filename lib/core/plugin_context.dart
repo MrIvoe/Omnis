@@ -267,4 +267,8 @@ class OmnisPluginContext implements PluginContext {
   Future<List<TrackPlayStats>> loadMostSkipped(
           {int limit = 20, int minPlays = 3}) =>
       PlayHistoryStore.instance.mostSkipped(limit: limit, minPlays: minPlays);
+
+  @override
+  Future<Map<String, DateTime>> loadLastPlayedByTrackId() =>
+      PlayHistoryStore.instance.lastPlayedByTrackId();
 }

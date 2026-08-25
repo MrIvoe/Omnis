@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:omnis_plugin_api/audio_analysis_result.dart';
 import 'package:omnis_plugin_api/base_track.dart';
+import 'package:omnis_plugin_api/custom_mood.dart';
 import 'package:omnis_plugin_api/enrichment_result.dart';
 import 'package:omnis_plugin_api/lyric_line.dart';
 import 'package:omnis_plugin_api/play_record.dart';
@@ -541,4 +542,40 @@ abstract class IHomeCustomizer {
   /// (dashboard plugin disabled after the palette opened) degrades
   /// silently rather than throwing.
   void openCustomizeSheet();
+}
+
+/// Plays a named preset mood or a user-created [CustomMood] directly, and
+/// exposes the user's saved custom moods — reached from the command
+/// palette's §37 "search everywhere" mood results and the pop-out
+/// sidebar's "MY MOODS" section. Registered by whichever plugin owns the
+/// Moods tab; before Tier 2, `home_page.dart` and
+/// `global_sidebar_drawer.dart` both reached the Moods page directly via a
+/// `GlobalKey<MoodsPageState>`, which stopped being possible once that
+/// page became a plugin-owned one the app only holds a `WidgetBuilder`
+/// for — the identical problem [IHomeCustomizer] solves for the Home
+/// dashboard.
+abstract class IMoodPlayer {
+  /// Plays the built-in preset mood named [mood] — one of the queries
+  /// some registered [IQueueBuilder] reports in its `supportedQueries`.
+  /// A no-op if the Moods page isn't currently mounted, or if [mood]
+  /// doesn't match a known preset — matches the previous null-safe
+  /// `GlobalKey?.currentState?.` behavior exactly, so a stale caller (a
+  /// command-palette action fired after the Moods plugin was disabled)
+  /// degrades silently rather than throwing.
+  void playMood(String mood);
+
+  /// Plays a user-created custom mood, filtering the library through
+  /// [CustomMood.matches]. Same no-op-when-unmounted contract as
+  /// [playMood].
+  void playCustomMood(CustomMood custom);
+
+  /// Every custom mood the user has saved, so a caller outside the owning
+  /// plugin (the pop-out sidebar, which lists moods by name in its "MY
+  /// MOODS" section and needs the full object to hand back to
+  /// [playCustomMood]) can resolve a mood name without reaching the
+  /// plugin-private store that persists them. Returns an empty list —
+  /// never throws — when no plugin owns the Moods tab, or when its page
+  /// hasn't finished its initial load, in which case a pinned custom mood
+  /// simply doesn't render rather than showing as a broken entry.
+  List<CustomMood> get customMoods;
 }
