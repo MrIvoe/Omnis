@@ -4,6 +4,7 @@ import 'package:omnis_plugin_api/hardware_eq_band.dart';
 import 'package:omnis_plugin_api/playlist.dart';
 import 'package:omnis_plugin_api/repeat_mode.dart';
 import 'package:omnis_plugin_api/service_registry.dart';
+import 'package:omnis_plugin_api/track_play_stats.dart';
 
 /// The capability surface the Core hands to every bundled plugin.
 ///
@@ -272,4 +273,32 @@ abstract class PluginContext {
   /// Every saved playlist, same shape `PlaylistStore.load()` already
   /// returns.
   Future<List<Playlist>> loadPlaylists();
+
+  // --- Play history read access — added for `HomeDashboardPlugin`
+  // --- (Tier 2 task 3), the first plugin to need it. `PlayHistoryStore`
+  // --- itself stays a core-only singleton (its *write* side hooks the
+  // --- audio engine's own track-lifecycle events, which only the app's
+  // --- core layer sees), but its four read queries are exactly the
+  // --- "genuinely cross-cutting state with no reasonable plugin-private
+  // --- alternative" this interface's own doc comment already carves out
+  // --- an exception for — the same reasoning [loadLibraryTracks]/
+  // --- [loadPlaylists] rest on.
+
+  /// Most recently played tracks, newest first, one entry per track —
+  /// matches `PlayHistoryStore.recentlyPlayed`'s own convention exactly.
+  Future<List<TrackPlayStats>> loadRecentlyPlayed({int limit = 20});
+
+  /// Tracks ordered by play count, most first — matches
+  /// `PlayHistoryStore.mostPlayed`'s own convention exactly.
+  Future<List<TrackPlayStats>> loadMostPlayed({int limit = 20});
+
+  /// Tracks played roughly 10%-90% of the way through — matches
+  /// `PlayHistoryStore.continueListening`'s own convention exactly.
+  Future<List<TrackPlayStats>> loadContinueListening({int limit = 20});
+
+  /// Tracks with the highest skip ratio, excluding anything played fewer
+  /// than [minPlays] times — matches `PlayHistoryStore.mostSkipped`'s own
+  /// convention exactly.
+  Future<List<TrackPlayStats>> loadMostSkipped(
+      {int limit = 20, int minPlays = 3});
 }

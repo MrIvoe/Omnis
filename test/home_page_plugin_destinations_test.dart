@@ -1,17 +1,20 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/base_track.dart';
 import 'package:omnis/core/bootstrap.dart';
 import 'package:omnis/core/main_core.dart';
+import 'package:omnis/core/plugin_context.dart';
 import 'package:omnis/core/plugin_interface.dart';
 import 'package:omnis/ui/home_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
 import 'package:omnis/ui/theme/declarative/theme_manager.dart';
 import 'package:omnis_plugin_api/plugin_destination.dart';
+import 'package:omnis_plugin_api/service_interfaces.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -81,6 +84,68 @@ class _TabContributingPlugin extends MusicPlugin {
       ];
 }
 
+/// A minimal stand-in for `HomeDashboardPlugin` (Omnis-Plugins) — a
+/// plugin that contributes the `'home'` destination and implements
+/// `IHomeCustomizer`, exactly the shape Tier 2 task 3 extracted the real
+/// Home dashboard into. A spy rather than the real
+/// `omnis_plugins.HomeDashboardPlugin` deliberately: that plugin's own
+/// page needs a fully-wired `PluginContext` (library/play-history reads)
+/// to render without erroring, which is already exhaustively covered by
+/// Omnis-Plugins' own `home_dashboard_page_test.dart`/
+/// `home_dashboard_plugin_test.dart`. This test only needs to prove
+/// `home_page.dart`'s own wiring — the tab's presence/absence and the
+/// command palette's `'customize_home'` action reaching whatever's
+/// registered as `IHomeCustomizer` — which this lighter double
+/// demonstrates just as well, without needing to render the dashboard
+/// page itself at all.
+class _SpyHomeCustomizerPlugin extends MusicPlugin implements IHomeCustomizer {
+  bool openCustomizeSheetCalled = false;
+
+  @override
+  String get id => 'home_dashboard';
+  @override
+  String get name => 'Home Dashboard (spy)';
+  @override
+  String get description => 'test plugin';
+  @override
+  String get version => '1.0.0';
+  @override
+  String get author => 'test';
+  @override
+  Future<void> initialize() async {
+    context?.services.register(IHomeCustomizer, this);
+  }
+  @override
+  Future<void> onTrackStart(BaseTrack track) async {}
+  @override
+  Future<void> onLibraryScan(String file) async {}
+  @override
+  dynamic uiSlot(String locationID) => null;
+  @override
+  Future<void> dispose() async {
+    context?.services.unregister(IHomeCustomizer, this);
+  }
+  @override
+  Future<void> disable() async {
+    context?.services.unregister(IHomeCustomizer, this);
+  }
+
+  @override
+  List<PluginDestination> homeDestinations() => [
+        PluginDestination(
+          id: 'home',
+          icon: Icons.home,
+          label: 'Home',
+          pageBuilder: (context) => const Center(child: Text('Home Content')),
+        ),
+      ];
+
+  @override
+  void openCustomizeSheet() {
+    openCustomizeSheetCalled = true;
+  }
+}
+
 /// Registers bare (no-I/O) MainCore/AudioEngine/LayoutManager/ThemeManager
 /// singletons directly, instead of going through `ensureCoreReady()`/
 /// `ensureLayoutManagerReady()`/`ensureThemeManagerReady()` — the same
@@ -116,7 +181,9 @@ Future<void> _unregisterCore() async {
 }
 
 /// HomePage's tab `IndexedStack`, identified by how many children it has
-/// (six core destinations plus one per enabled plugin tab) — other
+/// (five core destinations — Home was extracted into a bundled plugin at
+/// Tier 2 task 3 and no longer counts — plus one per enabled plugin tab)
+/// — other
 /// `IndexedStack`s exist deeper in the page tree, and `.first` is not a
 /// reliable way to pick this one out. Asserting on `index` rather than on
 /// which page's text is rendered matters here: an `IndexedStack` keeps
@@ -233,8 +300,8 @@ void main() {
 
       await tester.tap(find.text('Alpha'));
       await tester.pumpAndSettle();
-      // Six core tabs + two plugin tabs; Alpha is the first plugin slot.
-      expect(_homeStack(tester, childCount: 8).index, 6);
+      // Five core tabs + two plugin tabs; Alpha is the first plugin slot.
+      expect(_homeStack(tester, childCount: 7).index, 5);
 
       await core.pluginManager
           .disablePlugin(core.pluginManager.byId('plugin_a')!);
@@ -242,12 +309,12 @@ void main() {
 
       // Beta's *tab* survives — it's only Alpha that went away.
       expect(find.text('Beta'), findsOneWidget);
-      // The point of the test. Index 6 is now Beta; asserting on the
+      // The point of the test. Index 5 is now Beta; asserting on the
       // resolved index rather than on rendered text is deliberate, since
       // an IndexedStack keeps every child mounted and only the selected
       // one is actually shown.
-      expect(_homeStack(tester, childCount: 7).index, isNot(6));
-      expect(_homeStack(tester, childCount: 7).index, 0);
+      expect(_homeStack(tester, childCount: 6).index, isNot(5));
+      expect(_homeStack(tester, childCount: 6).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -290,7 +357,7 @@ void main() {
     await tester.runAsync(() async {
       _registerBareCore();
       addTearDown(_unregisterCore);
-      // 'settings' is the last of the six core destinations — nowhere
+      // 'settings' is the last of the five core destinations — nowhere
       // near `_coreDestinationIds.first`, so this only passes if the
       // initial `_selectedDestinationId` actually comes from the
       // persisted setting rather than from that constant.
@@ -299,8 +366,8 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      // Six core tabs, no plugins registered; 'settings' is index 5.
-      expect(_homeStack(tester, childCount: 6).index, 5);
+      // Five core tabs, no plugins registered; 'settings' is index 4.
+      expect(_homeStack(tester, childCount: 5).index, 4);
     });
   });
 
@@ -321,7 +388,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      expect(_homeStack(tester, childCount: 6).index, 0);
+      expect(_homeStack(tester, childCount: 5).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -350,4 +417,150 @@ void main() {
       expect(find.byTooltip('Show navigation'), findsNothing);
     });
   });
+
+  group('Home dashboard plugin (Tier 2 task 3 — Home is no longer a core '
+      'destination)', () {
+    testWidgets(
+        'with no Home-owning plugin registered, no "home" tab renders and '
+        'HomePage does not crash', (tester) async {
+      await tester.runAsync(() async {
+        _registerBareCore();
+        addTearDown(_unregisterCore);
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        // Five core tabs (library/playlist/moods/online/settings), no
+        // "Home" tab among them. The default 800x600 test viewport is
+        // wider than tall, so HomeNavigationBar renders a NavigationRail
+        // (see home_navigation.dart), not the narrow-layout NavigationBar.
+        expect(_homeStack(tester, childCount: 5).index, 0);
+        expect(
+            find.widgetWithText(NavigationRailDestination, 'Home'),
+            findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        'with a Home-owning plugin registered and enabled, its "home" '
+        'destination renders as an ordinary plugin tab', (tester) async {
+      await tester.runAsync(() async {
+        final core = _registerBareCore();
+        addTearDown(_unregisterCore);
+        core.pluginManager.register(_SpyHomeCustomizerPlugin());
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        expect(find.text('Home'), findsWidgets);
+
+        await tester.tap(find.text('Home').first);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Home Content'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        "the command palette's 'Customize home' action reaches "
+        'openCustomizeSheet() on whatever is registered as '
+        'IHomeCustomizer — the interface path that replaced '
+        "home_page.dart's own GlobalKey<HomeDashboardPageState> reach "
+        'once the dashboard became a plugin-owned page', (tester) async {
+      await tester.runAsync(() async {
+        final core = _registerBareCore();
+        addTearDown(_unregisterCore);
+        core.pluginManager.attachContext(OmnisPluginContext(
+          audioEngine: core.audioEngine,
+          services: core.pluginManager.services,
+          events: core.pluginManager.events,
+        ));
+        final plugin = _SpyHomeCustomizerPlugin();
+        core.pluginManager.register(plugin);
+        await core.pluginManager.initializeAll();
+        expect(core.pluginManager.services.get<IHomeCustomizer>(),
+            same(plugin));
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        await _focusSomethingInsideHomePageScaffold(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await _settle(tester);
+
+        await tester.enterText(find.byType(TextField), 'customize');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Customize home'));
+        await tester.pumpAndSettle();
+
+        expect(plugin.openCustomizeSheetCalled, isTrue);
+        expect(tester.takeException(), isNull);
+      });
+    });
+
+    testWidgets(
+        "the command palette's 'Customize home' action is a harmless "
+        'no-op — not a crash — when nothing is registered as '
+        'IHomeCustomizer (the Home plugin disabled/never installed)',
+        (tester) async {
+      await tester.runAsync(() async {
+        _registerBareCore();
+        addTearDown(_unregisterCore);
+
+        await tester.pumpWidget(const MaterialApp(home: HomePage()));
+        await _settle(tester);
+
+        await _focusSomethingInsideHomePageScaffold(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await _settle(tester);
+
+        await tester.enterText(find.byType(TextField), 'customize');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Customize home'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+}
+
+/// `HomePage.build()` wraps its `Scaffold` in **two** nested key-handling
+/// widgets: `GlobalKeyboardShortcuts` (outer — Space/arrows/Ctrl+Left/
+/// Right) and, one level further in, its own `CallbackShortcuts` for
+/// Ctrl+K/Ctrl+P/Ctrl+B. `GlobalKeyboardShortcuts` claims a fallback
+/// "anchor" `FocusNode` when nothing more specific holds focus (see that
+/// class's own doc comment) — but that anchor's `Focus` widget sits
+/// *between* the two `CallbackShortcuts`, i.e. it is an ancestor of the
+/// inner one, never a descendant. Key-event dispatch only walks upward
+/// from whatever node currently holds focus, so with the anchor holding
+/// focus (the state `_settle()` alone leaves things in, since nothing in
+/// this bare `HomePage()` harness otherwise claims it), Ctrl+K's binding —
+/// declared on the *inner* `CallbackShortcuts` — is never reached: the
+/// dialog it would open simply never appears, and a subsequent
+/// `tester.tap(find.text('Customize home'))` fails with "found 0 widgets"
+/// for that reason, not because the palette's list needs narrowing (it
+/// still does, separately — see the `enterText` call after this).
+///
+/// Moving keyboard focus onto any real descendant of the *inner*
+/// `CallbackShortcuts` before sending Ctrl+K sidesteps this: dispatch then
+/// walks up from that descendant, through the inner `CallbackShortcuts`
+/// (where Ctrl+K's binding lives), and only then further out — so the
+/// binding fires. The `NavigationRail`/`NavigationBar` destinations
+/// (`HomeNavigationBar`, rendered as part of the `Scaffold`'s body/
+/// bottomNavigationBar, both inside the inner `CallbackShortcuts`) are a
+/// convenient, always-present target for this — 'Library' is always the
+/// first destination.
+Future<void> _focusSomethingInsideHomePageScaffold(WidgetTester tester) async {
+  Focus.of(tester.element(find.text('Library').first), scopeOk: true)
+      .requestFocus();
+  await tester.pump();
 }

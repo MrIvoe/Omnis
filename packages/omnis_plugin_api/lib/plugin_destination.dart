@@ -18,9 +18,13 @@ class PluginDestination {
   /// rebuilds even as other plugins' destinations are added or removed
   /// around it. Must be unique across every plugin's contributed
   /// destinations; a collision with another plugin's id (or with a
-  /// core destination's reserved ids: `home`, `library`, `playlist`,
-  /// `moods`, `online`, `settings`) is the contributing plugin's bug to
-  /// avoid, not something this type validates.
+  /// core destination's reserved ids: `library`, `playlist`, `moods`,
+  /// `online`, `settings`) is the contributing plugin's bug to avoid, not
+  /// something this type validates. (`home` was a reserved core id before
+  /// Tier 2 extracted the Home dashboard into `HomeDashboardPlugin` — it
+  /// keeps using the string `'home'` for its own destination id, but
+  /// that's no longer a *reserved* id any plugin must avoid, just an
+  /// ordinary plugin-chosen one.)
   final String id;
 
   /// The icon shown in the navigation rail/bar for this destination.

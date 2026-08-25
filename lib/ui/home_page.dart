@@ -17,7 +17,6 @@ import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis/ui/command_palette_dialog.dart';
 import 'package:omnis/ui/forgotten_music_page.dart';
 import 'package:omnis/ui/global_keyboard_shortcuts.dart';
-import 'package:omnis/ui/home_dashboard_page.dart';
 import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/mood_builder_dialog.dart';
@@ -54,7 +53,6 @@ class HomePage extends StatefulWidget {
 /// index (see [_HomePageState._selectedDestinationId]), so these are
 /// the id half of the `pages`/`destinations` lists built in `build()`.
 const _coreDestinationIds = <String>[
-  'home',
   'library',
   'playlist',
   'moods',
@@ -105,14 +103,9 @@ class _HomePageState extends State<HomePage> {
   /// its tab appear.
   StreamSubscription<List<ManagedPlugin>>? _pluginManagerSub;
 
-  /// Lets the command palette's "Customize home" action (item 48/spec
-  /// §38) reach [HomeDashboardPageState.openCustomizeSheet] from outside
-  /// `home_dashboard_page.dart` without either page needing to know the
-  /// other's internals beyond this one public method.
-  final _homeDashboardKey = GlobalKey<HomeDashboardPageState>();
-
-  /// Same reach-into-an-already-alive-IndexedStack-page pattern as
-  /// [_homeDashboardKey], for the §37 "search everywhere" command
+  /// Same reach-into-an-already-alive-IndexedStack-page pattern the old
+  /// `_homeDashboardKey` field used before Tier 2 moved the Home
+  /// dashboard into a plugin — for the §37 "search everywhere" command
   /// palette's Playlist/Mood results — [PlaylistPageState.openPlaylist]/
   /// [MoodsPageState.playMood] reuse each page's own existing
   /// open/build/play logic instead of duplicating it here.
@@ -276,7 +269,7 @@ class _HomePageState extends State<HomePage> {
           )),
       'customize_home': () {
         setState(() => _selectedDestinationId = 'home');
-        _homeDashboardKey.currentState?.openCustomizeSheet();
+        core.pluginManager.services.get<IHomeCustomizer>()?.openCustomizeSheet();
       },
       'scan_library': () async {
         try {
@@ -347,10 +340,6 @@ class _HomePageState extends State<HomePage> {
     final pluginDestinations = _pluginDestinations;
 
     final pages = <Widget>[
-      HomeDashboardPage(
-          key: _homeDashboardKey,
-          engine: core.audioEngine,
-          pluginManager: core.pluginManager),
       LibraryPage(engine: core.audioEngine, pluginManager: core.pluginManager),
       PlaylistPage(
           key: _playlistKey,
@@ -408,7 +397,6 @@ class _HomePageState extends State<HomePage> {
     // (OmnisIconStyle.current), the same closed-vocabulary
     // filled/outlined/rounded/sharp switch ThemeEditorPage exposes.
     final destinations = [
-      HomeDestinationInfo(OmnisIconCatalog.home.resolve(), 'Home'),
       HomeDestinationInfo(OmnisIconCatalog.libraryMusic.resolve(), 'Library'),
       HomeDestinationInfo(OmnisIconCatalog.playlistPlay.resolve(), 'Playlist'),
       HomeDestinationInfo(OmnisIconCatalog.mood.resolve(), 'Moods'),

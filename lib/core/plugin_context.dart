@@ -2,6 +2,7 @@ import 'package:omnis/core/app_settings.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/permissions.dart';
+import 'package:omnis/core/play_history_store.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis_plugin_api/base_track.dart';
 import 'package:omnis_plugin_api/event_bus.dart';
@@ -247,4 +248,23 @@ class OmnisPluginContext implements PluginContext {
 
   @override
   Future<List<Playlist>> loadPlaylists() => PlaylistStore.instance.load();
+
+  // --- Play history read access ---
+
+  @override
+  Future<List<TrackPlayStats>> loadRecentlyPlayed({int limit = 20}) =>
+      PlayHistoryStore.instance.recentlyPlayed(limit: limit);
+
+  @override
+  Future<List<TrackPlayStats>> loadMostPlayed({int limit = 20}) =>
+      PlayHistoryStore.instance.mostPlayed(limit: limit);
+
+  @override
+  Future<List<TrackPlayStats>> loadContinueListening({int limit = 20}) =>
+      PlayHistoryStore.instance.continueListening(limit: limit);
+
+  @override
+  Future<List<TrackPlayStats>> loadMostSkipped(
+          {int limit = 20, int minPlays = 3}) =>
+      PlayHistoryStore.instance.mostSkipped(limit: limit, minPlays: minPlays);
 }

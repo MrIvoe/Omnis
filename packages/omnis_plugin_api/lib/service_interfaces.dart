@@ -526,3 +526,19 @@ abstract class ISmartPlaylistProvider {
   /// rule with that id exists.
   Future<void> deleteRule(String ruleId);
 }
+
+/// Opens the Home dashboard's "customize" bottom sheet (pick which
+/// sections show, in what order) — reached from the command palette's
+/// "Customize home" action. Registered by whichever plugin owns the Home
+/// dashboard tab; before Tier 2, `home_page.dart` reached this directly
+/// via a `GlobalKey<HomeDashboardPageState>` into a widget it constructed
+/// itself, which stopped being possible once the dashboard became a
+/// plugin-owned page `home_page.dart` only holds a `WidgetBuilder` for.
+abstract class IHomeCustomizer {
+  /// Opens the customize sheet. A no-op if the dashboard isn't currently
+  /// visible/mounted — matches the previous `GlobalKey?.currentState?.`
+  /// null-safe-no-op behavior exactly, so a stale command-palette action
+  /// (dashboard plugin disabled after the palette opened) degrades
+  /// silently rather than throwing.
+  void openCustomizeSheet();
+}
