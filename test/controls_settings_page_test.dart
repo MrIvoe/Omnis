@@ -100,7 +100,8 @@ void main() {
 
   testWidgets(
       'Default launch tab defaults to Library and lists every core '
-      'destination', (tester) async {
+      'destination — Home is no longer among them (Tier 2 task 3, it is '
+      'now plugin-contributed)', (tester) async {
     await pumpControls(tester);
 
     expect(find.text('Default launch tab'), findsOneWidget);
@@ -117,7 +118,6 @@ void main() {
     // dropdown test selects via `.last`), so every core label — including
     // the current selection — appears at least once.
     for (final label in [
-      'Home',
       'Library',
       'Playlist',
       'Moods',
@@ -126,6 +126,12 @@ void main() {
     ]) {
       expect(find.text(label), findsWidgets);
     }
+    // 'Home' isn't a core option with no Home plugin registered — this
+    // bare `PluginManager()` (via `pumpControls`'s default) contributes no
+    // destinations at all, so it must not appear even once, including in
+    // the closed dropdown button (which would show it only if it were the
+    // current selection, and it isn't).
+    expect(find.text('Home'), findsNothing);
   });
 
   testWidgets(
@@ -144,6 +150,26 @@ void main() {
 
     expect(AppSettings.instance.defaultLaunchTabId, 'radio_tab');
     expect(find.text('Radio'), findsOneWidget);
+  });
+
+  testWidgets(
+      'lists Home as a launch tab option when a Home-owning plugin is '
+      'registered (Tier 2 task 3 — Home is plugin-contributed, not core, '
+      'so it only appears when such a plugin is actually present)',
+      (tester) async {
+    final manager = PluginManager();
+    manager.register(_TabContributingPlugin(id: 'home', tabLabel: 'Home'));
+    await pumpControls(tester, pluginManager: manager);
+
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+
+    await tester.tap(find.text('Home').last);
+    await tester.pumpAndSettle();
+
+    expect(AppSettings.instance.defaultLaunchTabId, 'home_tab');
+    expect(find.text('Home'), findsOneWidget);
   });
 
   testWidgets(

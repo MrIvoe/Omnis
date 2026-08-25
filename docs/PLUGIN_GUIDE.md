@@ -402,9 +402,13 @@ broken by registration order in `bundled_plugins.dart`. Leave `order`
 alone unless you have a real reason — `0` means "no preference."
 
 `id` must not collide with another plugin's destination id, nor with one
-of the six reserved core ids: **`home`, `library`, `playlist`, `moods`,
-`online`, `settings`**. Nothing validates this for you; a collision is
-the contributing plugin's bug.
+of the five reserved core ids: **`library`, `playlist`, `moods`,
+`online`, `settings`**. (`home` was a reserved core id before Tier 2
+extracted the Home dashboard into the bundled `HomeDashboardPlugin` — it
+keeps using the string `'home'` for its own destination id, but that's no
+longer a *reserved* id any plugin must avoid, just an ordinary
+plugin-chosen one.) Nothing validates this for you; a collision is the
+contributing plugin's bug.
 
 Tab selection is keyed by `id`, not by index, so your tab stays selected
 as other plugins are enabled or disabled around it — and when *your*

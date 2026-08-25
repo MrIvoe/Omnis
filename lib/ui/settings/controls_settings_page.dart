@@ -7,7 +7,7 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
-/// The six fixed core destinations' ids and display labels, in the same
+/// The five fixed core destinations' ids and display labels, in the same
 /// order `home_page.dart`'s own `_coreDestinationIds`/`destinations`
 /// lists pair them. Duplicated here rather than imported — Dart's
 /// leading-underscore privacy keeps `home_page.dart`'s versions scoped to
@@ -16,8 +16,12 @@ import 'package:omnis/ui/widgets/settings_highlight.dart';
 /// hand, the same tradeoff `settings_page.dart`'s own `_SearchableSetting`
 /// index already accepts for the same "no runtime introspection
 /// mechanism exists for this" reason.
+///
+/// No `('home', 'Home')` entry here (Tier 2 task 3) — 'home' is no longer
+/// a reserved core id; it's now only reachable via `_pluginDestinations`
+/// below, contributed by the bundled `HomeDashboardPlugin` like any other
+/// plugin destination.
 const _coreLaunchTabOptions = <(String, String)>[
-  ('home', 'Home'),
   ('library', 'Library'),
   ('playlist', 'Playlist'),
   ('moods', 'Moods'),
