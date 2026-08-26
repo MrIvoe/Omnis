@@ -138,7 +138,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _openPlaybackSchedule(BuildContext context) =>
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => const PlaybackSchedulePage(),
+        builder: (_) => PlaybackSchedulePage(pluginManager: widget.pluginManager),
       ));
 
   void _openAbout(BuildContext context) =>

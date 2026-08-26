@@ -31,8 +31,8 @@ import 'package:omnis/core/rename_reconciliation.dart';
 import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/track_fingerprint.dart';
 import 'package:omnis/core/track_fingerprint_store.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 import 'package:omnis_plugins/bundled_plugins.dart';
-import 'package:omnis_plugins/custom_radio_station_store.dart';
 
 /// MainCore is the entry point for the Omnis micro-kernel music engine.
 ///
@@ -371,9 +371,10 @@ class MainCore {
   /// [PlaybackScheduleAction.play] schedule resolves, in order: a
   /// [PlaybackSchedule.playlistId] against the current library and
   /// replaces the queue with it; otherwise a [PlaybackSchedule.
-  /// radioStationId] against `CustomRadioStationStore` (item 50's
-  /// "scheduled radio" gap) and replaces the queue with that station's
-  /// track; one with neither just resumes whatever's already queued. A
+  /// radioStationId] against whatever's registered as
+  /// [ICustomRadioStationProvider] (item 50's "scheduled radio" gap) and
+  /// replaces the queue with that station's track; one with neither just
+  /// resumes whatever's already queued. A
   /// referenced playlist/station that's since been deleted degrades the
   /// same way — the queue is simply left untouched before playing.
   /// Never throws — a scheduling failure must never crash the app, the
@@ -418,21 +419,19 @@ class MainCore {
         } else {
           // Item 50's "scheduled radio" gap — deliberately scoped to a
           // saved *custom* station only (see PlaybackSchedule.
-          // radioStationId's own doc): CustomRadioStation.toTrack()
-          // resolves to a playable BaseTrack with no network call,
+          // radioStationId's own doc): resolves through
+          // ICustomRadioStationProvider (RadioPlugin) rather than a
+          // direct CustomRadioStationStore import — that store is
+          // plugin-private state now, see the interface's own doc
+          // comment — to a real BaseTrack with no network call needed,
           // unlike a Radio-Browser-searched station.
           final radioStationId = schedule.radioStationId;
           if (radioStationId != null) {
-            final stations = await CustomRadioStationStore.instance.load();
-            CustomRadioStation? station;
-            for (final s in stations) {
-              if (s.id == radioStationId) {
-                station = s;
-                break;
-              }
-            }
-            if (station != null) {
-              await _audioEngine.setQueue([station.toTrack()]);
+            final provider =
+                _pluginManager.services.get<ICustomRadioStationProvider>();
+            final track = await provider?.trackForCustomStation(radioStationId);
+            if (track != null) {
+              await _audioEngine.setQueue([track]);
             }
           }
         }

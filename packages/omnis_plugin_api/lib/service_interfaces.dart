@@ -624,3 +624,70 @@ abstract class IEmbeddedPlaybackProvider {
   /// `MusicPlugin.uiSlot`'s own `dynamic` return type.
   dynamic buildSettingsSlot();
 }
+
+/// Read access to user-added custom radio stations
+/// (`omnis_plugins`' `CustomRadioStationStore`/`CustomRadioStation`) for
+/// the two Omnis-app call sites that need it — scheduled "play this
+/// custom station" playback (`MainCore._checkPlaybackSchedules`) and the
+/// scheduled-playback editor's "pick a target" list
+/// (`PlaybackSchedulePage`) — without either one reaching a plugin-owned
+/// store by a direct concrete import.
+///
+/// Registered in `initialize()`/`enable()`, unregistered in
+/// `disable()`/`dispose()` — the same lifecycle every capability
+/// interface in this file follows, looked up via
+/// `pluginManager.services.get<ICustomRadioStationProvider>()`.
+///
+/// Added for a Tier 2 task 5 fix round: the initial extraction had
+/// `main_core.dart`/`playback_schedule_page.dart` import
+/// `package:omnis_plugins/custom_radio_station_store.dart` directly —
+/// working (same file, same JSON, no data-path bug) but a violation of
+/// this plan's binding constraint that a UI call site's need from an
+/// extracted plugin goes through a capability interface, not a direct
+/// import of plugin-private state. Task 4 hit the identical shape (the
+/// app needing to read a plugin-owned store) and resolved it exactly
+/// this way — [IMoodPlayer.customMoods] over a direct `CustomMoodStore`
+/// import — for the same reason: that store is plugin-private state now,
+/// and the app can't (and shouldn't) reach it directly.
+///
+/// Deliberately **not** exposing `CustomRadioStation` itself — that type
+/// lives in `omnis_plugins`, not this package, so this package (which
+/// the app depends on, and which depends on nothing plugin-side) has no
+/// way to name it in a return type. [customStationSummaries] and
+/// [trackForCustomStation] instead expose exactly the two shapes the
+/// two real call sites need — an id+name pair for listing/labeling, and
+/// a ready-to-queue [BaseTrack] for actually playing one — read off
+/// those call sites directly rather than guessed at, the same "minimal
+/// surface, not a speculative passthrough" restraint [IHomeCustomizer]/
+/// [IMoodPlayer] already followed for their own narrow app-facing reads.
+abstract class ICustomRadioStationProvider {
+  /// Every user-added custom station's id and display name, in the order
+  /// they were added — matches `CustomRadioStationStore.load()`'s own
+  /// order. `PlaybackSchedulePage` uses this both to populate the
+  /// schedule editor's "Playlist or station" dropdown and to resolve a
+  /// saved schedule's `radioStationId` back to a display name; neither
+  /// use needs the station's stream URL or creation time, so those
+  /// fields deliberately aren't part of this surface. Returns an empty
+  /// list — never throws — when nothing has ever been saved, matching
+  /// `CustomRadioStationStore.load()`'s own empty-on-nothing-saved
+  /// contract.
+  ///
+  /// A **positional** record — `id`/`name` in the type above are
+  /// documentation-only hints, not named-field accessors (Dart only
+  /// generates `.name`-style getters for a record type written with
+  /// `{...}` named fields). Read each entry via `.$1` (id) / `.$2`
+  /// (name), the same convention `AudioEngine.abRepeatRange`'s
+  /// `(Duration a, Duration b)?` already establishes in this codebase.
+  Future<List<(String id, String name)>> customStationSummaries();
+
+  /// The real, playable [BaseTrack] for the custom station with
+  /// [stationId] — matches `CustomRadioStation.toTrack()`'s own
+  /// conversion exactly (a real `streamUrl`, `type: TrackType.radio`, no
+  /// network call needed to resolve it). Returns `null` — never throws —
+  /// when no station with that id exists any more (e.g. a schedule whose
+  /// referenced station was since deleted), the same "a stale reference
+  /// degrades to nothing rather than crashing" contract
+  /// `MainCore._checkPlaybackSchedules`'s own doc comment already
+  /// documents for a deleted playlist.
+  Future<BaseTrack?> trackForCustomStation(String stationId);
+}

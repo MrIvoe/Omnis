@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:omnis/core/playback_schedule.dart';
 import 'package:omnis/core/playlist_store.dart';
-import 'package:omnis_plugins/custom_radio_station_store.dart';
+import 'package:omnis/core/plugin_manager.dart';
+import 'package:omnis/plugin_api/service_interfaces.dart';
 
 const _weekdayLabels = {
   1: 'Mon',
@@ -34,7 +35,9 @@ String _formatWeekdays(Set<int> weekdays) {
 /// type — not a general automation-rules engine (item 50's larger,
 /// still-deferred ask).
 class PlaybackSchedulePage extends StatefulWidget {
-  const PlaybackSchedulePage({super.key});
+  final PluginManager pluginManager;
+
+  const PlaybackSchedulePage({super.key, required this.pluginManager});
 
   @override
   State<PlaybackSchedulePage> createState() => _PlaybackSchedulePageState();
@@ -43,7 +46,7 @@ class PlaybackSchedulePage extends StatefulWidget {
 class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
   List<PlaybackSchedule> _schedules = const [];
   List<Playlist> _playlists = const [];
-  List<CustomRadioStation> _stations = const [];
+  List<(String id, String name)> _stations = const [];
   bool _loading = true;
 
   @override
@@ -55,7 +58,15 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
   Future<void> _load() async {
     final schedules = await PlaybackScheduleStore.instance.load();
     final playlists = await PlaylistStore.instance.load();
-    final stations = await CustomRadioStationStore.instance.load();
+    // Read through ICustomRadioStationProvider rather than
+    // CustomRadioStationStore directly — that store is plugin-private
+    // state owned by RadioPlugin (Omnis-Plugins), not something this app
+    // reaches into concretely. A null provider (Radio plugin disabled or
+    // not installed) degrades to an empty list, same as every other
+    // capability-interface lookup in this codebase.
+    final provider =
+        widget.pluginManager.services.get<ICustomRadioStationProvider>();
+    final stations = await provider?.customStationSummaries() ?? const [];
     if (!mounted) return;
     setState(() {
       _schedules = schedules;
@@ -75,8 +86,14 @@ class _PlaybackSchedulePageState extends State<PlaybackSchedulePage> {
 
   String? _stationName(String? radioStationId) {
     if (radioStationId == null) return null;
+    // `.$1`/`.$2` — a positional record (id, name); the field-name hints
+    // in ICustomRadioStationProvider's declared return type are
+    // documentation only and don't create named accessors, the same
+    // `(Duration a, Duration b)` convention `AudioEngine.abRepeatRange`
+    // already establishes in this codebase (accessed via `.$1`/`.$2` at
+    // its own call sites too).
     for (final s in _stations) {
-      if (s.id == radioStationId) return s.name;
+      if (s.$1 == radioStationId) return s.$2;
     }
     return null;
   }
@@ -183,7 +200,7 @@ Future<PlaybackSchedule?> _openEditor(
   BuildContext context, {
   PlaybackSchedule? existing,
   required List<Playlist> playlists,
-  required List<CustomRadioStation> stations,
+  required List<(String id, String name)> stations,
 }) {
   return showDialog<PlaybackSchedule>(
     context: context,
@@ -195,7 +212,7 @@ Future<PlaybackSchedule?> _openEditor(
 class _ScheduleEditorDialog extends StatefulWidget {
   final PlaybackSchedule? existing;
   final List<Playlist> playlists;
-  final List<CustomRadioStation> stations;
+  final List<(String id, String name)> stations;
 
   const _ScheduleEditorDialog(
       {this.existing, required this.playlists, required this.stations});
@@ -348,10 +365,13 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                       value: 'playlist:${playlist.id}',
                       child: Text(playlist.name),
                     ),
+                  // `.$1`/`.$2` — see `_stationName`'s own comment on why
+                  // this positional record's field-name hints don't
+                  // create named accessors.
                   for (final station in widget.stations)
                     DropdownMenuItem<String?>(
-                      value: 'radio:${station.id}',
-                      child: Text('${station.name} (radio)'),
+                      value: 'radio:${station.$1}',
+                      child: Text('${station.$2} (radio)'),
                     ),
                 ],
                 onChanged: (value) => setState(() {
