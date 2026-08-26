@@ -332,7 +332,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// docs/MANUAL_QA.md's performance section): every real "play" action
   /// already sets its own queue explicitly at the moment of the action
   /// (tapping a track, a mood, a section — see `_playTrack`,
-  /// `_MoodsPage._playMood`, etc.), so nothing depends on the queue being
+  /// `MoodsPageState.playMood` (`omnis_plugins`), etc.), so nothing depends on the queue being
   /// pre-populated at boot. Eagerly loading the *entire* library — every
   /// track, however large — into `just_audio`'s native
   /// `ConcatenatingAudioSource` before the user has asked to play

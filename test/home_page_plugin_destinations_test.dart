@@ -208,7 +208,7 @@ class _SpyMoodPlayerPlugin extends MusicPlugin
       const [];
 
   @override
-  List<CustomMood> get customMoods => const [];
+  Future<List<CustomMood>> customMoods() async => const [];
 
   @override
   void playMood(String mood) => playedMoods.add(mood);

@@ -413,7 +413,8 @@ validates this for you; a collision is the contributing plugin's bug.
 
 Tab selection is keyed by `id`, not by index, so your tab stays selected
 as other plugins are enabled or disabled around it — and when *your*
-plugin is disabled while its tab is open, the app falls back to Home
+plugin is disabled while its tab is open, the app falls back to Library
+(the first core destination — there is no core Home tab any more)
 rather than silently showing whatever tab now sits at that position.
 `pageBuilder` is invoked on every rebuild of the navigation stack; your
 page's own `State` is preserved across those rebuilds through normal

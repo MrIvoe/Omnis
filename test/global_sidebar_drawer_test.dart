@@ -39,13 +39,15 @@ class _FakePathProvider extends PathProviderPlatform
 /// `Omnis-Plugins`' `moods_plugin_test.dart` covers against its real
 /// page.
 class _FakeMoodPlayer implements IMoodPlayer {
-  @override
-  final List<CustomMood> customMoods;
+  final List<CustomMood> _customMoods;
 
   final List<String> playedPresetMoods = [];
   final List<CustomMood> playedCustomMoods = [];
 
-  _FakeMoodPlayer(this.customMoods);
+  _FakeMoodPlayer(this._customMoods);
+
+  @override
+  Future<List<CustomMood>> customMoods() async => _customMoods;
 
   @override
   void playMood(String mood) => playedPresetMoods.add(mood);

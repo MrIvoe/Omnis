@@ -58,14 +58,14 @@ class _HomePageState extends State<HomePage> {
   ///
   /// An index is not a stable handle on a destination once plugins can
   /// add and remove tabs around the one you're on: with destinations
-  /// `[...6 core, pluginA(6), pluginB(7)]`, disabling pluginA while it's
-  /// selected shrinks the list to length 7, so a bounds check on index 6
-  /// passes — and index 6 now silently resolves to pluginB's tab. The
+  /// `[...3 core, pluginA(3), pluginB(4)]`, disabling pluginA while it's
+  /// selected shrinks the list to length 4, so a bounds check on index 3
+  /// passes — and index 3 now silently resolves to pluginB's tab. The
   /// user would land on a completely different plugin's page with no
   /// indication anything had changed. Keying on the id makes a vanished
   /// destination *look* vanished: `indexOf` returns -1 and `build()`
-  /// falls back to Home deliberately. The render index is derived from
-  /// this id at build time and never stored.
+  /// falls back to Library (`destinationIds[0]`) deliberately. The render
+  /// index is derived from this id at build time and never stored.
   String _selectedDestinationId = AppSettings.instance.defaultLaunchTabId;
   bool _coreReady = false;
 
@@ -375,7 +375,7 @@ class _HomePageState extends State<HomePage> {
     }
     final navVisible = !autoHideActive || _navRevealed;
 
-    // The four fixed destinations, unchanged in identity and behavior —
+    // The three fixed destinations, unchanged in identity and behavior —
     // only *where* they render (bottom bar vs. side rail) is responsive.
     // See `home_navigation.dart` for the breakpoint/rail-vs-drawer
     // reasoning.
@@ -403,11 +403,14 @@ class _HomePageState extends State<HomePage> {
     // A plugin contributing a destination can be disabled/uninstalled
     // mid-session, removing its id from the list above. Resolving by id
     // rather than clamping an index means that reads as "the tab you
-    // were on is gone" and falls back to Home — a shrinking list can no
-    // longer quietly hand the user a *different* plugin's page that
-    // happens to now sit at the old numeric position. Home, not the last
-    // valid index, because "the destination you were on disappeared"
-    // should read as "back to the start," not "landed on some other tab."
+    // were on is gone" and falls back to Library (destinationIds[0], the
+    // first core destination — there is no core Home tab any more, only
+    // whichever plugin-contributed tab HomeDashboardPlugin happens to
+    // add) — a shrinking list can no longer quietly hand the user a
+    // *different* plugin's page that happens to now sit at the old
+    // numeric position. Library, not the last valid index, because "the
+    // destination you were on disappeared" should read as "back to the
+    // start," not "landed on some other tab."
     var selectedIndex = destinationIds.indexOf(_selectedDestinationId);
     if (selectedIndex < 0) {
       selectedIndex = 0;

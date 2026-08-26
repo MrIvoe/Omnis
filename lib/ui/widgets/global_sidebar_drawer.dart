@@ -101,7 +101,12 @@ class _GlobalSidebarDrawerState extends State<GlobalSidebarDrawer> {
     // directly. With no such plugin enabled the list is empty, and every
     // pinned custom mood reads as a stale reference `_labelFor` skips,
     // exactly like a pinned playlist whose playlist was deleted.
-    final customMoods = _moodPlayer?.customMoods ?? const <CustomMood>[];
+    // `IMoodPlayer.customMoods` is `Future`-returning (it reads the
+    // plugin's backing store directly), not a synchronous read off a
+    // mounted page's `State`, so there's no risk of racing that page's
+    // own async initial load the way an earlier version of this call did.
+    final customMoods =
+        await _moodPlayer?.customMoods() ?? const <CustomMood>[];
     final presetMoods = <String>{
       for (final builder
           in widget.pluginManager.services.getAll<IQueueBuilder>())

@@ -96,10 +96,14 @@ class PlaylistPageState extends State<PlaylistPage> {
   /// Opens [playlist]'s detail view — the same effect as tapping its tile
   /// in the list. Public so a caller elsewhere in the app (the §37
   /// "search everywhere" command palette, reached via a
-  /// `GlobalKey<PlaylistPageState>` the same way
-  /// `HomeDashboardPageState.openCustomizeSheet` is already reached) can
-  /// jump straight to a specific playlist without this page needing to
-  /// know that caller exists.
+  /// `GlobalKey<PlaylistPageState>`) can jump straight to a specific
+  /// playlist without this page needing to know that caller exists. This
+  /// page is still a core, app-owned page, so a `GlobalKey` reach into it
+  /// is the plain, direct mechanism — unlike `HomeDashboardPageState
+  /// .openCustomizeSheet`, which moved to going through the
+  /// `IHomeCustomizer` capability interface once Task 3 extracted the
+  /// Home dashboard into a bundled plugin the app no longer constructs
+  /// directly, so a `GlobalKey` into it isn't available any more.
   void openPlaylist(Playlist playlist) {
     setState(() => _openPlaylist = playlist);
   }

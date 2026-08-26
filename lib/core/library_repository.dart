@@ -23,17 +23,30 @@ import 'package:omnis/core/library_store.dart';
 /// issuing their own disk read. [save] updates the in-memory copy,
 /// notifies listeners, and persists.
 ///
-/// Pages that only ever *read* the library (`home_dashboard_page.dart`,
-/// `playlist_page.dart`, the mood player in `home_page.dart`) call [load]
-/// instead of talking to [LibraryStore] directly, and [addListener] to
-/// react when another page saves a change — that's what actually
-/// delivers "a favorite toggled in Library is visible in Home without
-/// Home needing its own reload trigger for it," not [load] alone.
-/// `library_page.dart` owns the library's read/modify/write lifecycle
-/// (scanning, tag edits, favorites, deletes) and calls [save] wherever it
-/// previously called `LibraryStore.instance.save` — its existing local
-/// `_tracks` field and `setState` patterns don't need to change, only
-/// which class they persist through.
+/// `playlist_page.dart` reads the library via [load] and also calls
+/// [addListener] to react live when another page saves a change — that's
+/// what actually delivers "a favorite toggled in Library is visible in
+/// Playlist without Playlist needing its own reload trigger for it," not
+/// [load] alone. `library_page.dart` owns the library's read/modify/write
+/// lifecycle (scanning, tag edits, favorites, deletes) and calls [save]
+/// wherever it previously called `LibraryStore.instance.save` — its
+/// existing local `_tracks` field and `setState` patterns don't need to
+/// change, only which class they persist through.
+///
+/// That "visible without a reload trigger" guarantee no longer extends to
+/// Home: pre-Tier-2, `home_dashboard_page.dart` (then still
+/// `home_page.dart`'s own inline dashboard) and its mood player both read
+/// through this repository and listened the same way `playlist_page.dart`
+/// still does. Both moved into the separate `omnis_plugins` package
+/// (Tier 2 tasks 3 and 4) — a bundled plugin can't import this
+/// app-only class — and neither reach it any more: the Home dashboard now
+/// reads library tracks through `PluginContext.loadLibraryTracks()` with
+/// no live-update signal at all (a documented gap in
+/// `home_dashboard_page.dart`'s own doc comment), and the mood player no
+/// longer lives in `home_page.dart` at all — it's `MoodsPageState` in
+/// `omnis_plugins`, which reads its own library snapshot independently.
+/// A favorite toggled in Library is therefore *not* guaranteed to show up
+/// live in Home any more, only in Playlist.
 class LibraryRepository extends ChangeNotifier {
   LibraryRepository._();
 

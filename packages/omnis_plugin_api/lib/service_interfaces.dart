@@ -207,7 +207,7 @@ abstract class IThumbsProvider {
 /// produces something on a freshly scanned library with no mood tags at
 /// all) both do. Callers use `ServiceRegistry.getAll<IQueueBuilder>()`
 /// and try each in registration order, keeping the first non-empty
-/// result — see `HomePage._MoodsPageState._playMood`. Registration order
+/// result — see `MoodsPageState.playMood` (`omnis_plugins`). Registration order
 /// is therefore meaningful here (`bundled_plugins.dart` lists
 /// `SmartPlaylistPlugin` before `QueuePresetPlugin` deliberately: a
 /// curated mood match should win over an objective fallback whenever one
@@ -403,7 +403,10 @@ abstract class IAIProvider {
 /// [isConfigured] provider, alongside Radio.
 abstract class IOnlineSearchProvider {
   /// A short, user-facing name for this provider's tab/section — e.g.
-  /// "Ampache", "Koel". Matches the plugin's own `MusicPlugin.name`.
+  /// "Ampache", "Koel". A short chip label, not necessarily identical to
+  /// the plugin's own `MusicPlugin.name` (which tends to be longer/more
+  /// formal — see [IEmbeddedPlaybackProvider.providerName]'s own doc for
+  /// a concrete case where the two values actually diverge).
   String get providerName;
 
   /// Whether this provider has enough configuration (server URL,
@@ -574,10 +577,20 @@ abstract class IMoodPlayer {
   /// MOODS" section and needs the full object to hand back to
   /// [playCustomMood]) can resolve a mood name without reaching the
   /// plugin-private store that persists them. Returns an empty list —
-  /// never throws — when no plugin owns the Moods tab, or when its page
-  /// hasn't finished its initial load, in which case a pinned custom mood
-  /// simply doesn't render rather than showing as a broken entry.
-  List<CustomMood> get customMoods;
+  /// never throws — when no plugin owns the Moods tab.
+  ///
+  /// A **method returning a `Future`**, not a synchronous getter reading
+  /// off the mounted Moods page's own `State` — the same
+  /// `Future`-returning shape [ICustomRadioStationProvider
+  /// .customStationSummaries] uses, and for the identical reason: a
+  /// synchronous read off a mounted widget's `State` can race that
+  /// widget's own async initial load (a real window at app startup, since
+  /// nothing orders "the Moods page's own custom-mood load" ahead of "the
+  /// caller's own load"), silently returning an empty list and reading
+  /// every pinned custom mood as a stale/deleted reference. Reading the
+  /// backing store directly instead — as the implementing plugin does —
+  /// sidesteps that race entirely.
+  Future<List<CustomMood>> customMoods();
 }
 
 /// Contributes a self-contained embedded playback UI as one more section
@@ -610,8 +623,11 @@ abstract class IMoodPlayer {
 /// [IHomeCustomizer]/[IMoodPlayer] already established for their own
 /// `GlobalKey`-into-app-owned-code reaches.
 abstract class IEmbeddedPlaybackProvider {
-  /// Short user-facing tab label — e.g. "YouTube", "Spotify". Matches
-  /// the plugin's own `MusicPlugin.name`, the same convention
+  /// Short user-facing tab label — e.g. "YouTube", "Spotify". A short
+  /// chip label; may differ from the plugin's own `MusicPlugin.name`
+  /// (`YoutubePlaybackPlugin.name`/`SpotifyPlaybackPlugin.name` are the
+  /// longer "YouTube Playback"/"Spotify Playback"), the same "short chip
+  /// label, not necessarily the plugin's formal name" convention
   /// [IOnlineSearchProvider.providerName] already follows for a name
   /// surfaced directly in the same tab's chip row.
   String get providerName;
