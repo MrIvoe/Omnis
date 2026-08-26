@@ -579,3 +579,48 @@ abstract class IMoodPlayer {
   /// simply doesn't render rather than showing as a broken entry.
   List<CustomMood> get customMoods;
 }
+
+/// Contributes a self-contained embedded playback UI as one more section
+/// of the "Online" tab — YouTube's own embedded IFrame player, Spotify's
+/// own Connect remote-control panel. Both are deliberately **not**
+/// [IOnlineSearchProvider]s (see that interface's own doc comment for
+/// why: they only ever return metadata-only tracks `AudioEngine` can't
+/// actually play), so this is a separate, narrower interface for exactly
+/// "give me your existing settings widget to embed as a tab section."
+///
+/// Registered in `initialize()`/`enable()`, unregistered in
+/// `disable()`/`dispose()` — the same lifecycle every capability
+/// interface in this file follows — so the "Online" tab's provider list
+/// (`ServiceRegistry.getAll<IEmbeddedPlaybackProvider>()`) already
+/// reflects a plugin's current enabled state with no separate
+/// `ManagedPlugin.enabled` check needed: a disabled plugin simply isn't
+/// registered, the same "ask the registry, not a plugin's own enabled
+/// flag" pattern [IOnlineSearchProvider]/[IRadioProvider] etc. already
+/// establish.
+///
+/// Added for Tier 2 task 5 (extracting the Online tab into a bundled
+/// plugin): the pre-extraction `OnlinePage` reached each of these two
+/// plugins directly by concrete-type-adjacent lookup
+/// (`PluginManager.byId('youtube_playback')`/`.enabled`) plus
+/// `PluginManager.uiSlotForPlugin(...)`, neither of which a bundled
+/// plugin (`omnis_plugins`, depending only on this package) can reach —
+/// `ManagedPlugin`/`PluginManager` are both Omnis-app-only types, not
+/// part of this package's surface. This interface is the
+/// capability-interface replacement for that reach, the same shape
+/// [IHomeCustomizer]/[IMoodPlayer] already established for their own
+/// `GlobalKey`-into-app-owned-code reaches.
+abstract class IEmbeddedPlaybackProvider {
+  /// Short user-facing tab label — e.g. "YouTube", "Spotify". Matches
+  /// the plugin's own `MusicPlugin.name`, the same convention
+  /// [IOnlineSearchProvider.providerName] already follows for a name
+  /// surfaced directly in the same tab's chip row.
+  String get providerName;
+
+  /// This provider's own `uiSlot('plugin_settings')` widget — the exact
+  /// widget `PluginSettingsPage` would show for this plugin, embedded
+  /// here as one section among several instead. Always a real Flutter
+  /// `Widget` in practice; typed `dynamic` because this abstract surface
+  /// never imports `package:flutter` directly, matching
+  /// `MusicPlugin.uiSlot`'s own `dynamic` return type.
+  dynamic buildSettingsSlot();
+}

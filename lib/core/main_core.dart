@@ -8,7 +8,6 @@ import 'package:omnis/core/app_update_checker.dart';
 import 'package:omnis/core/audio_engine.dart';
 import 'package:omnis/core/backup_service.dart';
 import 'package:omnis/core/base_track.dart';
-import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/home_widget_service.dart';
 import 'package:omnis/core/library_repository.dart';
 import 'package:omnis/core/library_scan_scheduler.dart';
@@ -33,6 +32,7 @@ import 'package:omnis/core/sandbox.dart';
 import 'package:omnis/core/track_fingerprint.dart';
 import 'package:omnis/core/track_fingerprint_store.dart';
 import 'package:omnis_plugins/bundled_plugins.dart';
+import 'package:omnis_plugins/custom_radio_station_store.dart';
 
 /// MainCore is the entry point for the Omnis micro-kernel music engine.
 ///

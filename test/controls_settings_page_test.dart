@@ -100,8 +100,9 @@ void main() {
 
   testWidgets(
       'Default launch tab defaults to Library and lists every core '
-      'destination — Home (Tier 2 task 3) and Moods (Tier 2 task 4) are '
-      'no longer among them, both being plugin-contributed now',
+      'destination — Home (Tier 2 task 3), Moods (Tier 2 task 4), and '
+      'Online (Tier 2 task 5) are no longer among them, all three being '
+      'plugin-contributed now',
       (tester) async {
     await pumpControls(tester);
 
@@ -121,18 +122,19 @@ void main() {
     for (final label in [
       'Library',
       'Playlist',
-      'Online',
       'Settings',
     ]) {
       expect(find.text(label), findsWidgets);
     }
-    // Neither 'Home' nor 'Moods' is a core option with no plugin owning
-    // them — this bare `PluginManager()` (via `pumpControls`'s default)
-    // contributes no destinations at all, so neither must appear even
-    // once, including in the closed dropdown button (which would show one
-    // only if it were the current selection, and it isn't).
+    // Neither 'Home', 'Moods', nor 'Online' is a core option with no
+    // plugin owning them — this bare `PluginManager()` (via
+    // `pumpControls`'s default) contributes no destinations at all, so
+    // none of the three must appear even once, including in the closed
+    // dropdown button (which would show one only if it were the current
+    // selection, and none is).
     expect(find.text('Home'), findsNothing);
     expect(find.text('Moods'), findsNothing);
+    expect(find.text('Online'), findsNothing);
   });
 
   testWidgets(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/playback_schedule.dart';
 import 'package:omnis/core/playlist_store.dart';
+import 'package:omnis_plugins/custom_radio_station_store.dart';
 
 const _weekdayLabels = {
   1: 'Mon',

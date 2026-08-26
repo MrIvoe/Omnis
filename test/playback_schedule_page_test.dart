@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omnis/core/custom_radio_station_store.dart';
 import 'package:omnis/core/playback_schedule.dart';
 import 'package:omnis/core/playlist_store.dart';
 import 'package:omnis/ui/settings/playback_schedule_page.dart';
+import 'package:omnis_plugins/custom_radio_station_store.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 

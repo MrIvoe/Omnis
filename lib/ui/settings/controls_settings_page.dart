@@ -7,8 +7,8 @@ import 'package:omnis/core/plugin_manager.dart';
 import 'package:omnis/plugin_api/plugin_destination.dart';
 import 'package:omnis/ui/widgets/settings_highlight.dart';
 
-/// The four fixed core destinations' ids and display labels, in the same
-/// order `home_page.dart`'s own `_coreDestinationIds`/`destinations`
+/// The three fixed core destinations' ids and display labels, in the
+/// same order `home_page.dart`'s own `_coreDestinationIds`/`destinations`
 /// lists pair them. Duplicated here rather than imported — Dart's
 /// leading-underscore privacy keeps `home_page.dart`'s versions scoped to
 /// that file — so this page's launch-tab picker can list every
@@ -17,17 +17,18 @@ import 'package:omnis/ui/widgets/settings_highlight.dart';
 /// index already accepts for the same "no runtime introspection
 /// mechanism exists for this" reason.
 ///
-/// No `('home', 'Home')` entry (Tier 2 task 3) and no `('moods', 'Moods')`
-/// entry (Tier 2 task 4) — neither is a reserved core id any more; both
+/// No `('home', 'Home')` entry (Tier 2 task 3), no `('moods', 'Moods')`
+/// entry (Tier 2 task 4), and no `('online', 'Online')` entry (Tier 2
+/// task 5) — none of the three is a reserved core id any more; all three
 /// are now only reachable via `_pluginDestinations` below, contributed by
-/// the bundled `HomeDashboardPlugin`/`MoodsPlugin` like any other plugin
-/// destination. Leaving either here would put a *duplicate* entry in the
-/// dropdown whenever the contributing plugin is enabled — a real
-/// `DropdownButton` assertion crash, not just a cosmetic repeat.
+/// the bundled `HomeDashboardPlugin`/`MoodsPlugin`/`OnlinePlugin` like any
+/// other plugin destination. Leaving any of them here would put a
+/// *duplicate* entry in the dropdown whenever the contributing plugin is
+/// enabled — a real `DropdownButton` assertion crash, not just a
+/// cosmetic repeat.
 const _coreLaunchTabOptions = <(String, String)>[
   ('library', 'Library'),
   ('playlist', 'Playlist'),
-  ('online', 'Online'),
   ('settings', 'Settings'),
 ];
 

@@ -291,9 +291,9 @@ Future<void> _unregisterCore() async {
 }
 
 /// HomePage's tab `IndexedStack`, identified by how many children it has
-/// (four core destinations — Home and Moods were extracted into bundled
-/// plugins at Tier 2 tasks 3 and 4 and no longer count — plus one per
-/// enabled plugin tab) — other
+/// (three core destinations — Home, Moods, and Online were extracted into
+/// bundled plugins at Tier 2 tasks 3, 4, and 5 and no longer count — plus
+/// one per enabled plugin tab) — other
 /// `IndexedStack`s exist deeper in the page tree, and `.first` is not a
 /// reliable way to pick this one out. Asserting on `index` rather than on
 /// which page's text is rendered matters here: an `IndexedStack` keeps
@@ -388,11 +388,11 @@ void main() {
     await tester.runAsync(() async {
       final core = _registerBareCore();
       addTearDown(_unregisterCore);
-      // Two plugins, so index 4 (the first plugin slot) means something
+      // Two plugins, so index 3 (the first plugin slot) means something
       // *different* after the first one is removed. With selection tracked
-      // by raw index, disabling plugin A while it was selected left index 4
-      // in range — length shrinks 6 -> 5, and `4 >= 5` is false, so no
-      // bounds check fired — and index 4 silently resolved to plugin B's
+      // by raw index, disabling plugin A while it was selected left index 3
+      // in range — length shrinks 5 -> 4, and `3 >= 4` is false, so no
+      // bounds check fired — and index 3 silently resolved to plugin B's
       // tab instead. Keying selection by destination id is what makes the
       // vanished tab read as vanished.
       core.pluginManager.register(
@@ -410,8 +410,8 @@ void main() {
 
       await tester.tap(find.text('Alpha'));
       await tester.pumpAndSettle();
-      // Four core tabs + two plugin tabs; Alpha is the first plugin slot.
-      expect(_homeStack(tester, childCount: 6).index, 4);
+      // Three core tabs + two plugin tabs; Alpha is the first plugin slot.
+      expect(_homeStack(tester, childCount: 5).index, 3);
 
       await core.pluginManager
           .disablePlugin(core.pluginManager.byId('plugin_a')!);
@@ -419,12 +419,12 @@ void main() {
 
       // Beta's *tab* survives — it's only Alpha that went away.
       expect(find.text('Beta'), findsOneWidget);
-      // The point of the test. Index 4 is now Beta; asserting on the
+      // The point of the test. Index 3 is now Beta; asserting on the
       // resolved index rather than on rendered text is deliberate, since
       // an IndexedStack keeps every child mounted and only the selected
       // one is actually shown.
-      expect(_homeStack(tester, childCount: 5).index, isNot(4));
-      expect(_homeStack(tester, childCount: 5).index, 0);
+      expect(_homeStack(tester, childCount: 4).index, isNot(3));
+      expect(_homeStack(tester, childCount: 4).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -467,7 +467,7 @@ void main() {
     await tester.runAsync(() async {
       _registerBareCore();
       addTearDown(_unregisterCore);
-      // 'settings' is the last of the four core destinations — nowhere
+      // 'settings' is the last of the three core destinations — nowhere
       // near `_coreDestinationIds.first`, so this only passes if the
       // initial `_selectedDestinationId` actually comes from the
       // persisted setting rather than from that constant.
@@ -476,8 +476,8 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      // Four core tabs, no plugins registered; 'settings' is index 3.
-      expect(_homeStack(tester, childCount: 4).index, 3);
+      // Three core tabs, no plugins registered; 'settings' is index 2.
+      expect(_homeStack(tester, childCount: 3).index, 2);
     });
   });
 
@@ -498,7 +498,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomePage()));
       await _settle(tester);
 
-      expect(_homeStack(tester, childCount: 4).index, 0);
+      expect(_homeStack(tester, childCount: 3).index, 0);
       expect(tester.takeException(), isNull);
     });
   });
@@ -540,11 +540,11 @@ void main() {
         await tester.pumpWidget(const MaterialApp(home: HomePage()));
         await _settle(tester);
 
-        // Four core tabs (library/playlist/online/settings), no "Home"
+        // Three core tabs (library/playlist/settings), no "Home"
         // tab among them. The default 800x600 test viewport is wider than
         // tall, so HomeNavigationBar renders a NavigationRail (see
         // home_navigation.dart), not the narrow-layout NavigationBar.
-        expect(_homeStack(tester, childCount: 4).index, 0);
+        expect(_homeStack(tester, childCount: 3).index, 0);
         expect(
             find.widgetWithText(NavigationRailDestination, 'Home'),
             findsNothing);
@@ -654,7 +654,7 @@ void main() {
         await tester.pumpWidget(const MaterialApp(home: HomePage()));
         await _settle(tester);
 
-        expect(_homeStack(tester, childCount: 4).index, 0);
+        expect(_homeStack(tester, childCount: 3).index, 0);
         expect(find.widgetWithText(NavigationRailDestination, 'Moods'),
             findsNothing);
         expect(tester.takeException(), isNull);

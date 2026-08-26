@@ -18,7 +18,6 @@ import 'package:omnis/ui/home_navigation.dart';
 import 'package:omnis/ui/library_page.dart';
 import 'package:omnis/ui/now_playing_page.dart';
 import 'package:omnis/ui/player_layouts/layout_manager.dart';
-import 'package:omnis/ui/online_page.dart';
 import 'package:omnis/ui/playlist_page.dart';
 import 'package:omnis/ui/settings/appearance_settings_page.dart';
 import 'package:omnis/ui/settings_page.dart';
@@ -43,7 +42,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-/// Stable ids for the four fixed core destinations, in render order —
+/// Stable ids for the three fixed core destinations, in render order —
 /// the same ids [PluginDestination.id]'s own dartdoc reserves as
 /// off-limits to plugins. Selection is tracked by id rather than by
 /// index (see [_HomePageState._selectedDestinationId]), so these are
@@ -51,7 +50,6 @@ class HomePage extends StatefulWidget {
 const _coreDestinationIds = <String>[
   'library',
   'playlist',
-  'online',
   'settings',
 ];
 
@@ -348,7 +346,6 @@ class _HomePageState extends State<HomePage> {
           key: _playlistKey,
           engine: core.audioEngine,
           pluginManager: core.pluginManager),
-      OnlinePage(engine: core.audioEngine, pluginManager: core.pluginManager),
       SettingsPage(
           engine: core.audioEngine,
           pluginManager: core.pluginManager,
@@ -390,7 +387,6 @@ class _HomePageState extends State<HomePage> {
     final destinations = [
       HomeDestinationInfo(OmnisIconCatalog.libraryMusic.resolve(), 'Library'),
       HomeDestinationInfo(OmnisIconCatalog.playlistPlay.resolve(), 'Playlist'),
-      HomeDestinationInfo(OmnisIconCatalog.cloudQueue.resolve(), 'Online'),
       HomeDestinationInfo(OmnisIconCatalog.settings.resolve(), 'Settings'),
       for (final d in pluginDestinations) HomeDestinationInfo(d.icon, d.label),
     ];
