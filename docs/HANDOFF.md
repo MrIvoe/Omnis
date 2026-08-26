@@ -47,87 +47,79 @@ memory does.
 Never re-derive "what's done" by reading source — the ledgers are
 authoritative and cheaper to read.
 
-## Active plans (as of 2026-08-24)
+## Status (as of 2026-08-26)
 
-Two plans are running **concurrently** on this same codebase, coordinated
-by hand since they both touch `service_interfaces.dart` and
-`bundled_plugins.dart`:
+**Tier 2 (Home dashboard / Moods / Radio+Online extraction) is fully
+complete.** All 6 tasks landed, reviewed, fixed, re-reviewed, and a
+final whole-branch review + fix wave + follow-up pin bump closed
+everything out — verified clean from a real clean checkout (no local
+override) in both repos. See
+[TIER2_COMPLETION.md](TIER2_COMPLETION.md) for the full record and
+[TIER2_RECOMMENDATIONS.md](TIER2_RECOMMENDATIONS.md) for what's
+deliberately left open and recommended next. The SDD ledger this was
+tracked in (`.superpowers/sdd/2026-08-24-core-plugin-tier2/`) has served
+its purpose — those two docs are the durable record now.
 
-1. **Core/Plugin Tier 2** — extract Home dashboard, Moods, and
-   Radio+Online out of the app core into bundled plugins.
-   - Plan: `docs/superpowers/plans/2026-08-24-core-plugin-tier2.md`
-   - Ledger: `.superpowers/sdd/2026-08-24-core-plugin-tier2/progress.md`
-   - Status: Tasks 1-2 complete and reviewed clean. **Task 3 (Home
-     dashboard extraction) is the current focus** — see "Current
-     blocker" below. Tasks 4 (Moods), 5 (Radio+Online), 6 (pin bump) not
-     started.
+**Next up:** the theme/layout/icon plugin system plan (see "Active
+plans" below) was waiting for Tier 2 to finish and can now start.
+
+## Active plans (as of 2026-08-26)
+
+1. **Core/Plugin Tier 2** — **done.** See "Status" above,
+   [TIER2_COMPLETION.md](TIER2_COMPLETION.md), and
+   [TIER2_RECOMMENDATIONS.md](TIER2_RECOMMENDATIONS.md).
 
 2. **Theme/Layout/Icon plugin system** — let plugins contribute themes,
    Now Playing layouts, and icon artwork.
    - Plan: `docs/superpowers/plans/2026-08-24-theme-layout-icon-plugin-system.md`
    - Ledger: `.superpowers/sdd/2026-08-24-theme-layout-icon-plugin-system/progress.md`
-   - Status: **Not started.** Explicitly waiting for Tier 2's active
-     implementer to finish first (both plans' own ledgers carry this
-     coordination note) — never dispatch an implementer for one plan
-     while the other has a live implementer.
+   - Status: **Not started.** Was explicitly waiting for Tier 2 to
+     finish (both plans touch `service_interfaces.dart`/
+     `bundled_plugins.dart`) — that's no longer a blocker. Ready to
+     start whenever picked up.
 
-**Rule while both are active:** before dispatching any implementer for
-either plan, check both ledgers for an open (undispatched-report) task.
-Research/read-only dispatches don't conflict and can run in parallel.
+**Standing instruction for this repo pair:** push after every task
+completes, not batched — an explicit standing rule set during Tier 2.
+Also: batch all cross-repo dependency pin bumps into one clearly-labeled
+task/step at the end of a plan, never per-task — a tag cut before its
+own dependent commit lands is invisible locally (under
+`pubspec_overrides.yaml`) but breaks a clean checkout. Learned the hard
+way more than once before Tier 2 codified it; verify with
+`pubspec_overrides.yaml` temporarily removed in both repos before
+considering a pin bump done.
 
-## Current status (as of this session, 2026-08-25 ~05:10 UTC)
+## Patterns established during Tier 2 (reuse, don't rediscover)
 
-**Task 3 (Home dashboard extraction) is complete, reviewed clean, and
-pushed.** It took 2 prior crashed implementer attempts + a 3rd that
-finished it + 2 fix rounds (a real crash bug and a real UX regression,
-both caught by task review, both fixed and re-reviewed clean) — full
-history in the ledger
-(`.superpowers/sdd/2026-08-24-core-plugin-tier2/progress.md`) if you need
-the details. 6 minor/out-of-scope items were found and deliberately
-parked rather than fixed — see the ledger's "Task 3: complete" entry for
-the full list (a real production focus-dispatch quirk in
-`GlobalKeyboardShortcuts`, a missing NowPlayingPage-nav capability, a
-couple of stale doc comments, etc.) — none block anything, but worth
-sweeping up in a future pass or the final whole-branch review.
-
-**Standing instruction for this session:** push after every task
-completes (not batched) — the human partner confirmed this explicitly
-after Task 3. Don't accumulate unpushed commits across tasks without
-asking again if that ever seems to conflict with something.
-
-**Task 4 (Moods cluster extraction) is also complete, reviewed clean
-(Approved on first pass, no fix round needed), and pushed** — 5 more
-Minor items parked in the ledger.
-
-**Next up:** Task 5 (Radio+Online extraction), then Task 6 (cross-repo
-pin bump — the first point where the bundled plugins actually become
-reachable without `pubspec_overrides.yaml`'s local sibling-checkout
-override). Check the ledger tail for current status.
-
-## Lessons already learned this session (don't relitigate)
-
-- **Batch cross-repo pin bumps into one final task** — a tag cut before
-  its own dependent commit lands is invisible locally (under
-  `pubspec_overrides.yaml`) but breaks a clean checkout. Learned twice
-  before Tier 2's Global Constraints codified it explicitly.
-- **Push after committing, not just commit locally** — a prior task left
-  a commit unpushed by accident.
 - Every extracted plugin follows `radio_plugin.dart`'s exact
   `ServiceRegistry` lifecycle (register in `initialize()`+`enable()`,
   unregister in `disable()`+`dispose()`) — verify against that file's
   *current* content each time, don't work from a paraphrase.
 - A capability a UI call site needs from a plugin-owned page goes through
-  `pluginManager.services.get<T>()`, never a `GlobalKey` into a widget
-  `home_page.dart` no longer constructs itself.
+  a new interface in `packages/omnis_plugin_api/lib/service_interfaces.dart`
+  + `pluginManager.services.get<T>()`, never a `GlobalKey` into a widget
+  the app no longer constructs itself.
+- A value type a capability interface's signature needs moves to
+  `omnis_plugin_api`; its store/implementation stays in Omnis-Plugins
+  (see `CustomMood`, `TrackPlayStats`).
+- When the app still needs a file that moved to Omnis-Plugins and the
+  cross-repo pin isn't bumped yet, duplicate it (with a doc comment
+  explaining why) rather than block the extraction — but if the two
+  copies later need to diverge on purpose (see `track_artwork.dart` in
+  TIER2_COMPLETION.md), say so explicitly so nobody "helpfully"
+  reconsolidates them later.
+- An implementer that hits a session limit mid-task leaves real,
+  usually-correct uncommitted work behind, not nothing — audit it
+  against the task brief (`git status`/`git diff --stat` in both repos)
+  before deciding to keep, fix, or redo it. This happened 3 times during
+  Tier 2 and nothing was lost by trusting the audit over discarding and
+  restarting.
 
 ## How to resume after reading this file
 
 1. Check `ListAgents` / ask whether any dispatched implementer is still
    live before touching anything (avoid duplicate work).
 2. Read the relevant plan's ledger tail for the last recorded state.
-3. Run `git status`/`git diff --stat` in **both** repos — an implementer
-   that hit a session limit leaves real uncommitted work behind; assess
-   it against the task brief before deciding to keep, fix, or redo it
-   (as this session did for Task 3).
+3. Run `git status`/`git diff --stat` in **both** repos before starting
+   anything — see the crashed-implementer note above.
 4. Continue the SDD loop (`superpowers:subagent-driven-development`)
    from wherever the ledger says to resume.

@@ -633,15 +633,19 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/omnis_plugin_api"
-      relative: true
-    source: path
+      ref: "plugin-api-v0.30.0"
+      resolved-ref: c3d21f72a388de3bd5f76ff866481e8fef2dc8a9
+      url: "https://github.com/MrIvoe/Omnis.git"
+    source: git
     version: "0.1.0"
   omnis_plugins:
     dependency: "direct main"
     description:
-      path: "../Omnis-Plugins"
-      relative: true
-    source: path
+      path: "."
+      ref: "v0.52.0"
+      resolved-ref: b8cc5e210c7f7863034ba139b3d5cb83f52d5f3f
+      url: "https://github.com/MrIvoe/Omnis-Plugins.git"
+    source: git
     version: "0.1.0"
   on_audio_query:
     dependency: "direct main"
