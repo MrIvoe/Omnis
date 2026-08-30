@@ -34,6 +34,7 @@ that survives context loss/compaction/session death better than chat
 memory does.
 
 **If you are picking this up cold, read in this order:**
+0. For architecture and feature status, see `docs/vault/README.md`.
 1. This file (top-level orientation).
 2. `docs/OMNIS_2_0_STATUS.md` — feature-level "how much of the whole app
    is done" snapshot (50 tracked areas, ~72% as of last regen).

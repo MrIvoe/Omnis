@@ -1,53 +1,10 @@
 # Omnis 2.0 — Progress At a Glance
 
-> A compact, skimmable snapshot of build progress across the 50 tracked
-> feature areas, regenerated from [OMNIS_2_0_FINISHED_TASK.md](OMNIS_2_0_FINISHED_TASK.md)
-> (the authoritative build log — every claim below traces back to a
-> dated entry there, with the tests/commits behind it). This file
-> answers "how far along is this, roughly" at a glance; that one
-> answers "what exactly changed and why" in full engineering detail.
->
-> Last regenerated: 2026-08-18 (item 30's GitHub-URL install default-branch bug fixed).
-
-## Overall
-
-| ✅ Solid | 🟢 Solid, unverified | 🟡 Partial / in progress | ⬜ Not started |
-|---|---|---|---|
-| 9 | 8 | 33 | 0 |
-
-### Estimated completion: ~72% (≈28% left to build)
-
-A rough, weighted estimate — not a precise metric, since "partial"
-areas vary in how much is actually left: ✅ counts as 100% done, 🟢
-counts as 90% (fully built, only live-service verification pending),
-🟡 counts as 60% (real, working functionality exists, but named gaps
-remain), ⬜ counts as 0%. `(9×100 + 8×90 + 33×60 + 0×0) / 50 = 72%`.
-This will shift as items close out and as new gaps get discovered
-mid-build; it's refreshed alongside the rest of this file.
-
-**Every one of the 50 tracked areas already has real, working
-functionality — none are starting from zero.** The remaining work is
-closing specific named gaps inside already-functional systems (a
-missing condition type, an unverified live-server round-trip, a
-smarter algorithm), not building whole new systems from scratch. There
-is no fixed ship date — this is continuous, incremental hardening —
-but the shape of what's left is narrow and well-enumerated, not open-ended.
-
-**Legend**
-- ✅ **Solid** — feature-complete and hardened, no known named gaps left in the tracker.
-- 🟢 **Solid, unverified** — fully implemented, but not yet exercised against a real external service/device (no live account/server available this session).
-- 🟡 **Partial / in progress** — real, working functionality exists; specific named gaps remain, listed in the build log.
-- ⬜ **Not started** — no real implementation yet.
-
----
-
-## Phase 1 — Reliability
-
-| # | Item | Status |
-|---|------|--------|
-| 1 | Playback engine | 🟡 Core playback (gapless, crossfade, speed/pitch, shuffle/repeat) works end-to-end; the bigger Queue/Output/Session controller split is still owed |
-| 2 | Queue | 🟡 Manual queue, play-next, reorder, history/snapshots, cleanup, smart/rule-based continuation (similar track/artist, same genre/mood/album), "avoid repeat artist/album" queue rules (shuffle + continuation), and now a UI_SPEC §40/§41 Queue panel reachable from the mini-player and Now Playing (not just buried in the Playlist tab) all real; energy/BPM progression ordering and multiple queue sources not started |
-| 3 | Recovery | ✅ Watchdog + crash/power-loss recovery wired end-to-end |
+**Superseded on 2026-08-29** by the Obsidian architecture vault —
+see [`docs/vault/README.md`](vault/README.md), starting from
+[`docs/vault/00-Hubs/`](vault/00-Hubs/) for the same per-phase feature
+status this file used to hold, now as linked notes instead of one flat
+table. This file's prior content is preserved in git history.
 | 4 | Database | 🟡 Atomic writes, corruption detection, schema versioning, and scheduled backups all real; still JSON files, no indexed DB or multi-source libraries |
 | 5 | Library scanning | ✅ Incremental rescan, desktop filesystem watcher, scheduled background scans, and now content-fingerprint-based rename/move detection (a renamed file keeps its favorites/ratings/play history/playlist membership across every rescan trigger — the explicit "Add audio files" button, the desktop watcher, and the scheduled background scan — instead of silently losing them) — no further named gaps |
 | 6 | Persistence | ✅ Crash-safe playback/library/settings persistence |
