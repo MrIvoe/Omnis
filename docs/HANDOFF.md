@@ -34,10 +34,12 @@ that survives context loss/compaction/session death better than chat
 memory does.
 
 **If you are picking this up cold, read in this order:**
-0. For architecture and feature status, see `docs/vault/README.md`.
 1. This file (top-level orientation).
-2. `docs/OMNIS_2_0_STATUS.md` — feature-level "how much of the whole app
-   is done" snapshot (50 tracked areas, ~72% as of last regen).
+2. `docs/vault/README.md` — the architecture map and feature-status
+   vault (replaced the old flat `OMNIS_2_0_STATUS.md`/
+   `OMNIS_2_0_FINISHED_TASK.md` on 2026-08-29; those two files are now
+   just stubs pointing here). Start from `docs/vault/00-Hubs/` for the
+   same per-phase status the old doc held, now as linked notes.
 3. Whichever plan(s) are active (see "Active plans" below) — read the
    **plan file** for scope/architecture, then the plan's own **ledger**
    (`.superpowers/sdd/<plan-name>/progress.md`) for exactly which tasks
