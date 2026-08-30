@@ -15,8 +15,8 @@ Supplies lyric text for a track at a playback position.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[LyricsPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No tracked feature relies on this directly — [[LyricsPlugin]] is its sole implementer, itself not named by any of the 50 tracked features.

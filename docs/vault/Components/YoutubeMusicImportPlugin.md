@@ -15,4 +15,4 @@ Browses and imports playlist/video *metadata* from YouTube via the YouTube Data 
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[37 - YouTube]] (OAuth, playlist import + search)

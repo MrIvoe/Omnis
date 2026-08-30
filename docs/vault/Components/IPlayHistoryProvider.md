@@ -15,8 +15,8 @@ Records and queries real play history — "recently played," "most played." Regi
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[ScrobblePlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No tracked feature relies on this directly — [[ScrobblePlugin]] is its sole implementer; [[16 - History]] is served by the always-on [[PlayHistoryStore]] instead, which doesn't go through this interface.

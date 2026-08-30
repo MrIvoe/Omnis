@@ -15,4 +15,4 @@ Browses and imports playlist/track *metadata* from a user's Spotify account via 
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[36 - Spotify]] (PKCE OAuth, playlist import)

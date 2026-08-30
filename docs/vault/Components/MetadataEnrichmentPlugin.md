@@ -19,4 +19,5 @@ A bundled metadata enrichment plugin: canonical track structure from MusicBrainz
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[11 - Metadata]]
+- [[12 - Artwork]] (artwork lookup)

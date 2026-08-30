@@ -15,4 +15,4 @@ Remote-controls playback on a real Spotify app via Spotify Connect — **not** a
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[36 - Spotify]] (Spotify Connect remote control)

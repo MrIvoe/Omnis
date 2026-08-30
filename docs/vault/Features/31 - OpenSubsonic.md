@@ -12,7 +12,7 @@ status: solid-unverified
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[OpenSubsonicPlugin]]
 
 ## Build log
 

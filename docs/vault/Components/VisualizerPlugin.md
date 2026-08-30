@@ -19,4 +19,4 @@ Real spectrum visualizer, backed by the `audify` package's native Android `Visua
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+Not named by any of the 50 tracked features — supplies levels for the spectrum visualizer, a supporting feature not separately tracked in this plan.

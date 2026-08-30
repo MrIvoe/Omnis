@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[AudioEngine]] (the OS media-session integration was extracted from `AudioEngine` into `lib/core/playback_os_integration.dart` with zero behavior change — it stays part of this component)
 
 ## Build log
 

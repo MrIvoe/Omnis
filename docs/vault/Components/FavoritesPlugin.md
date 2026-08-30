@@ -19,4 +19,4 @@ status: stable
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[14 - Favorites]]

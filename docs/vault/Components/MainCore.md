@@ -26,4 +26,4 @@ The entry point for the Omnis micro-kernel music engine — wires together the t
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[3 - Recovery]]

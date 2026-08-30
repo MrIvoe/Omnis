@@ -19,4 +19,4 @@ Contributes the Moods tab (preset mood tiles from every registered [IQueueBuilde
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[39 - Recommendations]]

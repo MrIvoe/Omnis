@@ -19,4 +19,4 @@ Connects to a self-hosted Jellyfin media server via its REST API.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[33 - Jellyfin]]

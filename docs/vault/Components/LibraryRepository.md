@@ -19,4 +19,5 @@ The single in-memory source of truth for the persisted library, caching what `Li
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[4 - Database]] (atomic-write/schema-versioning conventions)
+- [[6 - Persistence]] (library persistence)

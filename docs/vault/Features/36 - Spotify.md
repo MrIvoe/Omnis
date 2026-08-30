@@ -12,7 +12,8 @@ status: solid-unverified
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[SpotifyImportPlugin]] (PKCE OAuth, playlist import)
+- [[SpotifyPlaybackPlugin]] (Spotify Connect remote control)
 
 ## Build log
 

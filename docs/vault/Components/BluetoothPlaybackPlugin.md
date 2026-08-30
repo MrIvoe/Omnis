@@ -19,5 +19,5 @@ Detects a Bluetooth audio device (speaker, car stereo, headphones) connecting or
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[50 - Automation]] (Bluetooth-connect trigger)
 

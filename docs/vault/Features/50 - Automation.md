@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — GPS-speed/Bluetooth-connect triggers via [[DrivingModePlugin]] and [[BluetoothPlaybackPlugin]], time-based playback scheduling in core `lib/core/playback_scheduler.dart` (not documented as its own component), and scheduled radio via [[RadioPlugin]].
 
 ## Build log
 

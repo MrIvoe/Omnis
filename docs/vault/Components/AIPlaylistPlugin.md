@@ -19,4 +19,4 @@ The first two real slices of the spec's §21 "AI subsystem" — natural language
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[43 - AI]]

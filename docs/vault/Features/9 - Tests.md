@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — test coverage spans every core singleton and plugin in `docs/vault/Components/`, not owned by any one of them.
 
 ## Build log
 

@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — the declarative theme engine (import/editor/installer) lives in core UI `lib/ui/theme/declarative/`, not documented as its own component; [[AppSettings]] persists the active theme mode/preset/accent-color choice.
 
 ## Build log
 

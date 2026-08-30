@@ -12,7 +12,7 @@ status: solid
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[PluginManager]] (owns the typed `ServiceRegistry` the capability interfaces register through; the interfaces themselves are documented individually under `docs/vault/Components/`, e.g. [[IMetadataProvider]], [[IQueueBuilder]])
 
 ## Build log
 

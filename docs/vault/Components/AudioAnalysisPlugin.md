@@ -19,4 +19,5 @@ A bundled plugin that sends a local track's audio to a self-hosted Essentia anal
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[23 - Audio analysis]]
+- [[40 - Sonic similarity]] (supplies the acoustic features the similarity scoring is computed over)

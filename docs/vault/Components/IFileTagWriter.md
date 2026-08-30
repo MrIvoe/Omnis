@@ -15,8 +15,9 @@ Writes a field directly into a local audio file's own tags.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[TagEditorPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[12 - Artwork]] (writes looked-up artwork into the file's own tags)
+- [[17 - Tag editor]]

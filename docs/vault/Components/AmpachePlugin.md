@@ -19,4 +19,4 @@ Connects to a self-hosted Ampache media server via its JSON API.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[38 - Other providers]]

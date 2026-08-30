@@ -15,8 +15,8 @@ Supplies levels for an animated visualizer.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[VisualizerPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No tracked feature relies on this directly — [[VisualizerPlugin]] is its sole implementer, itself not named by any of the 50 tracked features.

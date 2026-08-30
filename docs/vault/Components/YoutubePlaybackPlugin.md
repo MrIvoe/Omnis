@@ -15,4 +15,4 @@ Plays a YouTube video's real audio+video through YouTube's own official embedded
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[37 - YouTube]] (in-app embedded playback)

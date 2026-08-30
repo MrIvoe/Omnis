@@ -15,8 +15,9 @@ Looks up canonical/community metadata for a track from an external source (Music
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[MetadataEnrichmentPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[11 - Metadata]]
+- [[12 - Artwork]] (artwork lookup)

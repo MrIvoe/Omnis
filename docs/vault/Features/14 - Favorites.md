@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[FavoritesPlugin]]
 
 ## Build log
 

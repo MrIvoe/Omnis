@@ -12,7 +12,8 @@ status: solid
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[MainCore]]
+- [[RecoveryJournal]]
 
 ## Build log
 

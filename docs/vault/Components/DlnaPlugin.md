@@ -15,4 +15,4 @@ Discovers and browses DLNA/UPnP media servers on the local network.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[35 - DLNA-UPnP]]

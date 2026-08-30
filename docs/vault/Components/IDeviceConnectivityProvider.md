@@ -15,8 +15,8 @@ Reports which output device (if any) is currently connected.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[BluetoothPlaybackPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[50 - Automation]] (Bluetooth-connect trigger)

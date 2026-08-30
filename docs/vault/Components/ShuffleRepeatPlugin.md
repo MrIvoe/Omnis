@@ -15,4 +15,4 @@ Shuffle and repeat mode — the Core Philosophy doc lists "Shuffle Algorithms" e
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[1 - Playback engine]]

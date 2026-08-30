@@ -12,7 +12,7 @@ status: solid
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — playback-state persistence via [[RecoveryJournal]], library persistence via [[LibraryRepository]], and settings persistence via [[AppSettings]].
 
 ## Build log
 

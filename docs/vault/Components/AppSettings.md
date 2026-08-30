@@ -19,4 +19,5 @@ A `ChangeNotifier`-backed singleton persisting nearly every user-facing app sett
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[6 - Persistence]] (settings persistence)
+- [[44 - Themes]] (persists the active theme mode/preset/accent color)

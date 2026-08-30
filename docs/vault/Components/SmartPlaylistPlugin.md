@@ -15,4 +15,4 @@ A bundled plugin that suggests smart autoplay queues based on mood or genre.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[42 - Smart playlists]]

@@ -19,4 +19,5 @@ Persists per-track play aggregates (`TrackPlayStats`: play count, last played, e
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[4 - Database]] (atomic-write/schema-versioning conventions)
+- [[16 - History]]

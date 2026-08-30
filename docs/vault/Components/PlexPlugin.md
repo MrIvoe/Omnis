@@ -19,4 +19,4 @@ Connects to a self-hosted Plex Media Server via its REST API.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[34 - Plex]]

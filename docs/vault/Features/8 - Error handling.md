@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — decoder auto-skip lives in [[AudioEngine]], plugin sandboxing/crash isolation lives in [[PluginManager]].
 
 ## Build log
 

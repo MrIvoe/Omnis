@@ -15,8 +15,8 @@ Queries a track's star rating (0-5, 0 meaning unrated) — real signal `RatingsP
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[RatingsPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[15 - Ratings]]

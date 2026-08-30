@@ -15,8 +15,9 @@ Builds a ready-to-play queue for a named query (a mood/preset label like `"Chill
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[QueuePresetPlugin]]
+- [[SmartPlaylistPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[42 - Smart playlists]] (via [[SmartPlaylistPlugin]]; [[QueuePresetPlugin]]'s own preset tiles aren't named by any of the 50 tracked features)

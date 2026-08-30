@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — the Android home-screen widget lives in core `lib/core/home_widget_service.dart`, not documented as its own component.
 
 ## Build log
 

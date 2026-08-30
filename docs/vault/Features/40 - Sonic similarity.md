@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[AudioAnalysisPlugin]] (supplies the Essentia-extracted acoustic features the similarity scoring is computed over)
 
 ## Build log
 

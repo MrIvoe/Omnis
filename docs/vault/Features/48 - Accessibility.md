@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — keyboard shortcut remapping (`lib/core/keyboard_shortcut_remap.dart`) and the Ctrl+K command palette/search-everywhere overlay (`lib/core/command_palette.dart`) are core UI logic, not documented as their own components.
 
 ## Build log
 

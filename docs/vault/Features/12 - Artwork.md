@@ -12,7 +12,8 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[MetadataEnrichmentPlugin]] (artwork lookup)
+- [[TagEditorPlugin]] (writes the looked-up artwork into the file's own tags)
 
 ## Build log
 

@@ -15,8 +15,8 @@ Turns a natural-language request into a real queue built from the caller's own l
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[AIPlaylistPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[43 - AI]]

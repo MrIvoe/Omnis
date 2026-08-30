@@ -12,7 +12,7 @@ status: solid-unverified
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — Now Playing's drag-and-drop layout editor and the pop-out sidebar live in core UI (`lib/ui/player_layouts/`, `lib/core/sidebar_config.dart`), not documented as their own components; Home's reorder/hide is [[HomeDashboardPlugin]].
 
 ## Build log
 

@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — device listing/selection lives in core `lib/core/output_device_controller.dart` (not documented as its own component); per-device volume memory is [[DeviceVolumePlugin]].
 
 ## Build log
 

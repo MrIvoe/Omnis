@@ -19,4 +19,4 @@ Records real play history, persisted via this plugin's own [MusicPlugin.storage]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+Not named by any of the 50 tracked features directly — [[16 - History]] credits [[PlayHistoryStore]] as the always-on core implementer; this plugin is an optional alternate play-history recorder reachable through the same [[IPlayHistoryProvider]] interface.

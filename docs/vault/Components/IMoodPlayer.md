@@ -15,8 +15,8 @@ Plays a named preset mood or a user-created [CustomMood] directly, and exposes t
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[MoodsPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[39 - Recommendations]]

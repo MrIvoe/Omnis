@@ -12,7 +12,7 @@ status: solid
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[MediaScanner]]
 
 ## Build log
 

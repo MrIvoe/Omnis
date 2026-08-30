@@ -12,7 +12,8 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[AudioEngine]]
+- [[ShuffleRepeatPlugin]]
 
 ## Build log
 

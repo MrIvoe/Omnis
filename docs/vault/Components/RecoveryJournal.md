@@ -19,4 +19,6 @@ Persists `PlaybackState` snapshots for crash recovery and queue restoration (spe
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[3 - Recovery]]
+- [[4 - Database]] (atomic-write/schema-versioning conventions)
+- [[6 - Persistence]] (playback-state persistence)

@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — pure search/filter/field-qualifier logic in core `lib/core/library_search.dart`, invoked from the Library page UI; not documented as its own component.
 
 ## Build log
 

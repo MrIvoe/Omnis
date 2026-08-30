@@ -12,7 +12,9 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[EmbyPlugin]]
+- [[AmpachePlugin]]
+- [[KoelPlugin]]
 
 ## Build log
 

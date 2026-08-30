@@ -19,4 +19,5 @@ Connects to any OpenSubsonic-compatible media server — Navidrome, Airsonic, th
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[31 - OpenSubsonic]]
+- [[32 - Navidrome]] (Navidrome speaks the OpenSubsonic protocol)

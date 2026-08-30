@@ -19,4 +19,4 @@ Curated queue presets built from objective, always-available track data (genre k
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+Not named by any of the 50 tracked features — contributes curated preset queue tiles (by genre/BPM) alongside [[MoodsPlugin]]'s own presets in the Moods tab; [[39 - Recommendations]] credits [[MoodsPlugin]] as the primary implementer.

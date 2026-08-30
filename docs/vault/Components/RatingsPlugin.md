@@ -15,4 +15,4 @@ A 0–5 star rating per track — §9 of the Omnis 2.0 product spec lists "Ratin
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[15 - Ratings]]

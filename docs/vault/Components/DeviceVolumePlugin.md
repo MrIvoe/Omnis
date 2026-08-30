@@ -15,4 +15,4 @@ Remembers a separate master-volume level per output device — item 21's "no per
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[21 - Output devices]] (per-device volume memory)

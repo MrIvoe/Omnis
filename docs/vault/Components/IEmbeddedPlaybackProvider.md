@@ -15,8 +15,10 @@ Contributes a self-contained embedded playback UI as one more section of the "On
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[SpotifyPlaybackPlugin]]
+- [[YoutubePlaybackPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[36 - Spotify]]
+- [[37 - YouTube]]

@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — the named-multiplier gain pipeline (`setGainContribution`/`_gainContributions`) lives in [[AudioEngine]], fed by named contributions from [[EqualizerPlugin]] and [[ReplayGainPlugin]].
 
 ## Build log
 

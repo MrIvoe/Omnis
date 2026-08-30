@@ -15,8 +15,8 @@ Reads and plays a user's saved rule-based smart playlists — distinct from [IQu
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[SmartPlaylistPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[42 - Smart playlists]]

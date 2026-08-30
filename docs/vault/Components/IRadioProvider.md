@@ -15,8 +15,9 @@ Browses/searches Internet radio stations.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[RadioPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[41 - Radio]]
+- [[50 - Automation]] (scheduled radio — a saved custom station)

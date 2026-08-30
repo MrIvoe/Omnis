@@ -15,8 +15,8 @@ Looks up a representative photo for an artist by name.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[ArtistImagePlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No tracked feature relies on this directly — [[ArtistImagePlugin]] is its sole implementer, itself not named by any of the 50 tracked features.

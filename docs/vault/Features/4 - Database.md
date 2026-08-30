@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — implemented across [[LibraryRepository]], [[PlaylistStore]], [[PlayHistoryStore]], and [[RecoveryJournal]] (the shared atomic-write, per-entry-decode, and schema-versioning conventions applied to each store).
 
 ## Build log
 

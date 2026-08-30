@@ -15,4 +15,4 @@ Contributes the Online tab (Internet Radio, self-hosted media-server search, emb
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No single tracked feature — the umbrella UI container (Online tab) that hosts [[41 - Radio]] (via [[RadioPlugin]]), self-hosted media-server search (via [[31 - OpenSubsonic]]/[[33 - Jellyfin]]/[[34 - Plex]]/[[38 - Other providers]]), and embedded playback (via [[36 - Spotify]]/[[37 - YouTube]]).

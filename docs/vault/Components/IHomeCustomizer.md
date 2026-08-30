@@ -15,8 +15,8 @@ Opens the Home dashboard's "customize" bottom sheet (pick which sections show, i
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[HomeDashboardPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[45 - Layout builder]] (Home's reorder/hide)

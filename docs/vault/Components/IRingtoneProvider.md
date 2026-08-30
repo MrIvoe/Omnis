@@ -15,8 +15,8 @@ Sets a track as the device ringtone.
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[RingtonePlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+No tracked feature relies on this directly — [[RingtonePlugin]] is its sole implementer, itself not named by any of the 50 tracked features.

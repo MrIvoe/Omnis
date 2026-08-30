@@ -15,8 +15,8 @@ Queries a track's thumbs-up/down state — the identical nothing-outside-the-own
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[RatingsPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[15 - Ratings]] (no tracked feature separately names a "thumbs" signal; [[RatingsPlugin]] is the same plugin [[15 - Ratings]] credits)

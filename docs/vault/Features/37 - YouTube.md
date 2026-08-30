@@ -12,7 +12,8 @@ status: solid-unverified
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[YoutubeMusicImportPlugin]] (OAuth, playlist import + search)
+- [[YoutubePlaybackPlugin]] (in-app embedded playback)
 
 ## Build log
 

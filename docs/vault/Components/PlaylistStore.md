@@ -19,4 +19,5 @@ Persists named playlists to disk — the same load/save shape as `LibraryStore`:
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[4 - Database]] (atomic-write/schema-versioning conventions)
+- [[13 - Playlists]]

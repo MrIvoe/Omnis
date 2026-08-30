@@ -15,4 +15,5 @@ Detects driving via GPS speed and automatically switches to the Car Mode Now Pla
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[46 - Car mode]]
+- [[50 - Automation]] (GPS-speed trigger, incl. the Car Mode layout switch)

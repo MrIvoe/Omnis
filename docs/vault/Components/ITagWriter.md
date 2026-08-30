@@ -15,8 +15,9 @@ Reads and writes every tag field a local audio file supports — the broader rea
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[TagEditorPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[12 - Artwork]] (writes looked-up artwork into the file's own tags)
+- [[17 - Tag editor]]

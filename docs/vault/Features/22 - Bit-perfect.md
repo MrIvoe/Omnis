@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — format recognition lives in core `lib/core/audio_format_reader.dart`, not documented as its own component; no verified bit-perfect output path exists in any component yet.
 
 ## Build log
 

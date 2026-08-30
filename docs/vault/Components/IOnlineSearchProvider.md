@@ -15,8 +15,17 @@ Searches a self-hosted media server's own catalog and returns real, directly pla
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[AmpachePlugin]]
+- [[EmbyPlugin]]
+- [[JellyfinPlugin]]
+- [[KoelPlugin]]
+- [[OpenSubsonicPlugin]]
+- [[PlexPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[31 - OpenSubsonic]]
+- [[32 - Navidrome]]
+- [[33 - Jellyfin]]
+- [[34 - Plex]]
+- [[38 - Other providers]]

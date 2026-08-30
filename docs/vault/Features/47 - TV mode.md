@@ -12,7 +12,7 @@ status: partial
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+No single owning component — the TV-optimized Now Playing layout lives in core UI `lib/ui/player_layouts/tv_mode_layout.dart`, not documented as its own component.
 
 ## Build log
 

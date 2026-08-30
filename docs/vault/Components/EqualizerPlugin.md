@@ -15,4 +15,5 @@ A bundled equalizer plugin with two implementations behind one API: - **Hardware
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[18 - DSP pipeline]] (feeds a named gain contribution into [[AudioEngine]])
+- [[20 - EQ]]

@@ -19,4 +19,4 @@ Looks up a real artist photo via Deezer's public search API (`api.deezer.com/sea
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+Not named by any of the 50 tracked features — supplies artist photos for artist detail pages/tiles, a supporting visual feature not separately tracked in this plan.

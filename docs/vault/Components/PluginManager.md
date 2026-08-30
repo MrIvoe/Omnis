@@ -19,4 +19,11 @@ The heart of the micro-kernel plugin ecosystem. Owns registration of in-process 
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[8 - Error handling]] (plugin sandboxing/crash isolation)
+- [[24 - Capability interfaces]]
+- [[25 - Plugin lifecycle]]
+- [[26 - Dependency resolution]]
+- [[27 - Permissions]]
+- [[28 - Plugin health]]
+- [[29 - Plugin updates]]
+- [[30 - Marketplace-catalog]]

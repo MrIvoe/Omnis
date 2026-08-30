@@ -19,4 +19,8 @@ The core playback engine — the "indestructible layer" of Omnis. Owns the `just
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[1 - Playback engine]]
+- [[2 - Queue]]
+- [[7 - OS media integration]]
+- [[8 - Error handling]] (decoder auto-skip)
+- [[18 - DSP pipeline]] (named-multiplier gain composition)

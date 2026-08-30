@@ -15,8 +15,8 @@ Queries a track's favorited state — real signal `FavoritesPlugin` already coll
 
 ## Implemented by
 
-*(fill in during cross-linking pass)*
+- [[FavoritesPlugin]]
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[14 - Favorites]]

@@ -15,4 +15,5 @@ A bundled plugin that applies a simple loudness normalization multiplier.
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[18 - DSP pipeline]] (feeds a named gain contribution into [[AudioEngine]])
+- [[19 - ReplayGain]]

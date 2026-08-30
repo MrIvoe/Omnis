@@ -19,4 +19,4 @@ Scans the device for music into `BaseTrack`s. On Android it queries the OS's pre
 
 ## Serves
 
-*(fill in during cross-linking pass)*
+- [[5 - Library scanning]]
