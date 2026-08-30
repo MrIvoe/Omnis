@@ -245,7 +245,7 @@ Usage (from the Omnis repo root):
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPO_ROOT / "docs" / "OMNIS_2_0_FINISHED_TASK.md"
 OUT_DIR = REPO_ROOT / "docs" / "vault" / "Build Log"
 
@@ -383,7 +383,7 @@ Usage (from the Omnis repo root):
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPO_ROOT / "docs" / "OMNIS_2_0_STATUS.md"
 FEATURES_DIR = REPO_ROOT / "docs" / "vault" / "Features"
 HUBS_DIR = REPO_ROOT / "docs" / "vault" / "00-Hubs"
@@ -516,7 +516,7 @@ Usage (from the Omnis repo root):
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PLUGINS_DIR = REPO_ROOT.parent / "Omnis-Plugins" / "lib"
 OUT_DIR = REPO_ROOT / "docs" / "vault" / "Components"
 
@@ -623,7 +623,7 @@ Usage (from the Omnis repo root):
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPO_ROOT / "packages" / "omnis_plugin_api" / "lib" / "service_interfaces.dart"
 OUT_DIR = REPO_ROOT / "docs" / "vault" / "Components"
 
